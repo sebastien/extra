@@ -1,4 +1,4 @@
-from extra.dispatch import Prefix
+from extra.routing import Prefix
 
 print (Prefix.Make((
 	"post",

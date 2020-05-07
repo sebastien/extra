@@ -1,5 +1,5 @@
-from typing import Optional,Callable,Dict,Tuple,Any,Iterable
-from .decorators import Handler
+from typing import Optional,Callable,Dict,Tuple,Any,Iterable,List
+from .decorators import EXTRA
 import re
 
 # -----------------------------------------------------------------------------
@@ -96,6 +96,40 @@ class Prefix:
 
 	def __repr__( self ):
 		return f"'{self.value or '⦰'}'→({', '.join(repr(_) for _ in self.children.values())})"
+
+# -----------------------------------------------------------------------------
+#
+# HANDLER
+#
+# -----------------------------------------------------------------------------
+
+class Handler:
+	"""A handler wraps a function and maps it to paths for HTTP methods,
+	along with a priority. The handler is used by the dispatchers to match
+	a request."""
+
+	@classmethod
+	def Has( cls, value ):
+		return hasattr(value, EXTRA.ON)
+
+	@classmethod
+	def Get( cls, value ):
+		return Handler(
+			functor  = value,
+			methods  = getattr(value, EXTRA.ON),
+			priority = getattr(value, EXTRA.ON_PRIORITY),
+			expose   = getattr(value, EXTRA.EXPOSE) if hasattr(value, EXTRA.EXPOSE) else None,
+		) if cls.Has(value) else None
+
+	def __init__( self, functor:Callable, methods:List[str], priority:int=0, expose:bool=False ):
+		self.functor = functor
+		self.methods = methods
+		self.priority = priority
+		self.expose = expose
+
+	def __repr__( self ):
+		methods = " ".join(f'({k} "{v}")' for k,v in self.methods)
+		return f"(Handler {self.priority} ({methods}) '{self.functor}' {' :expose' if self.expose else ''})"
 
 # -----------------------------------------------------------------------------
 #

@@ -1,24 +1,15 @@
 import functools
 from typing import List, Callable
 
-EXTRA_ON                   = "_extra_on"
-EXTRA_ON_PRIORITY          = "_extra_on_priority"
-EXTRA_EXPOSE               = "_extra_expose"
-EXTRA_EXPOSE_JSON          = "_extra_expose_json"
-EXTRA_EXPOSE_RAW           = "_extra_expose_raw"
-EXTRA_EXPOSE_COMPRESS      = "_extra_expose_compress"
-EXTRA_EXPOSE_CONTENT_TYPE  = "_extra_expose_content_type"
-EXTRA_WHEN                 = "_extra_when"
-EXTRA_EXTRA = (
-	EXTRA_ON                   ,
-	EXTRA_ON_PRIORITY          ,
-	EXTRA_EXPOSE               ,
-	EXTRA_EXPOSE_JSON          ,
-	EXTRA_EXPOSE_RAW           ,
-	EXTRA_EXPOSE_COMPRESS      ,
-	EXTRA_EXPOSE_CONTENT_TYPE  ,
-	EXTRA_WHEN                 ,
-)
+class EXTRA:
+	ON                   = "_extra_on"
+	ON_PRIORITY          = "_extra_on_priority"
+	EXPOSE               = "_extra_expose"
+	EXPOSE_JSON          = "_extra_expose_json"
+	EXPOSE_RAW           = "_extra_expose_raw"
+	EXPOSE_COMPRESS      = "_extra_expose_compress"
+	EXPOSE_CONTENT_TYPE  = "_extra_expose_content_type"
+	WHEN                 = "_extra_when"
 
 def on( priority=0, **methods ):
 	"""The @on decorator is one of the main important things you will use within
@@ -47,8 +38,8 @@ def on( priority=0, **methods ):
 
 	The @Request class offers many methods to create and send responses."""
 	def decorator(function):
-		v = function.__dict__.setdefault(EXTRA_ON, [])
-		function.__dict__.setdefault(EXTRA_ON_PRIORITY, priority)
+		v = function.__dict__.setdefault(EXTRA.ON, [])
+		function.__dict__.setdefault(EXTRA.ON_PRIORITY, priority)
 		for http_method, url in list(methods.items()):
 			if type(url) not in (list, tuple): url = (url,)
 			for _ in url:
@@ -69,19 +60,19 @@ def expose( priority=0, compress=False, contentType=None, raw=False, **methods )
 	This is perfect if you have an existing python class and want to expose it
 	to the web."""
 	def decorator(function):
-		function.__dict__.setdefault(EXTRA_EXPOSE, True)
-		function.__dict__.setdefault(EXTRA_EXPOSE_JSON, None)
-		function.__dict__.setdefault(EXTRA_EXPOSE_RAW , raw)
-		function.__dict__.setdefault(EXTRA_EXPOSE_COMPRESS, compress)
-		function.__dict__.setdefault(EXTRA_EXPOSE_CONTENT_TYPE, contentType)
+		function.__dict__.setdefault(EXTRA.EXPOSE, True)
+		function.__dict__.setdefault(EXTRA.EXPOSE_JSON, None)
+		function.__dict__.setdefault(EXTRA.EXPOSE_RAW , raw)
+		function.__dict__.setdefault(EXTRA.EXPOSE_COMPRESS, compress)
+		function.__dict__.setdefault(EXTRA.EXPOSE_CONTENT_TYPE, contentType)
 		# This is copy and paste of the @on body
-		v = function.__dict__.setdefault(EXTRA_ON,   [])
-		function.__dict__.setdefault(EXTRA_ON_PRIORITY, int(priority))
+		v = function.__dict__.setdefault(EXTRA.ON,   [])
+		function.__dict__.setdefault(EXTRA.ON_PRIORITY, int(priority))
 		for http_method, url in list(methods.items()):
 			if type(url) not in (list, tuple): url = (url,)
 			for _ in url:
 				if http_method == "json":
-					function.__dict__[EXTRA_EXPOSE_JSON] = _
+					function.__dict__[EXTRA.EXPOSE_JSON] = _
 				else:
 					v.append((http_method, _))
 		return function
@@ -92,34 +83,10 @@ def when( *predicates ):
 	only be executed when the given predicate (decorated with `@on`)
 	succeeds."""
 	def decorator( function ):
-		v = function.__dict__.setdefault(EXTRA_WHEN, [])
+		v = function.__dict__.setdefault(EXTRA.WHEN, [])
 		v.extend(predicates)
 		return function
 	return decorator
 
-class Handler:
-
-	@classmethod
-	def Has( cls, value ):
-		return hasattr(value, EXTRA_ON)
-
-	@classmethod
-	def Get( cls, value ):
-		return Handler(
-			functor  = value,
-			methods  = getattr(value, EXTRA_ON),
-			priority = getattr(value, EXTRA_ON_PRIORITY),
-			expose   = getattr(value, EXTRA_EXPOSE) if hasattr(value, EXTRA_EXPOSE) else None,
-		) if cls.Has(value) else None
-
-	def __init__( self, functor:Callable, methods:List[str], priority:int=0, expose:bool=False ):
-		self.functor = functor
-		self.methods = methods
-		self.priority = priority
-		self.expose = expose
-
-	def __repr__( self ):
-		methods = " ".join(f'({k} "{v}")' for k,v in self.methods)
-		return f"(Handler {self.priority} ({methods}) '{self.functor}' {' :expose' if self.expose else ''})"
 
 # EOF
