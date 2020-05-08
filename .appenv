@@ -1,4 +1,6 @@
 #!/usr/bin/bash
+# See: <https://github.com/sebastien/appenv>
+# To install appenv: `curl https://raw.githubusercontent.com/sebastien/appenv/master/install.sh | bash`
 appenv_name    extra
 appenv_prepend PATH         "$APPENV_DIR/bin"
 appenv_prepend PYTHONPATH   "$APPENV_DIR/examples"

@@ -41,6 +41,7 @@ def serve(*services:Union[Application,Service]):
 	# Now we mount all the services on the application
 	for service in services:
 		app.mount(service)
+	app.start()
 	# Ands we're ready for the main loop
 	async def application(scope:TScope, receive, send):
 		request = await bridge.read(scope, receive)

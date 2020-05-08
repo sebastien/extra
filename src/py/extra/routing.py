@@ -63,6 +63,27 @@ class Route:
 		chunks.append(('T', expression[offset:]))
 		return chunks
 
+	def __init__( self , text:str ):
+		self.chunks:List[Any] = self.Parse(text)
+		self.params:List[str] = [_[1] for _ in self.chunks if _[0] == "P"]
+
+	def toRegExpChunks( self ) -> List[str]:
+		res:List[str] = []
+		for chunk in self.chunks:
+			if chunk[0] == "T":
+				res.append(chunk[1])
+			elif chunk[0] == "P":
+				res.append(f"({chunk[2][0]})")
+			else:
+				raise ValueError(f"Unsupported chunk type: {chunk}")
+		return res
+
+	def toRegExp( self ) -> str:
+		return "".join(self.toRegExpChunks())
+
+	def __repr__( self ) -> str:
+		return f"(Route \"{self.toRegExp()}\" ({' '.join(_ for _ in self.params)}))"
+
 # -----------------------------------------------------------------------------
 #
 # PREFIX
@@ -70,13 +91,15 @@ class Route:
 # -----------------------------------------------------------------------------
 
 class Prefix:
+	"""A node in a prefix tree. Prefixes are used to find matches given a
+	string."""
 
 	@classmethod
 	def Make( self, values:Iterable[str] ):
 		root = Prefix()
 		for _ in values:
 			root.register(_)
-		return root.simplify()
+		return root
 
 	def __init__( self, value:Optional[str]=None, parent:Optional['Prefix']=None ):
 		self.value = value
@@ -85,14 +108,37 @@ class Prefix:
 
 	def simplify( self ):
 		simplified:Dict[str,Prefix] = {}
+		children = self.children
+		# Any consecutive chain like A―B―C gets simplified to ABC
+		while len(children) == 1:
+			for key, prefix in children.items():
+				self.value = key if not self.value else self.value + key
+				children = prefix.children
+				break
+		# We recursively simplify the children
+		self.children = dict((k,v.simplify()) for k,v in children.items())
 		return self
 
 	def register( self, text:str ):
-		c, rest = text[0], text[1:]
-		if c not in self.children:
-			self.children[c] = Prefix(c, self)
-		if rest:
-			self.children[c].register(rest)
+		"""Registers the given `text` in this prefix tree."""
+		c    = text[0] if text else None
+		rest = text[1:] if len(text) > 1 else None
+		if c != None:
+			if c not in self.children:
+				self.children[c] = Prefix(c, self)
+			if rest is not None:
+				self.children[c].register(rest)
+
+	def iterLines( self, level=0 ) -> Iterable[str]:
+		yield f"{self.value or '┐'}"
+		last_i = len(self.children) - 1
+		for i,child in enumerate(self.children.values()):
+			for j,line in enumerate(child.iterLines(level + 1)):
+				leader = ("└─ " if i == last_i else "├─ ") if j == 0 else "   "
+				yield leader + line
+
+	def __str__( self ):
+		return "\n".join(self.iterLines())
 
 	def __repr__( self ):
 		return f"'{self.value or '⦰'}'→({', '.join(repr(_) for _ in self.children.values())})"
@@ -141,12 +187,23 @@ class Dispatcher:
 
 	def __init__( self ):
 		self.prefixes:Dict[str,Prefix] = {}
+		self.isPrepared = False
 
 	def register( self, handler:Handler, prefix:Optional[str]=None ):
-		print ("HANDLER", handler)
 		for method, path in handler.methods:
-			route = Route.Parse(prefix + path if prefix else path)
-			print (path, route)
+			route = Route(prefix + path if prefix else path)
+			if method not in self.prefixes:
+				self.prefixes[method] = Prefix()
+			self.prefixes[method].register(route.toRegExp())
+			self.isPrepared = False
+
+	def prepare( self ):
+		"""Prepares the dispatcher, which simplifies the prefix tree
+		and ensures a faster matching."""
+		if not self.isPrepared:
+			for prefix in self.prefixes.values():
+				prefix.simplify()
+		return self
 
 	def match( self, path ) -> Optional[Handler]:
 		pass

@@ -9,13 +9,20 @@ from typing import Optional,Tuple,Iterable,Callable,List
 
 class Service:
 	PREFIX = ""
-	NO_HANDLER = ["name", "app", "prefix", "_handlers", "isMounted", "handlers"]
+	NO_HANDLER = ["name", "app", "prefix", "_handlers", "isMounted", "handlers", "start", "stop"]
 
 	def __init__( self, name:Optional[str]=None ):
 		self.name:str = name or self.__class__.__name__
 		self.app:Optional[Application] = None
 		self.prefix = self.PREFIX
 		self._handlers:Optional[Tuple[Handler]] = None
+
+	def start( self ):
+		pass
+
+	def stop( self ):
+		pass
+
 
 	@property
 	def isMounted( self ) -> bool:
@@ -48,6 +55,15 @@ class Application:
 		self.routes = None
 		self.dispatcher = Dispatcher()
 		self.services = []
+
+	def start( self ):
+		self.dispatcher.prepare()
+		for service in self.services:
+			service.start()
+
+	def stop( self ):
+		for service in self.services:
+			service.stop()
 
 	def mount( self, service:Service, prefix:Optional[str]=None ):
 		assert not service.isMounted, f"Cannot mount service, it is already mounted: {service}"
