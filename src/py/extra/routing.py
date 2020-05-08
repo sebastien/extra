@@ -1,4 +1,4 @@
-from typing import Optional,Callable,Dict,Tuple,Any,Iterable,List
+from typing import Optional,Callable,Dict,Tuple,Any,Iterable,List,Pattern,Match
 from .decorators import EXTRA
 import re
 
@@ -63,9 +63,29 @@ class Route:
 		chunks.append(('T', expression[offset:]))
 		return chunks
 
-	def __init__( self , text:str ):
+	def __init__( self , text:str, handler:Optional['Handler']=None ):
+		self.text:str = text
 		self.chunks:List[Any] = self.Parse(text)
 		self.params:List[str] = [_[1] for _ in self.chunks if _[0] == "P"]
+		self.handler:Optional[Handler] = None
+		self._pattern:Optional[str] = None
+		self._regexp:Optional[Pattern] = None
+
+	@property
+	def priority( self ):
+		return self.handler.priority if self.handler else 0
+
+	@property
+	def pattern( self ):
+		if not self._pattern:
+			self._pattern = self.toRegExp()
+		return self._pattern
+
+	@property
+	def regexp( self ):
+		if not self._regexp:
+			self._regexp = re.compile(self.toRegExp())
+		return self._regexp
 
 	def toRegExpChunks( self ) -> List[str]:
 		res:List[str] = []
@@ -186,26 +206,47 @@ class Handler:
 class Dispatcher:
 
 	def __init__( self ):
-		self.prefixes:Dict[str,Prefix] = {}
-		self.isPrepared = False
+		self.routes:Dict[str,List[Tuple[Any,Handler]]] = {}
+		self.isPrepared = True
 
 	def register( self, handler:Handler, prefix:Optional[str]=None ):
 		for method, path in handler.methods:
-			route = Route(prefix + path if prefix else path)
-			if method not in self.prefixes:
-				self.prefixes[method] = Prefix()
-			self.prefixes[method].register(route.toRegExp())
+			route = Route(prefix + path if prefix else path, handler)
+			self.routes.setdefault(method,[]).append(route)
 			self.isPrepared = False
 
 	def prepare( self ):
 		"""Prepares the dispatcher, which simplifies the prefix tree
 		and ensures a faster matching."""
-		if not self.isPrepared:
-			for prefix in self.prefixes.values():
-				prefix.simplify()
+		res = {}
+		for method, routes in self.routes.items():
+			res[method] = sorted(routes, key=lambda _:_.pattern)
+		self.routes = res
+		self.isPrepared = True
 		return self
 
-	def match( self, path ) -> Optional[Handler]:
-		pass
+	def match( self, method:str, path:str ) -> Optional[Tuple[Route,Match]]:
+		"""Matches a given `method` and `path` with the registered route, returning
+		the matching route and the match information."""
+		if method not in self.routes:
+			return False
+		else:
+			matched_match    = None
+			matched_route    = None
+			matched_priority = -1
+			# NOTE: The problem here is that we're going through
+			# *all* the registered routes for any URL. So the more routes,
+			# the slower this is going to be.
+			for route in self.routes[method]:
+				if route.priority < matched_priority:
+					continue
+				match = route.regexp.match(path)
+				if not match:
+					continue
+				elif route.priority >= matched_priority:
+					matched_match    = match
+					matched_route    = route
+					matched_priority = route.priority
+			return (matched_route,matched_match) if matched_match else None
 
 # EOF

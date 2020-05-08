@@ -2,6 +2,8 @@ from .http import Request, Response
 from .model import Service, Application
 from typing import Dict,Callable,Any,Coroutine,Union,cast
 
+# SEE: https://asgi.readthedocs.io/en/latest/specs/main.html
+
 TScope = Dict[str,Any]
 TSend  = Callable[[Dict[str,Any]],Coroutine]
 
@@ -44,10 +46,22 @@ def serve(*services:Union[Application,Service]):
 	app.start()
 	# Ands we're ready for the main loop
 	async def application(scope:TScope, receive, send):
-		request = await bridge.read(scope, receive)
-		# Application processes response
-		response = Response(200, "text/plain")
-		await bridge.write(scope, send, response)
+		type   = scope["type"]
+		if type == "http" or type == "https":
+			method = scope["method"]
+			path   = scope["path"]
+			match  = app.dispatcher.match(method, path)
+			print (app.dispatcher.routes)
+			if match:
+				print ("MATCHED", match)
+			else:
+				print ("NO MATCH")
+			# request = await bridge.read(scope, receive)
+			# Application processes response
+			response = Response(200, "text/plain")
+			await bridge.write(scope, send, response)
+		else:
+			raise ValueError(f"ASGI scope type not supported: {type}")
 	return application
 
 # EOF

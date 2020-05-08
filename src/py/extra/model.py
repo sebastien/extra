@@ -77,4 +77,12 @@ class Application:
 		service.app = self
 		return service
 
+	def match( self, method:str, path:str ):
+		match = self.dispatcher.match(method, path)
+		if match:
+			route, params = match
+			print ("MATCHED", route, params)
+		else:
+			print ("No match")
+
 # EOF
