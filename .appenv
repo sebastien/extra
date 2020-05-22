@@ -4,5 +4,6 @@
 appenv_name    extra
 appenv_prepend PATH         "$APPENV_DIR/bin"
 appenv_prepend PYTHONPATH   "$APPENV_DIR/examples"
+appenv_prepend PYTHONPATH   "$APPENV_DIR/tests"
 appenv_prepend PYTHONPATH   "$APPENV_DIR/src/py"
 # EOF
