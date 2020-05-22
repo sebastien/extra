@@ -32,7 +32,7 @@ def on( priority=0, **methods ):
 	>	def listThings( self, request, what ):
 	>		....
 
-	it is also crucuial to return a a response at the end of the call:
+	it is also crucial to return a a response at the end of the call:
 
 	>		returns request.respond(...)
 

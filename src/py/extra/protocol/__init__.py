@@ -203,6 +203,10 @@ class Response(WithHeaders, WithCookies):
 			raise ValueError("Content type not supported, choose 'str' or 'bytes': {content}")
 		return self
 
+	def read( self ) -> Iterable[Union[bytes,None]]:
+		yield None
+		pass
+
 class HTTPResponse(Response):
 	pass
 

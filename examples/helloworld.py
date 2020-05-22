@@ -6,6 +6,6 @@ class HelloWorld(Service):
 	def sayHello( self, request:Request ) -> Response:
 		return request.respond("Hello, world", "text/plain")
 
-# NOTE: You can start this with `uvicorn helloword:app`
+# NOTE: You can start this with `uvicorn helloworld:app`
 app = serve(HelloWorld)
 # EOF
