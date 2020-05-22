@@ -1,5 +1,6 @@
 # TODO: Use Hypercorn, uvicorn
-from typing import Any,Optional,Iterable,Any,Tuple,Union,Dict,TypeVar,Generic,List
+from typing import Any,Optional,Iterable,Any,Tuple,Union,Dict,TypeVar,Generic,List,NamedTuple
+from enum import Enum
 
 T = TypeVar('T')
 
@@ -8,6 +9,26 @@ ContentLength = b'Content-Length'
 
 def encode( value:Union[str,bytes] ) -> bytes:
 	return bytes(value, "utf8") if isinstance(value,str) else value
+
+class Flyweight:
+
+	@classmethod
+	def Recycle( cls, value ):
+		cls.POOL.append(value)
+
+	@classmethod
+	def Create( cls ):
+		return cls.POOL.pop() if cls.POOL else cls()
+
+	def init( self ):
+		return self
+
+	def reset( self ):
+		return self
+
+	def recycle( self ):
+		self.reset()
+		self.__class__.POOL.append(self)
 
 # NOTE: We use byte strings here directly to
 class WithHeaders:
@@ -69,9 +90,17 @@ class WithCookies:
 	def getCookie( self, name:str  ) -> Any:
 		pass
 
-class Request(WithHeaders, WithCookies):
+class Request(WithHeaders, WithCookies, Flyweight):
 
 	# @group Request attributes
+
+	def __init__( self ):
+		WithHeaders.__init__( self )
+		WithCookies.__init__( self )
+		Flyweight.__init__( self )
+
+	def reset(self):
+		self._headers.clear()
 
 	@property
 	def method( self ):
@@ -125,10 +154,6 @@ class Request(WithHeaders, WithCookies):
 		pass
 
 	# @group Responses
-
-	def respond( self, value:Any, contentType:Optional[Union[str,bytes]]=None, status:int=200 ):
-		return HTTPResponse(status).setContent(value, contentType)
-
 	def multiple( self ):
 		pass
 
@@ -162,30 +187,24 @@ class Request(WithHeaders, WithCookies):
 		pass
 
 
-class Body(Generic[T]):
+BodyType = Enum("BodyType", "none value iterator")
+Body     = NamedTuple("Body", [("type", BodyType), ("content", Union[bytes]), ("contentType", bytes)])
 
-	def __init__( self, value:T, contentType:bytes ):
-		self.value = value
-		self.contentType = contentType
+class Response(WithHeaders, WithCookies, Flyweight):
 
-class ValueBody(Body[bytes]):
-	pass
-
-class StreamBody(Body):
-	pass
-
-class FileBody(Body):
-	pass
-
-class IterableBody(Body):
-	pass
-
-class Response(WithHeaders, WithCookies):
-
-	def __init__( self, status:int ):
+	def __init__( self ):
 		WithHeaders.__init__( self )
+		WithCookies.__init__( self )
+		Flyweight.__init__( self )
+		self.status = -1
+		self.bodies = []
+
+	def init( self, status:int ):
 		self.status = status
-		self.body:Optional[Body] = None
+		return self
+
+	def reset( self ):
+		self.bodies.clear()
 
 	def setCookie( self, name:str, value:Any ):
 		pass
@@ -193,12 +212,12 @@ class Response(WithHeaders, WithCookies):
 	def setHeader( self, name:str, value:Any ):
 		pass
 
-	def setContent( self, content:Union[str,bytes], contentType:Optional[Union[str,bytes]]=None) -> 'HTTPResponse':
+	def setContent( self, content:Union[str,bytes], contentType:Optional[Union[str,bytes]]=None) -> 'Response':
 		if isinstance(content, str):
 			# SEE: https://www.w3.org/International/articles/http-charset/index
-			self.body = ValueBody(encode(content), b"text/plain; charset=utf-8")
+			self.bodies.append((encode(content), b"text/plain; charset=utf-8"))
 		elif isinstance(content, bytes):
-			self.body = ValueBody(content, encode(contentType or b"application/binary"))
+			self.bodies.append((content, encode(contentType or b"application/binary")))
 		else:
 			raise ValueError("Content type not supported, choose 'str' or 'bytes': {content}")
 		return self
@@ -206,11 +225,5 @@ class Response(WithHeaders, WithCookies):
 	def read( self ) -> Iterable[Union[bytes,None]]:
 		yield None
 		pass
-
-class HTTPResponse(Response):
-	pass
-
-class WebSocketResponse(Response):
-	pass
 
 # EOF

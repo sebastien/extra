@@ -1,4 +1,4 @@
-from ..protocol import Request, Response, StreamBody, FileBody, IterableBody, ValueBody
+from ..protocol import Request, Response
 from ..protocol.http import HTTPRequest, HTTPResponse
 from ..model import Service, Application
 from typing import Dict,Callable,Any,Coroutine,Union,cast
@@ -16,7 +16,7 @@ class ASGIBridge:
 		protocol   = scope["type"]
 		if protocol == "http" or protocol == "https":
 			# TODO: We should populate the request with the scope
-			return HTTPRequest()
+			return HTTPRequest.Create()
 		else:
 			raise ValueError(f"Unsupported protocol: {protocol}")
 
@@ -29,20 +29,19 @@ class ASGIBridge:
 			"headers": headers
 		})
 		# Now we take care of the body
-		body = response.body
-		if body == None:
+		bodies = response.bodies
+		if not bodies:
 			await send({
 				"type":   "http.response.body",
 				"status": response.status,
-			})
-		elif isinstance(body, ValueBody):
-			await send({
-				"type":   "http.response.body",
-				"status": response.status,
-				"body":   response.body.value
 			})
 		else:
-			raise ValueError("Unsupported body type")
+			for value,contentType in bodies:
+				await send({
+					"type":   "http.response.body",
+					"status": response.status,
+					"body":   value,
+				})
 
 def serve(*services:Union[Application,Service]):
 	bridge = ASGIBridge()
@@ -70,6 +69,8 @@ def serve(*services:Union[Application,Service]):
 			response = app.onRouteNotFound(request)
 		# Application processes response
 		await bridge.write(scope, send, response)
+		response.recycle()
+		request.recycle()
 	return application
 
 # EOF
