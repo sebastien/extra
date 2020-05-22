@@ -1,4 +1,5 @@
-from typing import Optional,Callable,Dict,Tuple,Any,Iterable,List,Pattern,Match
+from typing import Optional,Callable,Dict,Tuple,Any,Iterable,List,Pattern,Match,Union
+from .protocol import Request, Response
 from .decorators import EXTRA
 import re
 
@@ -67,7 +68,7 @@ class Route:
 		self.text:str = text
 		self.chunks:List[Any] = self.Parse(text)
 		self.params:List[str] = [_[1] for _ in self.chunks if _[0] == "P"]
-		self.handler:Optional[Handler] = None
+		self.handler:Optional[Handler] = handler
 		self._pattern:Optional[str] = None
 		self._regexp:Optional[Pattern] = None
 
@@ -100,6 +101,9 @@ class Route:
 
 	def toRegExp( self ) -> str:
 		return "".join(self.toRegExpChunks())
+
+	def match( self, path:str ) -> Match:
+		return self.regexp.match(path)
 
 	def __repr__( self ) -> str:
 		return f"(Route \"{self.toRegExp()}\" ({' '.join(_ for _ in self.params)}))"
@@ -193,6 +197,9 @@ class Handler:
 		self.priority = priority
 		self.expose = expose
 
+	def __call__( self, request:Request, params ) -> Response:
+		return self.functor(request)
+
 	def __repr__( self ):
 		methods = " ".join(f'({k} "{v}")' for k,v in self.methods)
 		return f"(Handler {self.priority} ({methods}) '{self.functor}' {' :expose' if self.expose else ''})"
@@ -212,6 +219,7 @@ class Dispatcher:
 	def register( self, handler:Handler, prefix:Optional[str]=None ):
 		for method, path in handler.methods:
 			route = Route(prefix + path if prefix else path, handler)
+			print ("REGISTER", handler)
 			self.routes.setdefault(method,[]).append(route)
 			self.isPrepared = False
 
@@ -225,11 +233,11 @@ class Dispatcher:
 		self.isPrepared = True
 		return self
 
-	def match( self, method:str, path:str ) -> Optional[Tuple[Route,Match]]:
+	def match( self, method:str, path:str ) -> Tuple[Optional[Route],Optional[Union[bool,Match]]]:
 		"""Matches a given `method` and `path` with the registered route, returning
 		the matching route and the match information."""
 		if method not in self.routes:
-			return False
+			return (None, False)
 		else:
 			matched_match    = None
 			matched_route    = None
@@ -240,13 +248,13 @@ class Dispatcher:
 			for route in self.routes[method]:
 				if route.priority < matched_priority:
 					continue
-				match = route.regexp.match(path)
+				match = route.match(path)
 				if not match:
 					continue
 				elif route.priority >= matched_priority:
 					matched_match    = match
 					matched_route    = route
 					matched_priority = route.priority
-			return (matched_route,matched_match) if matched_match else None
+			return (matched_route,matched_match) if matched_match else (None, None)
 
 # EOF

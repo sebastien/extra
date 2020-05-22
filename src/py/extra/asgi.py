@@ -1,4 +1,4 @@
-from .http import Request, Response
+from .protocol import Request, Response, HTTPRequest, HTTPResponse, ValueBody, StreamBody, FileBody, IterableBody
 from .model import Service, Application
 from typing import Dict,Callable,Any,Coroutine,Union,cast
 
@@ -12,25 +12,36 @@ class ASGIBridge:
 	`Response`objects to the ASGI interface."""
 
 	async def read( self, scope:TScope, receive ) -> Request:
-		return Request()
+		protocol   = scope["type"]
+		if protocol == "http" or protocol == "https":
+			# TODO: We should populate the request with the scope
+			return HTTPRequest()
+		else:
+			raise ValueError(f"Unsupported protocol: {protocol}")
 
 	async def write( self, scope:TScope, send, response:Response ):
 		# Sending the start
+		headers = [_ for _ in response.headers]
 		await send({
 			"type": "http.response.start",
 			"status": response.status,
-			"headers": [
-				[b'content-type', self.encode(response.contentType)]
-			]
+			"headers": headers
 		})
-		await send({
-			"type":   "http.response.body",
-			"status": response.status,
-			"body":   b"Hello, world"
-		})
-
-	def encode( self, value:Union[str,bytes] ):
-		return bytes(value, "utf8") if isinstance(value,str) else value
+		# Now we take care of the body
+		body = response.body
+		if body == None:
+			await send({
+				"type":   "http.response.body",
+				"status": response.status,
+			})
+		elif isinstance(body, ValueBody):
+			await send({
+				"type":   "http.response.body",
+				"status": response.status,
+				"body":   response.body.value
+			})
+		else:
+			raise ValueError("Unsupported body type")
 
 def serve(*services:Union[Application,Service]):
 	bridge = ASGIBridge()
@@ -46,22 +57,18 @@ def serve(*services:Union[Application,Service]):
 	app.start()
 	# Ands we're ready for the main loop
 	async def application(scope:TScope, receive, send):
-		type   = scope["type"]
-		if type == "http" or type == "https":
-			method = scope["method"]
-			path   = scope["path"]
-			match  = app.dispatcher.match(method, path)
-			print (app.dispatcher.routes)
-			if match:
-				print ("MATCHED", match)
-			else:
-				print ("NO MATCH")
-			# request = await bridge.read(scope, receive)
-			# Application processes response
-			response = Response(200, "text/plain")
-			await bridge.write(scope, send, response)
+		request = await bridge.read(scope, receive)
+		method  = scope["method"]
+		path    = scope["path"]
+		route, params = app.dispatcher.match(method, path)
+		if route:
+			handler = route.handler
+			assert handler, f"Route has no handler defined: {route}"
+			response = handler(request, params)
 		else:
-			raise ValueError(f"ASGI scope type not supported: {type}")
+			response = app.onRouteNotFound(request)
+		# Application processes response
+		await bridge.write(scope, send, response)
 	return application
 
 # EOF

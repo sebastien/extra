@@ -69,7 +69,8 @@ def expose( priority=0, compress=False, contentType=None, raw=False, **methods )
 		v = function.__dict__.setdefault(EXTRA.ON,   [])
 		function.__dict__.setdefault(EXTRA.ON_PRIORITY, int(priority))
 		for http_method, url in list(methods.items()):
-			if type(url) not in (list, tuple): url = (url,)
+			if type(url) not in (list, tuple):
+				url = (url,)
 			for _ in url:
 				if http_method == "json":
 					function.__dict__[EXTRA.EXPOSE_JSON] = _

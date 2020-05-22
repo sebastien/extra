@@ -1,5 +1,7 @@
 from .routing import Handler, Dispatcher
+from .protocol import Request
 from typing import Optional,Tuple,Iterable,Callable,List
+import sys, importlib
 
 # -----------------------------------------------------------------------------
 #
@@ -10,6 +12,13 @@ from typing import Optional,Tuple,Iterable,Callable,List
 class Service:
 	PREFIX = ""
 	NO_HANDLER = ["name", "app", "prefix", "_handlers", "isMounted", "handlers", "start", "stop"]
+
+	@classmethod
+	def ReloadFrom( cls, service:'Service' ) -> 'Service':
+		res = cls(name=service.name)
+		res.app = res.app
+		# TODO: What about the prefix?
+		return res
 
 	def __init__( self, name:Optional[str]=None ):
 		self.name:str = name or self.__class__.__name__
@@ -22,7 +31,6 @@ class Service:
 
 	def stop( self ):
 		pass
-
 
 	@property
 	def isMounted( self ) -> bool:
@@ -56,6 +64,26 @@ class Application:
 		self.dispatcher = Dispatcher()
 		self.services = []
 
+	def reload( self ) -> 'Application':
+		self.stop()
+		# FIXME: We need to restore the service state/configuration
+		services = []
+		reloaded = []
+		for service in self.services:
+			parent_class = service.__class__
+			parent_class_name = parent_class.__name__
+			parent_module_name = parent_class.__module__
+			parent_module = sys.modules[parent_module_name]
+			if parent_module not in reloaded:
+				reloaded.append(parent_module)
+				parent_module = importlib.reload(parent_module_name)
+			if hasattr(parent_module, parent_class_name):
+				services.append(getattr(parent_module, parent_class_name).ReloadFrom(service))
+			else:
+				raise KeyError(f"Class {parent_class_name} is not defined in module {parent_module_name} anymore.")
+		self.services = services
+		self.start()
+
 	def start( self ):
 		self.dispatcher.prepare()
 		for service in self.services:
@@ -77,12 +105,7 @@ class Application:
 		service.app = self
 		return service
 
-	def match( self, method:str, path:str ):
-		match = self.dispatcher.match(method, path)
-		if match:
-			route, params = match
-			print ("MATCHED", route, params)
-		else:
-			print ("No match")
+	def onRouteNotFound( self, request:Request ):
+		return request.notFound()
 
 # EOF
