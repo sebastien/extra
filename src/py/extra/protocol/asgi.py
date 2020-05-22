@@ -1,5 +1,6 @@
-from .protocol import Request, Response, HTTPRequest, HTTPResponse, ValueBody, StreamBody, FileBody, IterableBody
-from .model import Service, Application
+from ..protocol import Request, Response, StreamBody, FileBody, IterableBody, ValueBody
+from ..protocol.http import HTTPRequest, HTTPResponse
+from ..model import Service, Application
 from typing import Dict,Callable,Any,Coroutine,Union,cast
 
 # SEE: https://asgi.readthedocs.io/en/latest/specs/main.html
