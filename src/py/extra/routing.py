@@ -94,7 +94,7 @@ class Route:
 			if chunk[0] == "T":
 				res.append(chunk[1])
 			elif chunk[0] == "P":
-				res.append(f"({chunk[2][0]})")
+				res.append(f"(?P<{chunk[1]}>{chunk[2][0]})")
 			else:
 				raise ValueError(f"Unsupported chunk type: {chunk}")
 		return res
@@ -102,8 +102,9 @@ class Route:
 	def toRegExp( self ) -> str:
 		return "".join(self.toRegExpChunks())
 
-	def match( self, path:str ) -> Match:
-		return self.regexp.match(path)
+	def match( self, path:str ) -> Optional[Dict[str,str]]:
+		matches = self.regexp.match(path)
+		return dict( (_,matches.group(_)) for _ in self.params) if matches else None
 
 	def __repr__( self ) -> str:
 		return f"(Route \"{self.toRegExp()}\" ({' '.join(_ for _ in self.params)}))"
@@ -197,8 +198,8 @@ class Handler:
 		self.priority = priority
 		self.expose = expose
 
-	def __call__( self, request:Request, params ) -> Response:
-		return self.functor(request)
+	def __call__( self, request:Request, params:Dict[str,Any] ) -> Response:
+		return self.functor(request, **params)
 
 	def __repr__( self ):
 		methods = " ".join(f'({k} "{v}")' for k,v in self.methods)
@@ -249,7 +250,7 @@ class Dispatcher:
 				if route.priority < matched_priority:
 					continue
 				match = route.match(path)
-				if not match:
+				if match is None:
 					continue
 				elif route.priority >= matched_priority:
 					matched_match    = match

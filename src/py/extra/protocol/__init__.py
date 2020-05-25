@@ -4,8 +4,8 @@ from enum import Enum
 
 T = TypeVar('T')
 
-ContentType   = b'Content-Type'
-ContentLength = b'Content-Length'
+ContentType   = b'content-type'
+ContentLength = b'content-length'
 
 def encode( value:Union[str,bytes] ) -> bytes:
 	return bytes(value, "utf8") if isinstance(value,str) else value
@@ -34,50 +34,60 @@ class Flyweight:
 class WithHeaders:
 
 	def __init__( self ):
-		self._headers:Dict[bytes,Any] = {}
+		self._headers:Dict[bytes,List[bytes]] = {}
 
 	@property
-	def userAgent( self ):
-		pass
+	def contentLength( self ) -> int:
+		return int(self.getHeader(ContentType))
 
-	@property
-	def host( self ):
-		pass
-
-	@property
-	def contentLength( self ):
-		pass
+	@contentLength.setter
+	def contentLength( self, length:int ):
+		return self.setHeader(ContentLength, b"%d" % (length))
 
 	@property
 	def contentType( self ) -> bytes:
-		return self._headers.get(ContentType)
+		return self.getHeader(ContentType)
 
 	@contentType.setter
 	def contentType( self, value:Union[str,bytes] ):
-		self._headers[ContentType] = encode(value)
+		return self.setHeader(ContentType, encode(value))
 
-	@property
-	def range( self ):
-		pass
+	# @property
+	# def userAgent( self ):
+	# 	pass
 
-	@property
-	def clientIP( self ):
-		pass
+	# @property
+	# def range( self ):
+	# 	pass
 
-	@property
-	def clientPort( self ):
-		pass
-
-	@property
-	def compression( self ):
-		pass
+	# @property
+	# def compression( self ):
+	# 	pass
 
 	@property
 	def headers( self ) -> Iterable[Tuple[bytes,bytes]]:
 		return self._headers.items()
 
 	def getHeader( self, name:str  ) -> Any:
-		pass
+		if name in self._headers:
+			count,value = self._headers[name]
+			if count == 1:
+				return value[0]
+			else:
+				return value
+
+	def setHeader( self, name:str, value:Any  ) -> Any:
+		self._headers[name] = [1, [value]]
+		return value
+
+	def addHeader( self, name:str, value:Any  ) -> Any:
+		if name not in self._headers:
+			return self.setHeader(name, value)
+		else:
+			v = self._headers[name]
+			v[0] += 1
+			v[1].append(value)
+			return value
 
 class WithCookies:
 
@@ -101,22 +111,6 @@ class Request(WithHeaders, WithCookies, Flyweight):
 
 	def reset(self):
 		self._headers.clear()
-
-	@property
-	def method( self ):
-		pass
-
-	@property
-	def path( self ):
-		pass
-
-	@property
-	def query( self ):
-		pass
-
-	@property
-	def params( self ):
-		pass
 
 	@property
 	def uri( self ):

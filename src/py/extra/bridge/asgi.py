@@ -12,15 +12,47 @@ class ASGIBridge:
 	"""Creates `Request` object from the ASGI interface, and writes out
 	`Response`objects to the ASGI interface."""
 
-	async def read( self, scope:TScope, receive ) -> Request:
+	async def read( self, scope:TScope, receive, app:Application ) -> Request:
 		protocol   = scope["type"]
 		if protocol == "http" or protocol == "https":
+			# SEE: https://asgi.readthedocs.io/en/latest/specs/www.html
 			# TODO: We should populate the request with the scope
-			return HTTPRequest.Create()
+			request =  HTTPRequest.Create().init()
+			# NOTE: Not sure how it stacks against scope["scheme"]
+			# We copy the attributes here
+			request.protocol         = protocol
+			request.version          = scope["http_version"]
+			request.method           = scope["method"]
+			request.path             = scope["path"]
+			request.query            = scope["query_string"]
+			# client: It's an Iterable[str,int]
+			# server: It's an Iterable[str,int]
+			for name, value in scope["headers"]:
+				request.setHeader(name, value)
+			return request
+		elif protocol == "lifespan":
+			# SEE: https://asgi.readthedocs.io/en/latest/specs/lifespan.html
+			# It's not ideal to have it here
+			while True:
+				# FIXME: This is probably not idea
+				message = await receive()
+				if message["type"] == "lifespan.startup":
+					# TODO: Handle startup
+					await send({"type": "lifespan.startup.complete"})
+				elif message["type"] == "lifespan.shutdown":
+					# TODO: Handle shutdown
+					await send({"type": "lifespan.shutdown.complete"})
+					return
 		else:
 			raise ValueError(f"Unsupported protocol: {protocol}")
 
 	async def write( self, scope:TScope, send, response:Response ):
+		# FROM: https://asgi.readthedocs.io/en/latest/specs/www.html
+		# Servers are responsible for handling inbound and outbound chunked
+		# transfer encodings. A request with a chunked encoded body should be
+		# automatically de-chunked by the server and presented to the
+		# application as plain body bytes; a response that is given to the
+		# server with no Content-Length may be chunked as the server sees fit.
 		# Sending the start
 		headers = [_ for _ in response.headers]
 		await send({
@@ -43,7 +75,9 @@ class ASGIBridge:
 					"body":   value,
 				})
 
-def serve(*services:Union[Application,Service]):
+def serve(*services:Union[Application,Service]) -> Callable:
+	"""Creates an ASGI bridge, mounts the services into an application
+	and returns the ASGI application handler."""
 	bridge = ASGIBridge()
 	# This extracts and instanciates the services and applications that
 	# are given here.
@@ -57,7 +91,7 @@ def serve(*services:Union[Application,Service]):
 	app.start()
 	# Ands we're ready for the main loop
 	async def application(scope:TScope, receive, send):
-		request = await bridge.read(scope, receive)
+		request = await bridge.read(scope, receive, app)
 		method  = scope["method"]
 		path    = scope["path"]
 		route, params = app.dispatcher.match(method, path)
