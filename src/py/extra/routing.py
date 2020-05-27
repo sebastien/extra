@@ -1,7 +1,8 @@
 from typing import Optional,Callable,Dict,Tuple,Any,Iterable,List,Pattern,Match,Union
 from .protocol import Request, Response
 from .decorators import EXTRA
-import re
+# TODO: Support re2, orjson
+import re, json
 
 # -----------------------------------------------------------------------------
 #
@@ -199,7 +200,12 @@ class Handler:
 		self.expose = expose
 
 	def __call__( self, request:Request, params:Dict[str,Any] ) -> Response:
-		return self.functor(request, **params)
+		if self.expose:
+			value:Any = self.functor(**params)
+			# FIXME: We might want to get an output stream to write, in that case
+			return request.respond(json.dumps(value))
+		else:
+			return self.functor(request, **params)
 
 	def __repr__( self ):
 		methods = " ".join(f'({k} "{v}")' for k,v in self.methods)
@@ -256,6 +262,6 @@ class Dispatcher:
 					matched_match    = match
 					matched_route    = route
 					matched_priority = route.priority
-			return (matched_route,matched_match) if matched_match else (None, None)
+			return (matched_route,matched_match) if matched_match is not None else (None, None)
 
 # EOF

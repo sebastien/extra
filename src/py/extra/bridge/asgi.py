@@ -46,7 +46,7 @@ class ASGIBridge:
 		else:
 			raise ValueError(f"Unsupported protocol: {protocol}")
 
-	async def write( self, scope:TScope, send, response:Response ):
+	async def write( self, scope:TScope, send, response:Union[Coroutine,Response] ):
 		# FROM: https://asgi.readthedocs.io/en/latest/specs/www.html
 		# Servers are responsible for handling inbound and outbound chunked
 		# transfer encodings. A request with a chunked encoded body should be
@@ -54,6 +54,9 @@ class ASGIBridge:
 		# application as plain body bytes; a response that is given to the
 		# server with no Content-Length may be chunked as the server sees fit.
 		# Sending the start
+		if isinstance(response, Coroutine):
+			response = await response
+		assert isinstance(response, Response)
 		headers = [_ for _ in response.headers]
 		await send({
 			"type": "http.response.start",

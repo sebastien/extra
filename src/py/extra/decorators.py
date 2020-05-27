@@ -71,11 +71,12 @@ def expose( priority=0, compress=False, contentType=None, raw=False, **methods )
 		for http_method, url in list(methods.items()):
 			if type(url) not in (list, tuple):
 				url = (url,)
-			for _ in url:
-				if http_method == "json":
-					function.__dict__[EXTRA.EXPOSE_JSON] = _
-				else:
-					v.append((http_method, _))
+			for method in http_method.upper().split("_"):
+				for _ in url:
+					if method == "JSON":
+						function.__dict__[EXTRA.EXPOSE_JSON] = _
+					else:
+						v.append((method, _))
 		return function
 	return decorator
 

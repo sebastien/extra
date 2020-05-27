@@ -1,5 +1,6 @@
 from .routing import Route
 from .protocol import Request, Response
+from .protocol.http import HTTPRequest, HTTPResponse
 from .model import Service,Application
 from .decorators import on, expose
 from .bridge.asgi import serve as serve_asgi

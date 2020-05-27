@@ -4,9 +4,6 @@ from enum import Enum
 
 T = TypeVar('T')
 
-ContentType   = b'content-type'
-ContentLength = b'content-length'
-
 def encode( value:Union[str,bytes] ) -> bytes:
 	return bytes(value, "utf8") if isinstance(value,str) else value
 
@@ -35,35 +32,6 @@ class WithHeaders:
 
 	def __init__( self ):
 		self._headers:Dict[bytes,List[bytes]] = {}
-
-	@property
-	def contentLength( self ) -> int:
-		return int(self.getHeader(ContentType))
-
-	@contentLength.setter
-	def contentLength( self, length:int ):
-		return self.setHeader(ContentLength, b"%d" % (length))
-
-	@property
-	def contentType( self ) -> bytes:
-		return self.getHeader(ContentType)
-
-	@contentType.setter
-	def contentType( self, value:Union[str,bytes] ):
-		return self.setHeader(ContentType, encode(value))
-
-	# @property
-	# def userAgent( self ):
-	# 	pass
-
-	# @property
-	# def range( self ):
-	# 	pass
-
-	# @property
-	# def compression( self ):
-	# 	pass
-
 	@property
 	def headers( self ) -> Iterable[Tuple[bytes,bytes]]:
 		return self._headers.items()
@@ -213,7 +181,7 @@ class Response(WithHeaders, WithCookies, Flyweight):
 		elif isinstance(content, bytes):
 			self.bodies.append((content, encode(contentType or b"application/binary")))
 		else:
-			raise ValueError("Content type not supported, choose 'str' or 'bytes': {content}")
+			raise ValueError(f"Content type not supported, choose 'str' or 'bytes': {content}")
 		return self
 
 	def read( self ) -> Iterable[Union[bytes,None]]:
