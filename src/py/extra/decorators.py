@@ -40,10 +40,11 @@ def on( priority=0, **methods ):
 	def decorator(function):
 		v = function.__dict__.setdefault(EXTRA.ON, [])
 		function.__dict__.setdefault(EXTRA.ON_PRIORITY, priority)
-		for http_method, url in list(methods.items()):
+		for http_methods, url in list(methods.items()):
 			if type(url) not in (list, tuple): url = (url,)
-			for _ in url:
-				v.append((http_method, _))
+			for http_method in http_methods.upper().split("_"):
+				for _ in url:
+					v.append((http_method, _))
 		return function
 	return decorator
 

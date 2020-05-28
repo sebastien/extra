@@ -8,4 +8,5 @@ class HelloWorld(Service):
 
 # NOTE: You can start this with `uvicorn helloworld:app`
 app = serve(HelloWorld)
+
 # EOF

@@ -1,0 +1,23 @@
+Ways to improve:
+
+- No body object
+- Flyweight requests/responses
+
+Useful to get the flamegraph
+
+```
+py-spy record -o profile.svg -- python myprogram.py
+```
+
+Useful to spot where the hotpoints are in the source:
+
+```
+scalene bench.py
+```
+
+Most informative:
+
+```
+vprof -c cph bench.py --output-file profile.json
+vprof -i profile.json
+```

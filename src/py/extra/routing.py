@@ -256,6 +256,7 @@ class Dispatcher:
 				if route.priority < matched_priority:
 					continue
 				match = route.match(path)
+				print ("ROUTE", method, path, ":", route, "=", match)
 				if match is None:
 					continue
 				elif route.priority >= matched_priority:

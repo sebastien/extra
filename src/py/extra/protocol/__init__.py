@@ -1,5 +1,6 @@
 # TODO: Use Hypercorn, uvicorn
 from typing import Any,Optional,Iterable,Any,Tuple,Union,Dict,TypeVar,Generic,List,NamedTuple
+from extra.util import Flyweight
 from enum import Enum
 
 T = TypeVar('T')
@@ -7,36 +8,18 @@ T = TypeVar('T')
 def encode( value:Union[str,bytes] ) -> bytes:
 	return bytes(value, "utf8") if isinstance(value,str) else value
 
-class Flyweight:
-
-	@classmethod
-	def Recycle( cls, value ):
-		cls.POOL.append(value)
-
-	@classmethod
-	def Create( cls ):
-		return cls.POOL.pop() if cls.POOL else cls()
-
-	def init( self ):
-		return self
-
-	def reset( self ):
-		return self
-
-	def recycle( self ):
-		self.reset()
-		self.__class__.POOL.append(self)
-
-# NOTE: We use byte strings here directly to
-class WithHeaders:
+class Headers:
 
 	def __init__( self ):
 		self._headers:Dict[bytes,List[bytes]] = {}
-	@property
-	def headers( self ) -> Iterable[Tuple[bytes,bytes]]:
+
+	def reset( self ):
+		self._headers.clear()
+
+	def items( self ) -> Iterable[Tuple[bytes,bytes]]:
 		return self._headers.items()
 
-	def getHeader( self, name:str  ) -> Any:
+	def get( self, name:str  ) -> Any:
 		if name in self._headers:
 			count,value = self._headers[name]
 			if count == 1:
@@ -44,41 +27,25 @@ class WithHeaders:
 			else:
 				return value
 
-	def setHeader( self, name:str, value:Any  ) -> Any:
+	def set( self, name:str, value:Any  ) -> Any:
 		self._headers[name] = [1, [value]]
 		return value
 
-	def addHeader( self, name:str, value:Any  ) -> Any:
+	def add( self, name:str, value:Any  ) -> Any:
 		if name not in self._headers:
-			return self.setHeader(name, value)
+			return self.set(name, value)
 		else:
 			v = self._headers[name]
 			v[0] += 1
 			v[1].append(value)
 			return value
 
-class WithCookies:
-
-	# @group Cookies
-
-	@property
-	def cookies( self ):
-		pass
-
-	def getCookie( self, name:str  ) -> Any:
-		pass
-
-class Request(WithHeaders, WithCookies, Flyweight):
+class Request(Flyweight):
 
 	# @group Request attributes
 
 	def __init__( self ):
-		WithHeaders.__init__( self )
-		WithCookies.__init__( self )
 		Flyweight.__init__( self )
-
-	def reset(self):
-		self._headers.clear()
 
 	@property
 	def uri( self ):
@@ -148,15 +115,12 @@ class Request(WithHeaders, WithCookies, Flyweight):
 	def fail( self ):
 		pass
 
-
 BodyType = Enum("BodyType", "none value iterator")
 Body     = NamedTuple("Body", [("type", BodyType), ("content", Union[bytes]), ("contentType", bytes)])
 
-class Response(WithHeaders, WithCookies, Flyweight):
+class Response(Flyweight):
 
 	def __init__( self ):
-		WithHeaders.__init__( self )
-		WithCookies.__init__( self )
 		Flyweight.__init__( self )
 		self.status = -1
 		self.bodies = []

@@ -1,0 +1,2 @@
+-   list: list all the routes
+-   r[equest]=get,post,update: runs a route from the command line, without starting a server

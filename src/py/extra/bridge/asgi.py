@@ -13,11 +13,19 @@ class ASGIBridge:
 	`Response`objects to the ASGI interface."""
 
 	async def read( self, scope:TScope, receive, app:Application ) -> Request:
-		protocol   = scope["type"]
+		protocol = scope["type"]
 		if protocol == "http" or protocol == "https":
+			async def reader( size:int=-1, receive=receive ):
+				message = await receive()
+				if message["type"] != "http.request":
+					print (f"ERROR: Unsupported message type {message['type']}")
+					return (None, None)
+				else:
+					return (message["more_body"], message["body"])
+
 			# SEE: https://asgi.readthedocs.io/en/latest/specs/www.html
 			# TODO: We should populate the request with the scope
-			request =  HTTPRequest.Create().init()
+			request =  HTTPRequest.Create().init(reader)
 			# NOTE: Not sure how it stacks against scope["scheme"]
 			# We copy the attributes here
 			request.protocol         = protocol
@@ -30,6 +38,7 @@ class ASGIBridge:
 			for name, value in scope["headers"]:
 				request.setHeader(name, value)
 			return request
+
 		elif protocol == "lifespan":
 			# SEE: https://asgi.readthedocs.io/en/latest/specs/lifespan.html
 			# It's not ideal to have it here
@@ -55,9 +64,10 @@ class ASGIBridge:
 		# server with no Content-Length may be chunked as the server sees fit.
 		# Sending the start
 		if isinstance(response, Coroutine):
+			print ("RESPONSE IS A CORO SO WE AWAIT IT")
 			response = await response
 		assert isinstance(response, Response)
-		headers = [_ for _ in response.headers]
+		headers = [_ for _ in response.headers.items()]
 		await send({
 			"type": "http.response.start",
 			"status": response.status,
