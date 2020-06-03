@@ -28,6 +28,6 @@ class UploadService(Service):
 			f.write(file.read())
 		return request.redirect(b"/")
 
-# NOTE: You can start this with `uvicorn helloworld:app`
+# NOTE: You can start this with `uvicorn upload:app`
 app = serve(UploadService)
 # EOF

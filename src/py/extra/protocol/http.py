@@ -1,13 +1,14 @@
-from ..protocol import Request, Response, Headers, Body
+from ..protocol import Request, Response, Headers, encode
 from typing import List,Any,Optional,Union,BinaryIO,Dict,Iterable,Tuple
 from tempfile import SpooledTemporaryFile
 from extra.util import unquote, Flyweight
 from urllib.parse import parse_qs
 # TODO: Suport faster JSON libs
-import json
+import json, io, tempfile
 
 # 8Mib spool size
-SPOOL_MAX_SIZE = 8 * 1024 * 1024
+SPOOL_MAX_SIZE  = 8 * 1024 * 1024
+BUFFER_MAX_SIZE = 1 * 1024 * 1024
 
 Range = Tuple[int,int]
 ContentType        = b'content-type'
@@ -49,7 +50,7 @@ class HTTPRequest(Request, WithHeaders):
 		self.query:Optional[str]   = None
 		self.ip:Optional[str]     = None
 		self.port:Optional[int]   = None
-		self._bodies:List[Body] = []
+		self._body:Optional[Body] = None
 		self._reader = None
 		self._readCount = 0
 		self._hasMore = True
@@ -61,13 +62,13 @@ class HTTPRequest(Request, WithHeaders):
 		self._reader = reader
 		self._readCount = 0
 		self._hasMore = True
+		self._body = None
 		return self
 
 	def reset( self ):
 		super().reset()
 		WithHeaders.reset(self)
-		while self._bodies:
-			self._bodies.pop().recycle()
+		self._body = self._body.reset() if self._body else None
 		return self
 
 	# @group(Loading)
@@ -82,14 +83,29 @@ class HTTPRequest(Request, WithHeaders):
 		else:
 			return None
 
-
-	def load( self ):
+	async def load( self ):
 		"""Loads all the data and returns a list of bodies."""
+		body = self.body
+		while True:
+			chunk = await self.read()
+			if chunk is not None:
+				body.feed(chunk)
+			else:
+				break
+		try:
+			content_length = int(self.contentLength) if self.contentLength else None
+		except ValueError as e:
+			# There might be a wrong encoding, in which case the request is
+			# probably malformed.
+			content_length = None
+		body.setLoaded(self.contentType, content_length)
 		return self
 
 	@property
-	def body( self ) -> Optional[Body]:
-		return self.body[0] if self.body else 0
+	def body( self ) -> 'Body':
+		if not self._body:
+			self._body = Body.Create()
+		return self._body
 
 	# @group(Headers)
 	@property
@@ -155,29 +171,85 @@ class HTTPResponse(Response, WithHeaders):
 # -----------------------------------------------------------------------------
 
 # @note We need to keep this separate
-class Body:
+class Body(Flyweight):
 
-	def ___init__( self, isShort=False ):
-		self.spool = io.IOString() if isShort else tempfile.SpooledTemporaryFile(max_size=cls.DATA_SPOOL_SIZE)
+	POOL:List['Body'] = []
+	UNDEFINED = "undefined"
+	RAW       = "raw"
+	MULTIPART = "multipart"
+	JSON      = "json"
+
+	def __init__( self, isShort=False ):
+		self.spool:Optional[Union[io.BytesIO, tempfile.SpooledTemporaryFile]] = None
 		self.isShort = isShort
+		self.isLoaded = False
+		self.contentType:Optional[bytes] = None
+		self.contentLength:Optional[bytes] = None
+		#self.next:Optional[Body] = None
+		self._type = Body.UNDEFINED
+		self._raw:Optional[bytes] = None
+		self._value:Any = None
 
-	def cleanup( self ):
-		if self.isShort:
-			# Cleanup the string IO
-			pass
-		else:
-			# TODO: Cleanup the spool file
-			pass
+	@property
+	def raw( self ) -> bytes:
+		# We don't need the body to be fully loaded
+		if self._raw == None:
+			self.spool.seek(0)
+			self._raw = self.spool.read()
+		return self._raw
 
+	@property
+	def value( self ) -> Any:
+		if not self.isLoaded:
+			raise Exception("Body is not loaded, 'await request.load()' required")
+		if not self._value:
+			self.process()
+		return self._value
+
+	def reset( self ):
+		if isinstance(self.spool, io.BytesIO):
+			pass
+		elif isinstance(self.spool, tempfile.SpooledTemporaryFile):
+			pass
+		self.spool    = None
+		self.isLoaded = False
+		self.contentType = None
+		self.contentLength = None
+		self._raw = None
+		self._value = None
+		return self
+
+	def setLoaded( self, contentType:bytes, contentLength:Optional[int] ):
+		"""Sets the body as loaded. It is then ready to be decoded and its
+		value field will become accessible."""
+		self.contentType = contentType
+		self.contentLength = contentLength
+		self.isLoaded = True
+		return self
 
 	def feed( self, data:bytes ):
 		"""Feeds data to the body's spool"""
-		spool.write(data)
+		# We lazily create the spool
+		if not self.spool:
+			content_length = self.contentLength
+			is_short = content_length and content_length <= BUFFER_MAX_SIZE
+			self.spool = io.BytesIO() if is_short else tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_SIZE)
+		self.spool.write(data)
+		# We invalidate the cache
+		self._raw = None
+		self._value = None
 		return self
 
-	def process( self, contentType:bytes ):
-
-
+	def process( self ):
+		parsed_content = Parse.HeaderValue(self.contentType)
+		content_type = parsed_content.get(b"")
+		print ("PARSE CONTENT", parsed_content)
+		if content_type == b"multipart/form-data":
+			self.spool.seek(0)
+			for headers, data_file in Decode.Multipart(self.spool, parsed_content[b'boundary']):
+				print (headers, data_file)
+		else:
+			return None
 
 # -----------------------------------------------------------------------------
 #
@@ -245,12 +317,13 @@ class Parse:
 			else:
 				name_start, name_end = offset, value_separator
 				value_start, value_end = value_separator + 1, field_end
-			# We strip everything
-			while name_start < name_end and name_start == b' ': name_start += 1
-			while name_start < name_end and name_end == b' ': name_end -= 1
-			while value_start < value_end and value_start == b' ': value_start += 1
-			while value_start < value_end and value_end == b' ': value_end -= 1
+			# We strip everything -- 32 == space in ASCII
+			while name_start  < name_end  and data[name_start]  == 32: name_start  += 1
+			while name_start  < name_end  and data[name_end]    == 32: name_end    -= 1
+			while value_start < value_end and data[value_start] == 32: value_start += 1
+			while value_start < value_end and data[value_end]   == 32: value_end   -= 1
 			yield name_start, name_end, value_start, value_end
+			offset = field_end + 1
 
 	@classmethod
 	def HeaderValue( cls, data:bytes, start:int=0, end:int=-1 ) -> Dict[bytes,bytes]:
@@ -265,13 +338,12 @@ class Parse:
 class Decode:
 	"""A collection of functions to process form data."""
 
-	DATA_SPOOL_SIZE = 64 * 1024
 
 	# NOTE: We encountered some problems with the `email` module in Python 3.4,
 	# which lead to writing these functions.
 	# http://stackoverflow.com/questions/4526273/what-does-enctype-multipart-form-data-mean
 	@classmethod
-	async def MultipartChunks( cls, stream:BinaryIO, boundary:bytes, bufferSize=1024*1024 ) -> Iterable[Tuple[str,Any]]:
+	def MultipartChunks( cls, stream:BinaryIO, boundary:bytes, bufferSize=1024*1024 ) -> Iterable[Tuple[str,Any]]:
 		"""Iterates on a multipart form data file with the given `boundary`, reading `bufferSize` bytes
 		for each iteration. This will yield tuples matching what was parsed, like so:
 
@@ -300,7 +372,7 @@ class Decode:
 			# maximum bufferSize bytes per iteration. This ensure that if
 			# the read stop somewhere within a boundary we'll stil be able
 			# to find it at the next iteration.
-			chunk           = await stream.read(read_size)
+			chunk           = stream.read(read_size)
 			chunk_read_size = len(chunk)
 			chunk           = rest + chunk
 			# If state=="b" it means we've found a boundary at the previous iteration
@@ -330,78 +402,79 @@ class Decode:
 			has_more = len(chunk) > 0 or len(chunk) == read_size
 
 	@classmethod
-	async def Multipart( cls, stream:BinaryIO, boundary:bytes, bufferSize=64000 ) -> Iterable[Tuple[Headers,bytes]]:
+	def Multipart( cls, stream:BinaryIO, boundary:bytes, bufferSize=64000 ) -> Iterable[Tuple[Headers,bytes]]:
 		"""Decodes the given multipart data, yielding `(meta, data)`
 		couples, where meta is a parsed dict of headers and data
 		is a file-like object."""
 		is_new       = False
 		spool:Optional[SpooledTemporaryFile] = None
 		headers:Optional[Headers] = None
-		for state, data in await Decode.MultipartChunks(stream, boundary):
+		for state, data in Decode.MultipartChunks(stream, boundary):
 			if state == "b":
 				# We encounter the boundary at the very beginning, or
 				# inbetween elements. If we don't have a daa
-				if data_file:
+				if spool:
 					# There might be 2 bytes of data, which will result in
 					# meta being None
 					# TODO: Not sure when/why this happens, should have
 					# a test case.
 					if headers is None:
-						data_file.close()
+						spool.close()
 					else:
-						data_file.seek(0)
-						yield (headers, data_file)
+						spool.seek(0)
+						yield (headers, spool)
 				is_new    = True
-				data_file = None
+				spool = None
 				headers      = None
 			elif state == "h":
 				# The header comes next
 				assert is_new
 				is_new = False
 				if data:
+					print ("HEADERS", data)
 					headers = Headers.FromItems(data.items())
 				else:
-					meta = None
+					headers = None
 			elif state == "d":
 				assert not is_new
-				if not data_file:
-					data_file = tempfile.SpooledTemporaryFile(max_size=cls.DATA_SPOOL_SIZE)
-				data_file.write(data)
+				if not spool:
+					spool = tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_SIZE)
+				spool.write(data)
 			else:
 				raise Exception("State not recognized: {0}".format(state))
-		if data_file:
-			data_file.seek(0)
-			yield (meta, data_file)
+		if spool:
+			spool.seek(0)
+			yield (headers, spool)
 
-	@classmethod
-	def Multipart( self, stream:BinaryIO ):
-		# We're using the FormData
-		# FIXME: This assumes headers are Camel-Case
-		for meta, data in FormData.DecodeMultipart(dataFile, content_type):
-			# There is sometimes leading and trailing data (not sure
-			# exaclty why, but try the UploadModule example) to see
-			# with sample payloads.
-			if meta is None:
-				continue
-			disposition = meta["Content-Disposition"]
-			# We expect to have a least one of these
-			name = disposition.get("name") or disposition.get("filename") or meta["Content-Description"]
-			if name[0] == name[-1] and name[0] in "\"'":
-				name = name[1:-1]
-			if "filename" in disposition:
-				# NOTE: This stores the whole data in memory, we don't want
-				# that.
-				new_file= File(
-					# FIXME: Shouldnot use read here
-					data        = data.read(),
-					contentType = meta["Content-Type"][""],
-					name        = name,
-					filename    = disposition.get("filename") or meta["Content-Description"]
-				)
-				self.request._addFile (name, new_file)
-				self.request._addParam(name, new_file)
-			else:
-				self.request._addParam(name, name)
+	# @classmethod
+	# def Multipart( self, stream:BinaryIO, boundary:bytes ):
+	# 	# We're using the FormData
+	# 	# FIXME: This assumes headers are Camel-Case
+	# 	for meta, data in FormData.DecodeMultipart(dataFile, boundary):
+	# 		# There is sometimes leading and trailing data (not sure
+	# 		# exaclty why, but try the UploadModule example) to see
+	# 		# with sample payloads.
+	# 		if meta is None:
+	# 			continue
+	# 		disposition = meta["Content-Disposition"]
+	# 		# We expect to have a least one of these
+	# 		name = disposition.get("name") or disposition.get("filename") or meta["Content-Description"]
+	# 		if name[0] == name[-1] and name[0] in "\"'":
+	# 			name = name[1:-1]
+	# 		if "filename" in disposition:
+	# 			# NOTE: This stores the whole data in memory, we don't want
+	# 			# that.
+	# 			new_file= File(
+	# 				# FIXME: Shouldnot use read here
+	# 				data        = data.read(),
+	# 				contentType = meta["Content-Type"][""],
+	# 				name        = name,
+	# 				filename    = disposition.get("filename") or meta["Content-Description"]
+	# 			)
+	# 			self.request._addFile (name, new_file)
+	# 			self.request._addParam(name, new_file)
+	# 		else:
+	# 			self.request._addParam(name, name)
 
 	# NOTE: That's "application/x-www-form-urlencoded"
 	@classmethod

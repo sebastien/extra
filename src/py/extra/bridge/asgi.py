@@ -87,6 +87,8 @@ class ASGIBridge:
 					"status": response.status,
 					"body":   value,
 				})
+		# We recycle the response
+		response.recycle()
 
 def serve(*services:Union[Application,Service]) -> Callable:
 	"""Creates an ASGI bridge, mounts the services into an application
@@ -116,7 +118,6 @@ def serve(*services:Union[Application,Service]) -> Callable:
 			response = app.onRouteNotFound(request)
 		# Application processes response
 		await bridge.write(scope, send, response)
-		response.recycle()
 		request.recycle()
 	return application
 

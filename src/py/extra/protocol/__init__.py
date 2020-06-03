@@ -10,6 +10,13 @@ def encode( value:Union[str,bytes] ) -> bytes:
 
 class Headers:
 
+	@classmethod
+	def FromItems( self, items:Iterable[Tuple[bytes,bytes]] ):
+		headers = Headers()
+		for k,v in items:
+			headers._headers[k] = [v]
+		return headers
+
 	def __init__( self ):
 		self._headers:Dict[bytes,List[bytes]] = {}
 
