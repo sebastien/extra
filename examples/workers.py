@@ -1,4 +1,4 @@
-from extra import Service
+from extra import Service, server
 from extra.io import Channel, consume
 import time
 import threading
@@ -37,5 +37,5 @@ class API(Service):
 
 
 # NOTE: You can start this with `uvicorn workers:app`
-app = serve(API)
+app = server(API)
 # EOF

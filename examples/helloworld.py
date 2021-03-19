@@ -1,4 +1,4 @@
-from extra import Service, Request, Response, on, serve
+from extra import Service, Request, Response, on, server
 
 
 class HelloWorld(Service):
@@ -9,6 +9,6 @@ class HelloWorld(Service):
 
 
 # NOTE: You can start this with `uvicorn helloworld:app`
-app = serve(HelloWorld)
+app = server(HelloWorld)
 
 # EOF

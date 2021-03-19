@@ -29,10 +29,10 @@ class Service:
         self.prefix = self.PREFIX
         self._handlers: Optional[Tuple[Handler]] = None
 
-    def start(self):
+    async def start(self):
         pass
 
-    def stop(self):
+    async def stop(self):
         pass
 
     @property
@@ -90,15 +90,15 @@ class Application:
         self.services = services
         self.start()
 
-    def start(self) -> 'Application':
+    async def start(self) -> 'Application':
         self.dispatcher.prepare()
         for service in self.services:
-            service.start()
+            await service.start()
         return self
 
-    def stop(self) -> 'Application':
+    async def stop(self) -> 'Application':
         for service in self.services:
-            service.stop()
+            await service.stop()
         return self
 
     def mount(self, service: Service, prefix: Optional[str] = None):

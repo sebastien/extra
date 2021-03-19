@@ -1,4 +1,4 @@
-from ..protocol import Request, Response, Headers, encode
+from ..protocol import Request, Response, Headers, asBytes
 from typing import List, Any, Optional, Union, BinaryIO, Dict, Iterable, Tuple
 from tempfile import SpooledTemporaryFile
 from extra.util import unquote, Flyweight
@@ -47,10 +47,10 @@ class HTTPRequest(Request, WithHeaders):
     def __init__(self):
         super().__init__()
         WithHeaders.__init__(self)
-        self.protocol = "http"
-        self.protocolVersion = "1.0"
-        self.method = "GET"
-        self.path = ""
+        self.protocol: Optional[str] = None
+        self.protocolVersion: Optional[str] = None
+        self.method: Optional[str] = None
+        self.path: Optional[str] = None
         self.query: Optional[str] = None
         self.ip: Optional[str] = None
         self.port: Optional[int] = None
@@ -58,6 +58,10 @@ class HTTPRequest(Request, WithHeaders):
         self._reader = None
         self._readCount = 0
         self._hasMore = True
+
+    @property
+    def isInitialized(self):
+        return self.method != None and self.path != None
 
     # @group(Flyweight)
 
@@ -126,7 +130,7 @@ class HTTPRequest(Request, WithHeaders):
         return self.headers.get(ContentType)
 
     def setContentType(self, value: Union[str, bytes]):
-        self.headers.set(ContentType, encode(value))
+        self.headers.set(ContentType, asBytes(value))
         return self
 
     def setHeader(self, name: Union[str, bytes], value: Union[str, bytes]):
@@ -269,6 +273,7 @@ class Body(Flyweight):
 # -----------------------------------------------------------------------------
 
 
+# TODO: Should merge in the util.http stuff as well
 class Parse:
     """A collection of parsing functions used to extract data from HTTP
     binary payloads."""
@@ -308,7 +313,7 @@ class Parse:
 
     @classmethod
     def HeaderValueOffsets(cls, data: bytes, start: int = 0, end: int = -1) -> Iterable[Tuple[int, int, int, int]]:
-        """Parses a header value and returns an iteartor of offsets for name and value
+        """Parses a header value and returns an iterator of offsets for name and value
         in the `data`.
 
         `multipart/mixed; boundary=inner` will

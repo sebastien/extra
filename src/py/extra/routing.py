@@ -1,6 +1,7 @@
 from typing import Optional, Callable, Dict, Tuple, Any, Iterable, List, Pattern, Match, Union
 from .protocol import Request, Response
 from .decorators import EXTRA
+from .util.logging import info
 # TODO: Support re2, orjson
 import re
 import json
@@ -13,6 +14,9 @@ import json
 
 
 class Route:
+    """Parses a route where template expressions are like `{name}` or
+    `{name:type}`. Routes can have priorities and be assigned handlers,
+    they are then registered in the dispatcher to match requests."""
 
     RE_TEMPLATE = re.compile(r"\{([\w][_\w\d]*)(:([^}]+))?\}")
     RE_SPECIAL = re.compile(r"/\+\*\-\:")
@@ -198,19 +202,24 @@ class Handler:
             priority=getattr(value, EXTRA.ON_PRIORITY),
             expose=getattr(value, EXTRA.EXPOSE) if hasattr(
                 value, EXTRA.EXPOSE) else None,
+            contentType=getattr(value, EXTRA.EXPOSE_CONTENT_TYPE) if hasattr(
+                value, EXTRA.EXPOSE_CONTENT_TYPE) else None,
         ) if cls.Has(value) else None
 
-    def __init__(self, functor: Callable, methods: List[str], priority: int = 0, expose: bool = False):
+    def __init__(self, functor: Callable, methods: List[str], priority: int = 0, expose: bool = False, contentType=None):
         self.functor = functor
         self.methods = methods
         self.priority = priority
         self.expose = expose
+        self.contentType = bytes(contentType, "utf8") if isinstance(
+            contentType, str) else contentType
 
     def __call__(self, request: Request, params: Dict[str, Any]) -> Response:
         if self.expose:
             value: Any = self.functor(**params)
-            # FIXME: We might want to get an output stream to write, in that case
-            return request.respond(json.dumps(value))
+            # The `respond` method will take care of handling the different
+            # types of responses there.
+            return request.respond(value, self.contentType or "application/json")
         else:
             return self.functor(request, **params)
 
@@ -236,12 +245,13 @@ class Dispatcher:
     def register(self, handler: Handler, prefix: Optional[str] = None):
         for method, path in handler.methods:
             route = Route(prefix + path if prefix else path, handler)
+            info("routing", "Registered", route)
             self.routes.setdefault(method, []).append(route)
             self.isPrepared = False
         return self
 
     def prepare(self):
-        """Prepares the dispatcher, which optimised the prefix tree for faster matching."""
+        """Prepares the dispatcher, which optimizes the prefix tree for faster matching."""
         res = {}
         for method, routes in self.routes.items():
             res[method] = sorted(routes, key=lambda _: _.pattern)

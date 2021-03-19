@@ -3,12 +3,12 @@ from .protocol import Request, Response
 from .protocol.http import HTTPRequest, HTTPResponse
 from .model import Service, Application
 from .decorators import on, expose
-from .bridge.asgi import serve as serve_asgi
-from .bridge.cli import serve as serve_cli
-from typing import Union, cast
+from .bridge.asgi import server as asgi_server
+from .bridge.cli import server as cli_server
+from typing import Union
 
 
-def serve(*services: Union[Application, Service]):
-    return serve_asgi(*services)
+def server(*services: Union[Application, Service]):
+    return asgi_server(*services)
 
 # EOF

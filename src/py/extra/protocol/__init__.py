@@ -1,13 +1,21 @@
 # TODO: Use Hypercorn, uvicorn
-from typing import Any, Optional, Iterable, Any, Tuple, Union, Dict, TypeVar, Generic, List, NamedTuple
+from typing import Any, Optional, Iterable, Any, Tuple, Union, Dict, TypeVar, Generic, List, NamedTuple, AsyncGenerator
 from extra.util import Flyweight
 from enum import Enum
+import types
 
 T = TypeVar('T')
 
 
-def encode(value: Union[str, bytes]) -> bytes:
-    return bytes(value, "utf8") if isinstance(value, str) else value
+def asBytes(value: Union[str, bytes]) -> bytes:
+    if isinstance(value, bytes):
+        return value
+    elif isinstance(value, str):
+        return bytes(value, "utf8")
+    elif value is None:
+        return b""
+    else:
+        raise ValueError(f"Expected bytes or str, got: {value}")
 
 
 class Headers:
@@ -142,7 +150,12 @@ class Response(Flyweight):
         self.status = status
         return self
 
+    @property
+    def isEmpty(self):
+        return not self.bodies
+
     def reset(self):
+        self.status = -1
         self.bodies.clear()
 
     def setCookie(self, name: str, value: Any):
@@ -151,20 +164,19 @@ class Response(Flyweight):
     def setHeader(self, name: str, value: Any):
         pass
 
-    def setContent(self, content: Union[str, bytes], contentType: Optional[Union[str, bytes]] = None) -> 'Response':
+    def setContent(self, content: Union[str, bytes, Any], contentType: Optional[Union[str, bytes]] = None) -> 'Response':
         if isinstance(content, str):
             # SEE: https://www.w3.org/International/articles/http-charset/index
-            self.bodies.append((encode(content), b"text/plain; charset=utf-8"))
+            self.bodies.append(
+                (asBytes(content), b"text/plain; charset=utf-8"))
         elif isinstance(content, bytes):
             self.bodies.append(
-                (content, encode(contentType or b"application/binary")))
+                (content, asBytes(contentType or b"application/binary")))
         else:
-            raise ValueError(
-                f"Content type not supported, choose 'str' or 'bytes': {content}")
+            if not contentType:
+                raise ValueError(
+                    "contentType must be specified when type is not bytes or st")
+            self.bodies.append((content, asBytes(contentType)))
         return self
-
-    def read(self) -> Iterable[Union[bytes, None]]:
-        yield None
-        pass
 
 # EOF
