@@ -1,7 +1,8 @@
 from .routing import Handler, Dispatcher
 from .protocol import Request
-from typing import Optional,Tuple,Iterable,Callable,List
-import sys, importlib
+from typing import Optional, Tuple, Iterable, Callable, List
+import sys
+import importlib
 
 # -----------------------------------------------------------------------------
 #
@@ -9,47 +10,49 @@ import sys, importlib
 #
 # -----------------------------------------------------------------------------
 
+
 class Service:
-	PREFIX = ""
-	NO_HANDLER = ["name", "app", "prefix", "_handlers", "isMounted", "handlers", "start", "stop"]
+    PREFIX = ""
+    NO_HANDLER = ["name", "app", "prefix", "_handlers",
+                  "isMounted", "handlers", "start", "stop"]
 
-	@classmethod
-	def ReloadFrom( cls, service:'Service' ) -> 'Service':
-		res = cls(name=service.name)
-		res.app = res.app
-		# TODO: What about the prefix?
-		return res
+    @classmethod
+    def ReloadFrom(cls, service: 'Service') -> 'Service':
+        res = cls(name=service.name)
+        res.app = res.app
+        # TODO: What about the prefix?
+        return res
 
-	def __init__( self, name:Optional[str]=None ):
-		self.name:str = name or self.__class__.__name__
-		self.app:Optional[Application] = None
-		self.prefix = self.PREFIX
-		self._handlers:Optional[Tuple[Handler]] = None
+    def __init__(self, name: Optional[str] = None):
+        self.name: str = name or self.__class__.__name__
+        self.app: Optional[Application] = None
+        self.prefix = self.PREFIX
+        self._handlers: Optional[Tuple[Handler]] = None
 
-	def start( self ):
-		pass
+    def start(self):
+        pass
 
-	def stop( self ):
-		pass
+    def stop(self):
+        pass
 
-	@property
-	def isMounted( self ) -> bool:
-		return self.app != None
+    @property
+    def isMounted(self) -> bool:
+        return self.app != None
 
-	@property
-	def handlers( self ) -> Tuple[Handler]:
-		if self._handlers is None:
-			self._handlers = tuple(self.iterHandlers())
-		return self._handlers
+    @property
+    def handlers(self) -> Tuple[Handler]:
+        if self._handlers is None:
+            self._handlers = tuple(self.iterHandlers())
+        return self._handlers
 
-	def iterHandlers( self ) -> Iterable[Handler]:
-		for value in (getattr(self,_) for _ in dir(self) if _ not in self.NO_HANDLER):
-			handler = Handler.Get(value)
-			if handler:
-				yield handler
+    def iterHandlers(self) -> Iterable[Handler]:
+        for value in (getattr(self, _) for _ in dir(self) if _ not in self.NO_HANDLER):
+            handler = Handler.Get(value)
+            if handler:
+                yield handler
 
-	def __repr__( self ):
-		return f"(Service {self.name} {' :mounted' if self.isMounted else ''})"
+    def __repr__(self):
+        return f"(Service {self.name} {' :mounted' if self.isMounted else ''})"
 
 # -----------------------------------------------------------------------------
 #
@@ -57,55 +60,60 @@ class Service:
 #
 # -----------------------------------------------------------------------------
 
+
 class Application:
 
-	def __init__( self ):
-		self.routes = None
-		self.dispatcher = Dispatcher()
-		self.services = []
+    def __init__(self):
+        self.routes = None
+        self.dispatcher = Dispatcher()
+        self.services = []
 
-	def reload( self ) -> 'Application':
-		self.stop()
-		# FIXME: We need to restore the service state/configuration
-		services = []
-		reloaded = []
-		for service in self.services:
-			parent_class = service.__class__
-			parent_class_name = parent_class.__name__
-			parent_module_name = parent_class.__module__
-			parent_module = sys.modules[parent_module_name]
-			if parent_module not in reloaded:
-				reloaded.append(parent_module)
-				parent_module = importlib.reload(parent_module_name)
-			if hasattr(parent_module, parent_class_name):
-				services.append(getattr(parent_module, parent_class_name).ReloadFrom(service))
-			else:
-				raise KeyError(f"Class {parent_class_name} is not defined in module {parent_module_name} anymore.")
-		self.services = services
-		self.start()
+    def reload(self) -> 'Application':
+        self.stop()
+        # FIXME: We need to restore the service state/configuration
+        services = []
+        reloaded = []
+        for service in self.services:
+            parent_class = service.__class__
+            parent_class_name = parent_class.__name__
+            parent_module_name = parent_class.__module__
+            parent_module = sys.modules[parent_module_name]
+            if parent_module not in reloaded:
+                reloaded.append(parent_module)
+                parent_module = importlib.reload(parent_module_name)
+            if hasattr(parent_module, parent_class_name):
+                services.append(
+                    getattr(parent_module, parent_class_name).ReloadFrom(service))
+            else:
+                raise KeyError(
+                    f"Class {parent_class_name} is not defined in module {parent_module_name} anymore.")
+        self.services = services
+        self.start()
 
-	def start( self ):
-		self.dispatcher.prepare()
-		for service in self.services:
-			service.start()
+    def start(self) -> 'Application':
+        self.dispatcher.prepare()
+        for service in self.services:
+            service.start()
+        return self
 
-	def stop( self ):
-		for service in self.services:
-			service.stop()
+    def stop(self) -> 'Application':
+        for service in self.services:
+            service.stop()
+        return self
 
-	def mount( self, service:Service, prefix:Optional[str]=None ):
-		assert not service.isMounted, f"Cannot mount service, it is already mounted: {service}"
-		for handler in service.handlers:
-			self.dispatcher.register(handler, prefix or service.prefix)
-		return service
+    def mount(self, service: Service, prefix: Optional[str] = None):
+        assert not service.isMounted, f"Cannot mount service, it is already mounted: {service}"
+        for handler in service.handlers:
+            self.dispatcher.register(handler, prefix or service.prefix)
+        return service
 
-	def unmount( self, service:Service ):
-		assert service.isMounted, f"Cannot unmount service, it is not already mounted: {service}"
-		assert service.app != self, f"Cannot unmount service, it is not mounted in this applicaition: {service}"
-		service.app = self
-		return service
+    def unmount(self, service: Service):
+        assert service.isMounted, f"Cannot unmount service, it is not already mounted: {service}"
+        assert service.app != self, f"Cannot unmount service, it is not mounted in this applicaition: {service}"
+        service.app = self
+        return service
 
-	def onRouteNotFound( self, request:Request ):
-		return request.notFound()
+    def onRouteNotFound(self, request: Request):
+        return request.notFound()
 
 # EOF

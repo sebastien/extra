@@ -6,10 +6,12 @@ An example of a development web server where local filesystem assets are
 served with a live transformation phase.
 """
 
+
 class Localhost(FileService):
 
-	def processECMAScript( self ):
-		pass
+    def processECMAScript(self):
+        pass
+
 
 # NOTE: You can start this with `uvicorn helloworld:app`
 app = serve(Localhost)
