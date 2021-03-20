@@ -52,7 +52,15 @@ class HTTPRequest(Request, WithHeaders):
 
     def __init__(self):
         super().__init__()
+        self._body: Optional[Body] = None
         WithHeaders.__init__(self)
+        self.reset()
+
+    # @group(Flyweight)
+
+    def reset(self):
+        super().reset()
+        WithHeaders.reset(self)
         self.protocol: Optional[str] = None
         self.protocolVersion: Optional[str] = None
         self.method: Optional[str] = None
@@ -60,30 +68,23 @@ class HTTPRequest(Request, WithHeaders):
         self.query: Optional[str] = None
         self.ip: Optional[str] = None
         self.port: Optional[int] = None
-        self._body: Optional[Body] = None
+        self._body = self._body.reset() if self._body else None
+        self._reader = None
+        self._writer = None
         self._reader = None
         self._readCount = 0
         self._hasMore = True
+        return self
+
+    def init(self, reader, writer):
+        super().init()
+        self._reader = reader
+        self._writer = writer
+        return self
 
     @property
     def isInitialized(self):
         return self.method != None and self.path != None
-
-    # @group(Flyweight)
-
-    def init(self, reader):
-        super().init()
-        self._reader = reader
-        self._readCount = 0
-        self._hasMore = True
-        self._body = None
-        return self
-
-    def reset(self):
-        super().reset()
-        WithHeaders.reset(self)
-        self._body = self._body.reset() if self._body else None
-        return self
 
     # @group(Loading)
 

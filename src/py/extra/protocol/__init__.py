@@ -2,6 +2,8 @@ from typing import Any, Callable, Optional, Iterable, Any, Tuple, Union, Dict, T
 from extra.util import Flyweight
 from enum import Enum
 import types
+import collections
+import inspect
 
 T = TypeVar('T')
 
@@ -15,6 +17,26 @@ def asBytes(value: Union[str, bytes]) -> bytes:
         return b""
     else:
         raise ValueError(f"Expected bytes or str, got: {value}")
+
+
+async def asChunks(content: Any) -> AsyncGenerator[Any, Any]:
+    """Normalizes a content or content-producing generator, iterator, or function
+    into an async list of chunnks"""
+    if isinstance(content, types.AsyncGeneratorType):
+        # There's a warning but it seems to work
+        async for chunk in content:
+            yield asBytes(chunk)
+    elif inspect.isawaitable(content):
+        async for chunk in asChunks(await content):
+            yield chunk
+    elif isinstance(content, collections.Iterator):
+        for chunk in content:
+            yield chunk
+    elif isinstance(content, types.FunctionType):
+        async for chunk in asChunks(content()):
+            yield chunk
+    else:
+        yield content
 
 
 class Headers:

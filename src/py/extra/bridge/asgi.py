@@ -1,4 +1,4 @@
-from ..protocol import Request, Response
+from ..protocol import Request, Response, asChunks
 from ..protocol.http import HTTPRequest, HTTPResponse, asBytes
 from ..model import Service, Application
 from ..logging import logger
@@ -8,29 +8,11 @@ import asyncio
 
 logging = logger("asgi.bridge")
 
+# FIXME: We don't intercept the shutting down of the server
 # SEE: https://asgi.readthedocs.io/en/latest/specs/main.html
 
 TScope = Dict[str, Any]
 TSend = Callable[[Dict[str, Any]], Coroutine]
-
-
-async def streamBodyHelper(body: AsyncIterable[Union[bytes, str]], send: Callable[[Dict[str, Any]], Awaitable[None]]):
-    """A helper function that will take a response body and stream it through
-    the `send` function."""
-    count = 0
-    async for chunk in body:
-        await send({
-            "type":   "http.response.body",
-            "body":   asBytes(chunk),
-            "more_body": True
-        })
-        count += 1
-    # We notify that it's the end of the body, and we send a 0-byte payload.
-    await send({
-        "type":   "http.response.body",
-        "body":   b"",
-        "more_body": False
-    })
 
 
 class ASGIBridge:
@@ -51,8 +33,15 @@ class ASGIBridge:
             received."""
             raise NotImplementedError
 
+        async def http_request_writer(data: bytes, hasMore=True):
+            await send({
+                "type":   "http.response.body",
+                "body":   data,
+                "more_body": hasMore
+            })
+
         # We create a request and read from ASGI up until the request is initialized
-        request = HTTPRequest.Create().init(http_request_reader)
+        request = HTTPRequest.Create().init(http_request_reader, http_request_writer)
         while not request.isInitialized:
             # If we get a False from ASGI, this means that the connection
             # as shutdown so we shutdown everything.
@@ -151,6 +140,8 @@ class ASGIBridge:
             return message
         elif message["type"] == "lifespan.shutdown":
             await app.stop()
+            # We close the request
+            request.close()
             await send({"type": "lifespan.shutdown.complete"})
             # We notify of the end of the stream.
             # SEE:SHUTDOWN
@@ -169,6 +160,7 @@ class ASGIBridge:
         if isinstance(response, Coroutine):
             response = await response
         assert isinstance(response, Response)
+        # Now we send the start of the response
         headers = [_ for _ in response.headers.items()]
         try:
             await send({
@@ -188,23 +180,20 @@ class ASGIBridge:
             except asyncio.CancelledError:
                 pass
         else:
-            bodies_left = len(response.bodies)
-            count = 0
-            for value, contentType in response.bodies:
-                if isinstance(value, types.AsyncGeneratorType):
-                    try:
-                        await streamBodyHelper(value, send)
-                    except asyncio.CancelledError:
-                        break
-                else:
-                    try:
+            try:
+                for value, contentType in response.bodies:
+                    async for chunk in asChunks(value):
                         await send({
                             "type":   "http.response.body",
-                            "body":   value,
-                            "more_body": count < bodies_left - 1
+                            "body":   chunk,
+                            "more_body": True
                         })
-                    except asyncio.CancelledError:
-                        break
+                await send({
+                    "type":   "http.response.body",
+                    "more_body": False
+                })
+            except asyncio.CancelledError:
+                pass
         # We recycle the response
         response.recycle()
 
