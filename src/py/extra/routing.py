@@ -1,11 +1,11 @@
 from typing import Optional, Callable, Dict, Tuple, Any, Iterable, List, Pattern, Match, Union
 from .protocol import Request, Response
 from .decorators import EXTRA
-from .logging import channel
+from .logging import logger
 # TODO: Support re2, orjson
 import re
 
-logging = channel("extra.routing")
+logging = logger("extra.routing")
 
 # -----------------------------------------------------------------------------
 #

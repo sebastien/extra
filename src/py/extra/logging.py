@@ -146,7 +146,7 @@ class WithLog:
         self.log = Logger(path=path or self.__class__.__name__.lower())
 
 
-def channel(path: str):
+def logger(path: str):
     return Logger(path)
 
 

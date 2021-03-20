@@ -5,7 +5,7 @@ from .model import Service, Application
 from .decorators import on, expose
 from .bridge.asgi import server as asgi_server
 from .bridge.cli import server as cli_server
-from .logging import info, warning, error
+from .logging import logger
 from typing import Union
 
 

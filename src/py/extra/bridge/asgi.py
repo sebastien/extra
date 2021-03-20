@@ -1,12 +1,12 @@
 from ..protocol import Request, Response
 from ..protocol.http import HTTPRequest, HTTPResponse, asBytes
 from ..model import Service, Application
-from ..logging import channel
+from ..logging import logger
 from typing import Dict, Callable, Any, Coroutine, Union, Set, Optional, AsyncIterable, Awaitable, cast
 import types
 import asyncio
 
-logging = channel("asgi.bridge")
+logging = logger("asgi.bridge")
 
 # SEE: https://asgi.readthedocs.io/en/latest/specs/main.html
 
