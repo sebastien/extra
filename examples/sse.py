@@ -1,24 +1,28 @@
-from extra import Service, Request, Response, on, expose, server
+from extra import Service, Request, Response, on, expose, server, info
 from typing import AsyncIterator
 import time
 import asyncio
 
 
-# @title SSE Stream
-
 class SSE(Service):
 
-    # service, encoding the results as JSON
-    @expose(GET="/stream", contentType=b"text/plain")
-    def stream(self) -> AsyncIterator[str]:
-        # request.onClose(lambda *args: print("Closing", args))
-
+    @on(GET="/stream")
+    def stream(self, request) -> AsyncIterator[str]:
         async def stream():
-            while True:
+            """The main streaming function, this is returned as a response
+            and will be automatically stopped if the client disconnects."""
+            counter = 0
+            while counter < 10:
+                info("sse", f"SSE stream iteration {counter}")
                 yield "event: message\n"
                 yield f"date: {time.time()}\n\n"
                 await asyncio.sleep(1)
-        return stream()
+                counter += 1
+        # We register the `onClose` handler that will be called when the
+        # client disconnects, or when the iteration stops.
+        return request.onClose(
+            lambda _: info("sse", "SSE stream stopped", _.status)
+        ).respond(stream(), contentType=b"text/plain")
 
 
 # NOTE: You can start this with `uvicorn sse:app`

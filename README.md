@@ -7,10 +7,10 @@ _/ __ \ \  \/  /\   __\\_  __ \\__  \  | |
      \/       \/                    \/  \/
 ```
 
-Extra is an asynchronous HTTP/1, HTTP/2 and WebSocket microframework written
+Extra is an asynchronous HTTP/1, HTTP/2 and WebSocket toolkit written
 in Python and compatible with ASGI and WSGI.
 
-It is focused on providing a toolkit for creating web services, and
+It is focused on providing primitives for creating web services,
 implemented to work well both in development and production while providing a
 great developer experience.
 
@@ -26,15 +26,34 @@ Features:
 
 Design principles
 
--   Declarative: Decorators to expose methods as web services
--   Service focused: template are left out, but lots of building blocks for
-    services.
+-   Declarative: decorators to expose methods as web services
+-   Stream-oriented:  encourages writing stream processing handlers
+-   Service focused: template are left out, but lots of building blocks are
+    available for services.
 
 Extra is the successor of [Retro](https://github.com/sebastien/retro), one of
 the oldest decorator-based framework for HTTP applications and built on the
 15+ years of experience developing and maintaing that toolkit.
 
 Extra is designed as a kit, providing easily composable building blocks that
-help you build fast, readable and resilient web serivces.
+help you build fast, readable and resilient web services.
 
-Similar projects include [Quart](https://github.com/pgjones/quart) and [Starlette](https://github.com/encode/starlette).
+Similar projects include [Quart](https://github.com/pgjones/quart), [Starlette](https://github.com/encode/starlette).
+and [bareASGI](https://github.com/rob-blackbourn/bareASGI).
+
+# Example: Hello, World! Service
+
+Here is `helloworld.py`:
+
+```python
+from extra import Service, Request, Response, on, server
+
+class HelloWorld(Service):
+    @on(GET="{any}")
+    def helloWorld(self, request: Request) -> Response:
+        return request.respond(b"Hello, World !"), b"text/plain")
+
+app = server(HelloWorld)
+```
+
+And this above can be started with `uvicorn helloworld:app`.
