@@ -3,9 +3,9 @@ from typing import List, Any, Optional, Union, BinaryIO, Dict, Iterable, Tuple
 from tempfile import SpooledTemporaryFile
 from extra.util import unquote, Flyweight
 from urllib.parse import parse_qs
-# TODO: Suport faster JSON libs
-import json
 import io
+# TODO: Support faster encoders
+import json
 import tempfile
 
 # 8Mib spool size
@@ -18,6 +18,12 @@ ContentLength = b'content-length'
 ContentDisposition = b'content-disposition'
 ContentDescription = b'content-description'
 Location = b'location'
+
+# FIXME: This should be a stream writer
+
+
+def asJSON(value):
+    return bytes(json.dumps(value), "utf8")
 
 # @property
 # def userAgent( self ):
@@ -141,6 +147,10 @@ class HTTPRequest(Request, WithHeaders):
         return self.headers.get(name)
 
     # @group(Responses)
+
+    def returns(self, value: Any, contentType: Optional[Union[str, bytes]] = b"application/json", status: int = 200):
+        # FIXME: This should be a stream writer
+        return HTTPResponse.Create().init(status).setContent(asJSON(value), contentType)
 
     def respond(self, value: Any, contentType: Optional[Union[str, bytes]] = None, status: int = 200):
         return HTTPResponse.Create().init(status).setContent(value, contentType)

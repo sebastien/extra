@@ -1,5 +1,4 @@
-# TODO: Use Hypercorn, uvicorn
-from typing import Any, Optional, Iterable, Any, Tuple, Union, Dict, TypeVar, Generic, List, NamedTuple, AsyncGenerator
+from typing import Any, Callable, Optional, Iterable, Any, Tuple, Union, Dict, TypeVar, Generic, List, NamedTuple, AsyncGenerator
 from extra.util import Flyweight
 from enum import Enum
 import types
@@ -64,6 +63,36 @@ class Request(Flyweight):
 
     def __init__(self):
         Flyweight.__init__(self)
+        self.status = 0
+        self._onClose: Optional[Callable[[Request], None]] = None
+
+    def reset(self):
+        super().reset()
+        self.status = 0
+        self._onClose = None
+
+    @property
+    def isOpen(self):
+        return self.status == 1
+
+    @property
+    def isClosed(self):
+        return self.status == 2
+
+    def open(self):
+        self.status = 1
+        return self
+
+    def close(self):
+        if self.status != 2:
+            self.status = 2
+            if self._onClose:
+                self._onClose(self)
+        return self
+
+    def onClose(self, callback: Optional[Callable[['Request'], None]]):
+        self._onClose = callback
+        return self
 
     @property
     def uri(self):

@@ -1,10 +1,11 @@
 from typing import Optional, Callable, Dict, Tuple, Any, Iterable, List, Pattern, Match, Union
 from .protocol import Request, Response
 from .decorators import EXTRA
-from .util.logging import info
+from .logging import channel
 # TODO: Support re2, orjson
 import re
-import json
+
+logging = channel("extra.routing")
 
 # -----------------------------------------------------------------------------
 #
@@ -194,6 +195,8 @@ class Handler:
     def Has(cls, value):
         return hasattr(value, EXTRA.ON)
 
+    # FIXME: Handlers should compose transforms and predicate, right now it's
+    # passed as attributes, but it should not really be a stack of transforms.
     @classmethod
     def Get(cls, value):
         return Handler(
@@ -219,7 +222,7 @@ class Handler:
             value: Any = self.functor(**params)
             # The `respond` method will take care of handling the different
             # types of responses there.
-            return request.respond(value, self.contentType or "application/json")
+            return request.returns(value, self.contentType or b"application/json")
         else:
             return self.functor(request, **params)
 
@@ -245,7 +248,7 @@ class Dispatcher:
     def register(self, handler: Handler, prefix: Optional[str] = None):
         for method, path in handler.methods:
             route = Route(prefix + path if prefix else path, handler)
-            info("routing", "Registered", route)
+            logging.info(f"Registered route: {route}")
             self.routes.setdefault(method, []).append(route)
             self.isPrepared = False
         return self
@@ -277,7 +280,8 @@ class Dispatcher:
                 if route.priority < matched_priority:
                     continue
                 match = route.match(path)
-                print("ROUTE", method, path, ":", route, "=", match)
+                # FIXME: Maybe use a debug stream here
+                # print("ROUTE", method, path, ":", route, "=", match)
                 if match is None:
                     continue
                 elif route.priority >= matched_priority:

@@ -1,11 +1,12 @@
 from ..protocol import Request, Response
 from ..protocol.http import HTTPRequest, HTTPResponse, asBytes
 from ..model import Service, Application
-from ..util.logging import info, warning
-from typing import Dict, Callable, Any, Coroutine, Union, Set, Optional, cast
+from ..logging import channel
+from typing import Dict, Callable, Any, Coroutine, Union, Set, Optional, AsyncIterable, Awaitable, cast
 import types
 import asyncio
 
+logging = channel("asgi.bridge")
 
 # SEE: https://asgi.readthedocs.io/en/latest/specs/main.html
 
@@ -13,10 +14,29 @@ TScope = Dict[str, Any]
 TSend = Callable[[Dict[str, Any]], Coroutine]
 
 
+async def streamBodyHelper(body: AsyncIterable[Union[bytes, str]], send: Callable[[Dict[str, Any]], Awaitable[None]]):
+    """A helper function that will take a response body and stream it through
+    the `send` function."""
+    count = 0
+    async for chunk in body:
+        await send({
+            "type":   "http.response.body",
+            "body":   asBytes(chunk),
+            "more_body": True
+        })
+        count += 1
+    # We notify that it's the end of the body, and we send a 0-byte payload.
+    await send({
+        "type":   "http.response.body",
+        "body":   b"",
+        "more_body": False
+    })
+
+
 class ASGIBridge:
     """Manages the input and output through the ASGI interface. The `run`
-    method will read from the ASGI and then feed data to the request (ie.
-    more data is comming) or modify the state of the request (ie. client
+    method will read from the ASGI and then feed data to the request(ie.
+    more data is comming) or modify the state of the request(ie. client
     disconnected, server terminated)."""
 
     async def run(self, app: Application, scope: TScope, receive, send):
@@ -25,6 +45,10 @@ class ASGIBridge:
         and the interpretation of any message coming on the ASGI channel."""
 
         async def http_request_reader(size: int = -1):
+            """Reads from the ASGI feed. As the ASGI feed contains both request
+            data and internal ASGI data, the readers needs to dispatch some of the
+            messages to the bridge, and buffer the ones that have already been
+            received."""
             raise NotImplementedError
 
         # We create a request and read from ASGI up until the request is initialized
@@ -32,9 +56,10 @@ class ASGIBridge:
         while not request.isInitialized:
             # If we get a False from ASGI, this means that the connection
             # as shutdown so we shutdown everything.
+            # SEE:SHUTDOWN
             if await self.readFromASGI(app, request, scope, receive, send) == False:
+                log("asgi.bridge", "Shutdown message received, canceling the request")
                 request.recycle()
-                # TODO: Call app.shutdown()
                 return None
 
         # NOTE: That chunk should be pretty common across bridges
@@ -63,21 +88,40 @@ class ASGIBridge:
                                                )
             if reader_task in done:
                 # We've got an update from the ASGI server
-                asgi_message = reader_task.result()
-                print("RECEIVED ASGI MESSAGE", asgi_message)
-                # We cleanup any remaining tasks
-                for task in pending:
-                    try:
-                        task.cancel()
-                        await task
-                    except Exception as e:
-                        warning(
-                            "bridge.asgi", f"Task failed during cancellation: {task}, {e}")
+                asgi_message = cast(Dict[str, str], reader_task.result())
+                asgi_message_type = asgi_message["type"]
+                if asgi_message_type == "http.disconnect":
+                    # We cleanup any remaining tasks
+                    for task in pending:
+                        try:
+                            task.cancel()
+                            await task
+                        except Exception as e:
+                            logging.warning(
+                                f"Task failed during cancellation: {task}, {e}")
+                else:
+                    logging.warning("Unsupported ASGI message",
+                                    type=asgi_message_type)
             elif writer_task in done:
-                result = send_task.result()
+                result = writer_task.result()
             is_running = bool(len(pending))
 
+    async def readFromASGI(self, app: Application, request: HTTPRequest, scope: TScope, receive, send):
+        """Reads from the ASGI server, dispatching the message by type to the
+        corresponding methods."""
+        # SEE: https://asgi.readthedocs.io/en/latest/specs/www.html
+        message = await receive()
+        protocol = scope["type"]
+        if protocol == "http" or protocol == "https":
+            return await self.onASGIHTTPMessage(app, request, scope, message, send)
+        elif protocol == "lifespan":
+            return await self.onASGILifespan(app, request, scope, message, send)
+        else:
+            logging.warning(f"Unsupported ASGI protocol: {protocol}")
+            return None
+
     async def onASGIHTTPMessage(self, app: Application, request: HTTPRequest, scope: TScope, message, send):
+        """Handles an ASGI HTTP message."""
         # SEE: https://asgi.readthedocs.io/en/latest/specs/www.html
         if not request.isInitialized:
             protocol = scope["type"]
@@ -92,42 +136,27 @@ class ASGIBridge:
             # server: It's an Iterable[str,int]
             for name, value in scope["headers"]:
                 request.setHeader(name, value)
-            # TODO
-            # request.setOpen()
+            request.open()
         if message["type"] == "http.disconnect":
-            pass
-            # TODO: Set the request as closed
-            # request.close()
-        print("HTTP MESSAGE", message)
+            request.close()
         return message
 
     async def onASGILifespan(self, app: Application, request: HTTPRequest, scope: TScope, message, send):
+        """Handles an ASGI lifespan message."""
         # SEE: https://asgi.readthedocs.io/en/latest/specs/lifespan.html
         # It's not ideal to have it here
         if message["type"] == "lifespan.startup":
-            # TODO: Handle startup
             await app.start()
             await send({"type": "lifespan.startup.complete"})
             return message
         elif message["type"] == "lifespan.shutdown":
-            # TODO: Handle shutdown
             await app.stop()
             await send({"type": "lifespan.shutdown.complete"})
+            # We notify of the end of the stream.
+            # SEE:SHUTDOWN
             return False
         else:
             raise ValueError(f"Unsupported protocol: {protocol}")
-
-    async def readFromASGI(self, app: Application, request: HTTPRequest, scope: TScope, receive, send):
-        # SEE: https://asgi.readthedocs.io/en/latest/specs/www.html
-        message = await receive()
-        protocol = scope["type"]
-        if protocol == "http" or protocol == "https":
-            return await self.onASGIHTTPMessage(app, request, scope, message, send)
-        elif protocol == "lifespan":
-            return await self.onASGILifespan(app, request, scope, message, send)
-        else:
-            warning("asgi.bridge", f"Unsupported ASGI protocol: {protocol}")
-            return None
 
     async def writeToASGI(self, app: Application, response: Union[Coroutine, Response], scope: TScope, send):
         # FROM: https://asgi.readthedocs.io/en/latest/specs/www.html
@@ -164,7 +193,7 @@ class ASGIBridge:
             for value, contentType in response.bodies:
                 if isinstance(value, types.AsyncGeneratorType):
                     try:
-                        await async_stream_body(value, send)
+                        await streamBodyHelper(value, send)
                     except asyncio.CancelledError:
                         break
                 else:
@@ -180,22 +209,6 @@ class ASGIBridge:
         response.recycle()
 
 
-async def async_stream_body(body, send):
-    count = 0
-    async for chunk in body:
-        await send({
-            "type":   "http.response.body",
-            "body":   asBytes(chunk),
-            "more_body": True
-        })
-        count += 1
-    await send({
-        "type":   "http.response.body",
-        "body":   b"",
-        "more_body": False
-    })
-
-
 def server(*services: Union[Application, Service]) -> Callable:
     """Creates an ASGI bridge, mounts the services into an application
     and returns the ASGI application handler."""
@@ -208,7 +221,7 @@ def server(*services: Union[Application, Service]) -> Callable:
     app = cast(Application, app[0] if app else Application())
     # Now we mount all the services on the application
     for service in services:
-        info("bridge.asgi", f"Mounting service: {service}")
+        logging.info(f"Mounting service: {service}")
         app.mount(service)
     # Ands we're ready for the main loop
 

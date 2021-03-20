@@ -2,7 +2,7 @@ import asyncio
 import types
 import time
 from ..bridge import mount
-from ..util.logging import error
+from ..logging import error
 from ..util.http import HTTPParser
 
 
