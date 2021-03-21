@@ -11,7 +11,7 @@ async def app(scope, receive, send):
     })
     await send({
         'type': 'http.response.body',
-        'body': b'{"Hello" : "World"}',
+        'body': b'{"Hello":"World"}',
         'more_body': False
     })
 # EOF

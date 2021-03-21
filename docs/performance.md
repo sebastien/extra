@@ -37,6 +37,7 @@ using uvicorn and tests on HTTP/1 using the first `h2load` command:
 
 | Date       |  RPS    | Throughput | Toolkit    |
 | ---------- | ------- | ---------- | ---------- |
+| 2021-03-21 | 7842.28 |   1.30MB/s | AIOHTTP    |
 | 2021-03-21 | 2732.19 | 400.22KB/s | Raw        |
 | 2021-03-21 | 2133.21 | 270.82KB/s | Extra      |
 | 2021-03-21 | 1873.80 | 259.84KB/s | FastAPI    |

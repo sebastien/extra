@@ -7,12 +7,8 @@ from extra import server, expose, Service
 class API(Service):
 
     @expose(GET="/")
-    def root(self):
+    def hello(self):
         return {"Hello": "World"}
-
-    @expose(GET="/items/{item_id:int}")
-    def readItem(self, item_id: int, q: str = None):
-        return {"item_id": item_id, "q": q}
 
 
 # To run: uvicorn benchmark_api:app
