@@ -1,5 +1,6 @@
 from .routing import Handler, Dispatcher
 from .protocol import Request
+from .protocol.http import HTTPRequest, HTTPResponse
 from typing import Optional, Tuple, Iterable, Callable, List
 import sys
 import importlib
@@ -112,6 +113,18 @@ class Application:
         assert service.app != self, f"Cannot unmount service, it is not mounted in this applicaition: {service}"
         service.app = self
         return service
+
+    # TODO: Should process other types of request as well
+    def process(self, request: HTTPRequest) -> HTTPResponse:
+        # NOTE: That chunk should be pretty common across bridges
+        route, params = self.dispatcher.match(request.method, request.path)
+        if route:
+            handler = route.handler
+            assert handler, f"Route has no handler defined: {route}"
+            response = handler(request, params)
+        else:
+            response = self.onRouteNotFound(request)
+        return response
 
     def onRouteNotFound(self, request: Request):
         return request.notFound()

@@ -63,13 +63,7 @@ class ASGIBridge:
                 return None
 
         # NOTE: That chunk should be pretty common across bridges
-        route, params = app.dispatcher.match(request.method, request.path)
-        if route:
-            handler = route.handler
-            assert handler, f"Route has no handler defined: {route}"
-            response = handler(request, params)
-        else:
-            response = app.onRouteNotFound(request)
+        response = app.process(request)
         # We now process the response, we start by writing stuff, and then
         # we read for updates. Note that because the Request was created with
         # a reader, the reader_task will only read the ASGI messages not read
