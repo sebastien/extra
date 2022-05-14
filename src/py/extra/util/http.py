@@ -1,5 +1,7 @@
 import time
+from io import BytesIO
 from typing import Optional
+from asyncio import StreamReader
 
 """A reusable mini parser for HTTP that acccumulates data from a bytes
 stream."""
@@ -11,30 +13,33 @@ class HTTPParser:
     """Parses an HTTP request and headers from a stream through the `feed()`
     method."""
 
-    def __init__(self, address: str, port: int, stats: Optional[dict]):
-        self.address = address
-        self.port = port
-        self.started = time.time()
-        self.stats = stats
+    def __init__(
+        self, address: str, port: int, stats: Optional[dict[str, float]] = None
+    ):
+        self.address: str = address
+        self.port: int = port
+        self.started: float = time.time()
+        self.stats: dict[str, float] = stats or {}
         self.reset()
 
     def reset(self):
-        self.method = None
-        self.uri = None
-        self.protocol = None
-        self.headers = collections.OrderedDict()
-        self.step = 0
-        self.rest = None
-        self.status = None
-        self._stream = None
-        self.started = None
+        self.method: Optional[str] = None
+        self.uri: Optional[str] = None
+        self.protocol: Optional[str] = None
+        self.headers: dict[str, str] = {}
+        self.step: int = 0
+        self.rest: Optional[bytes] = None
+        self.status: int = 0
+        self._stream: Optional[StreamReader] = None
+        self.started = 0.0
 
-    def input(self, stream):
+    def setInput(self, stream: StreamReader):
         self._stream = stream
         return self
 
-    def feed(self, data: bytes):
-        """Feeds data into the context."""
+    def feed(self, data: bytes) -> bool:
+        """Feeds data into the context, returning False as soon as we're
+        past reading the body"""
         if self.step >= 2:
             # If we're past reading the body (>=2), then we can't decode anything
             return False
@@ -49,7 +54,7 @@ class HTTPParser:
                 # We skip the 4 bytes of \r\n\r\n
                 j = i + 4
                 o = self._parseChunk(t, 0, j)
-                assert (o <= j)
+                assert o <= j
                 self.rest = t[j:] if j < len(t) else None
             return True
 
@@ -70,7 +75,7 @@ class HTTPParser:
             # find at least one.
             i = data.find(b"\r\n", o)
             # The chunk must have \r\n at the end
-            assert (i >= 0)
+            assert i >= 0
             # Now we have a line, so we parse it
             step = self._parseLine(step, data[o:i])
             # And we increase the offset
@@ -88,8 +93,8 @@ class HTTPParser:
             j = line.index(b" ")
             k = line.index(b" ", j + 1)
             self.method = line[:j].decode()
-            self.uri = line[j+1:k].decode()
-            self.protocol = line[k+1:].decode()
+            self.uri = line[j + 1 : k].decode()
+            self.protocol = line[k + 1 :].decode()
             step = 1
         elif not line:
             # That's an EMPTY line, probably the one separating the body
@@ -124,7 +129,7 @@ class HTTPParser:
                     res = await self._stream.read()
                     return res
                 else:
-                    # FIXME: Somewhow when returning directly there
+                    # FIXME: Somehow when returning directly there
                     # is an issue when receiving large uploaded files, it
                     # will block forever.
                     res = await self._stream.read(size)
@@ -142,9 +147,11 @@ class HTTPParser:
                 self.rest = rest[size:]
                 return rest[:size]
             else:
-                return rest + (await self._stream.read(size - len(rest)))
+                return rest + (
+                    (await self._stream.read(size - len(rest))) if self._stream else b""
+                )
 
-    def export(self):
+    def asDict(self):
         """Exports a JSONable representation of the context."""
         return {
             "method": self.method,
@@ -152,5 +159,6 @@ class HTTPParser:
             "protocol": self.protocol,
             "headers": [(k, v) for k, v in self.headers.items()],
         }
+
 
 # EOF

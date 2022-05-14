@@ -7,7 +7,6 @@ logging = logger("sse")
 
 
 class SSE(Service):
-
     @on(GET="/sse")
     def sse(self, request) -> AsyncIterator[str]:
         async def stream():
@@ -20,8 +19,10 @@ class SSE(Service):
                 yield f"date: {time.time()}\n\n"
                 await asyncio.sleep(1)
                 counter += 1
+
         # We register the `onClose` handler that will be called when the
         # client disconnects, or when the iteration stops.
+        # FIXME: Should be request.respond().then(XX)
         return request.onClose(
             lambda _: logging.info(f"SSE stream stopped: {_.status}")
         ).respond(stream(), contentType=b"text/plain")

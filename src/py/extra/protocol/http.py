@@ -1,29 +1,37 @@
 from ..protocol import Request, Response, Headers, asBytes
-from typing import List, Any, Optional, Union, BinaryIO, Dict, Iterable, Tuple
+from typing import Any, Optional, Union, BinaryIO, Iterable
 from tempfile import SpooledTemporaryFile
 from extra.util import unquote, Flyweight
 from urllib.parse import parse_qs
+from asyncio import StreamReader
 import io
-# TODO: Support faster encoders
 import json
 import tempfile
+
+# --
+# # HTTP Protocol Module
+#
+# This module is an evolution of Retro's [core
+# module](https://github.com/sebastien/retro/blob/main/src/py/retro/core.py),
+# that defines the main ways to interact with HTTP data. This reimplementation
+# updates the style to leverage type, decorators and have a generally
+# simplified and streamlined API.
 
 # 8Mib spool size
 SPOOL_MAX_SIZE = 8 * 1024 * 1024
 BUFFER_MAX_SIZE = 1 * 1024 * 1024
 
-Range = Tuple[int, int]
-ContentType = b'content-type'
-ContentLength = b'content-length'
-ContentDisposition = b'content-disposition'
-ContentDescription = b'content-description'
-Location = b'location'
-
-# FIXME: This should be a stream writer
+Range = tuple[int, int]
+ContentType = b"content-type"
+ContentLength = b"content-length"
+ContentDisposition = b"content-disposition"
+ContentDescription = b"content-description"
+Location = b"location"
 
 
 def asJSON(value):
     return bytes(json.dumps(value), "utf8")
+
 
 # @property
 # def userAgent( self ):
@@ -39,7 +47,6 @@ def asJSON(value):
 
 
 class WithHeaders:
-
     def __init__(self):
         self.headers = Headers()
 
@@ -48,7 +55,7 @@ class WithHeaders:
 
 
 class HTTPRequest(Request, WithHeaders):
-    POOL: List['HTTPRequest'] = []
+    POOL: list["HTTPRequest"] = []
 
     def __init__(self):
         super().__init__()
@@ -61,19 +68,19 @@ class HTTPRequest(Request, WithHeaders):
         self.ip: Optional[str] = None
         self.port: Optional[int] = None
         self._body: Optional[Body] = None
-        self._reader = None
-        self._readCount = 0
-        self._hasMore = True
+        self._reader: Optional[StreamReader] = None
+        self._readCount: int = 0
+        self._hasMore: bool = True
 
     @property
-    def isInitialized(self):
+    def isInitialized(self) -> bool:
         return self.method != None and self.path != None
 
     # @group(Flyweight)
 
-    def init(self, reader):
+    def init(self, reader: StreamReader):
         super().init()
-        self._reader = reader
+        self._reader: StreamReader = reader
         self._readCount = 0
         self._hasMore = True
         self._body = None
@@ -107,8 +114,7 @@ class HTTPRequest(Request, WithHeaders):
             else:
                 break
         try:
-            content_length = int(
-                self.contentLength) if self.contentLength else None
+            content_length = int(self.contentLength) if self.contentLength else None
         except ValueError as e:
             # There might be a wrong encoding, in which case the request is
             # probably malformed.
@@ -117,7 +123,7 @@ class HTTPRequest(Request, WithHeaders):
         return self
 
     @property
-    def body(self) -> 'Body':
+    def body(self) -> "Body":
         if not self._body:
             self._body = Body.Create()
         return self._body
@@ -148,16 +154,34 @@ class HTTPRequest(Request, WithHeaders):
 
     # @group(Responses)
 
-    def returns(self, value: Any, contentType: Optional[Union[str, bytes]] = b"application/json", status: int = 200):
+    def returns(
+        self,
+        value: Any,
+        contentType: Optional[Union[str, bytes]] = b"application/json",
+        status: int = 200,
+    ):
         # FIXME: This should be a stream writer
         return HTTPResponse.Create().init(status).setContent(asJSON(value), contentType)
 
-    def respond(self, value: Any, contentType: Optional[Union[str, bytes]] = None, status: int = 200):
+    def respond(
+        self,
+        value: Any,
+        contentType: Optional[Union[str, bytes]] = None,
+        status: int = 200,
+    ):
         return HTTPResponse.Create().init(status).setContent(value, contentType)
 
-    def redirect(self, url, content: Optional[Union[str, bytes]] = None, contentType=b"text/plain", permanent=False):
+    def redirect(
+        self,
+        url,
+        content: Optional[Union[str, bytes]] = None,
+        contentType=b"text/plain",
+        permanent=False,
+    ):
         """Responds to this request by a redirection to the following URL"""
-        return self.respond(content, contentType, status=301 if permanent else 302).setHeader(Location, url)
+        return self.respond(
+            content, contentType, status=301 if permanent else 302
+        ).setHeader(Location, url)
 
     def respondFile(self):
         return HTTPResponse.Create().init(200).fromFile()
@@ -167,12 +191,12 @@ class HTTPRequest(Request, WithHeaders):
 
     # @group(Errors)
 
-    def notFound(self) -> 'HTTPResponse':
+    def notFound(self) -> "HTTPResponse":
         return HTTPResponse.Create().init(status=404).setContent("Resource not found")
 
 
 class HTTPResponse(Response, WithHeaders):
-    POOL: List['HTTPResponse'] = []
+    POOL: list["HTTPResponse"] = []
 
     def __init__(self):
         super().__init__()
@@ -183,6 +207,7 @@ class HTTPResponse(Response, WithHeaders):
 
     def fromStream(self):
         pass
+
 
 # -----------------------------------------------------------------------------
 #
@@ -195,20 +220,19 @@ class HTTPResponse(Response, WithHeaders):
 
 class Body(Flyweight):
 
-    POOL: List['Body'] = []
+    POOL: list["Body"] = []
     UNDEFINED = "undefined"
     RAW = "raw"
     MULTIPART = "multipart"
     JSON = "json"
 
     def __init__(self, isShort=False):
-        self.spool: Optional[Union[io.BytesIO,
-                                   tempfile.SpooledTemporaryFile]] = None
+        self.spool: Optional[Union[io.BytesIO, tempfile.SpooledTemporaryFile]] = None
         self.isShort = isShort
         self.isLoaded = False
         self.contentType: Optional[bytes] = None
         self.contentLength: Optional[bytes] = None
-        #self.next:Optional[Body] = None
+        # self.next:Optional[Body] = None
         self._type = Body.UNDEFINED
         self._raw: Optional[bytes] = None
         self._value: Any = None
@@ -224,8 +248,7 @@ class Body(Flyweight):
     @property
     def value(self) -> Any:
         if not self.isLoaded:
-            raise Exception(
-                "Body is not loaded, 'await request.load()' required")
+            raise Exception("Body is not loaded, 'await request.load()' required")
         if not self._value:
             self.process()
         return self._value
@@ -257,8 +280,11 @@ class Body(Flyweight):
         if not self.spool:
             content_length = self.contentLength
             is_short = content_length and content_length <= BUFFER_MAX_SIZE
-            self.spool = io.BytesIO() if is_short else tempfile.SpooledTemporaryFile(
-                max_size=SPOOL_MAX_SIZE)
+            self.spool = (
+                io.BytesIO()
+                if is_short
+                else tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_SIZE)
+            )
         self.spool.write(data)
         # We invalidate the cache
         self._raw = None
@@ -271,10 +297,13 @@ class Body(Flyweight):
         print("PARSE CONTENT", parsed_content)
         if content_type == b"multipart/form-data":
             self.spool.seek(0)
-            for headers, data_file in Decode.Multipart(self.spool, parsed_content[b'boundary']):
+            for headers, data_file in Decode.Multipart(
+                self.spool, parsed_content[b"boundary"]
+            ):
                 print(headers, data_file)
         else:
             return None
+
 
 # -----------------------------------------------------------------------------
 #
@@ -290,7 +319,9 @@ class Parse:
 
     # @tag(low-level)
     @classmethod
-    def HeaderOffsets(cls, data: bytes, start: int = 0, end: int = -1) -> Iterable[Tuple[Range, Range]]:
+    def HeaderOffsets(
+        cls, data: bytes, start: int = 0, end: int = -1
+    ) -> Iterable[tuple[Range, Range]]:
         """Parses the headers encoded in the `data` from the given `start` offset to the
         given `end` offset."""
         end: int = len(data) - 1 if end < 0 else min(len(data) - 1, end)
@@ -315,14 +346,18 @@ class Parse:
             offset = next_eol
 
     @classmethod
-    def Header(cls, data: bytes, offset: int = 0, end: int = -1) -> Iterable[Tuple[Range, Range]]:
+    def Header(
+        cls, data: bytes, offset: int = 0, end: int = -1
+    ) -> Iterable[tuple[Range, Range]]:
         """A wrapper around `HeaderOffsets` that yields slices of the bytes instead of the
         offsets."""
         for (hs, he), (vs, ve) in Parse.HeaderOffsets(data, offset, end):
             yield (data[hs:he], data[vs:ve])
 
     @classmethod
-    def HeaderValueOffsets(cls, data: bytes, start: int = 0, end: int = -1) -> Iterable[Tuple[int, int, int, int]]:
+    def HeaderValueOffsets(
+        cls, data: bytes, start: int = 0, end: int = -1
+    ) -> Iterable[tuple[int, int, int, int]]:
         """Parses a header value and returns an iterator of offsets for name and value
         in the `data`.
 
@@ -330,7 +365,7 @@ class Parse:
         return `{b"":b"multipart/mixed", b"boundary":b"inner"}`
         """
         end: int = len(data) - 1 if end < 0 else min(len(data) - 1, end)
-        result: Dict[bytes, bytes] = {}
+        result: dict[bytes, bytes] = {}
         offset: int = start
         while offset < end:
             # The next semicolumn is the next separator
@@ -357,8 +392,14 @@ class Parse:
             offset = field_end + 1
 
     @classmethod
-    def HeaderValue(cls, data: bytes, start: int = 0, end: int = -1) -> Dict[bytes, bytes]:
-        return dict((data[ks:ke], data[vs:ve]) for ks, ke, vs, ve in Parse.HeaderValueOffsets(data, start, end))
+    def HeaderValue(
+        cls, data: bytes, start: int = 0, end: int = -1
+    ) -> dict[bytes, bytes]:
+        return dict(
+            (data[ks:ke], data[vs:ve])
+            for ks, ke, vs, ve in Parse.HeaderValueOffsets(data, start, end)
+        )
+
 
 # -----------------------------------------------------------------------------
 #
@@ -374,7 +415,9 @@ class Decode:
     # which lead to writing these functions.
     # http://stackoverflow.com/questions/4526273/what-does-enctype-multipart-form-data-mean
     @classmethod
-    def MultipartChunks(cls, stream: BinaryIO, boundary: bytes, bufferSize=1024*1024) -> Iterable[Tuple[str, Any]]:
+    def MultipartChunks(
+        cls, stream: BinaryIO, boundary: bytes, bufferSize=1024 * 1024
+    ) -> Iterable[tuple[str, Any]]:
         """Iterates on a multipart form data file with the given `boundary`, reading `bufferSize` bytes
         for each iteration. This will yield tuples matching what was parsed, like so:
 
@@ -414,7 +457,7 @@ class Decode:
                     # FIXME: Should really yield offsets
                     raw_headers: bytes = chunk[:i]
                     yield ("h", raw_headers)
-                    chunk = chunk[i+4:]
+                    chunk = chunk[i + 4 :]
                 else:
                     yield ("h", None)
             # Now we look for the next boundary
@@ -426,14 +469,16 @@ class Decode:
             else:
                 # The body will end with \r\n + boundary
                 if i > 2:
-                    yield ("d", chunk[0:i - 2])
-                rest = chunk[i+boundary_length:]
+                    yield ("d", chunk[0 : i - 2])
+                rest = chunk[i + boundary_length :]
                 yield ("b", boundary)
                 state = "b"
             has_more = len(chunk) > 0 or len(chunk) == read_size
 
     @classmethod
-    def Multipart(cls, stream: BinaryIO, boundary: bytes, bufferSize=64000) -> Iterable[Tuple[Headers, bytes]]:
+    def Multipart(
+        cls, stream: BinaryIO, boundary: bytes, bufferSize=64000
+    ) -> Iterable[tuple[Headers, bytes]]:
         """Decodes the given multipart data, yielding `(meta, data)`
         couples, where meta is a parsed dict of headers and data
         is a file-like object."""
@@ -469,8 +514,7 @@ class Decode:
             elif state == "d":
                 assert not is_new
                 if not spool:
-                    spool = tempfile.SpooledTemporaryFile(
-                        max_size=SPOOL_MAX_SIZE)
+                    spool = tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_SIZE)
                 spool.write(data)
             else:
                 raise Exception("State not recognized: {0}".format(state))
@@ -510,7 +554,10 @@ class Decode:
 
     # NOTE: That's "application/x-www-form-urlencoded"
     @classmethod
-    async def FormEncoded(self, stream: BinaryIO, charset: Optional[bytes] = None) -> Dict[str, List[str]]:
+    async def FormEncoded(
+        self, stream: BinaryIO, charset: Optional[bytes] = None
+    ) -> dict[str, list[str]]:
         return parse_qs(stream.read())
+
 
 # EOF

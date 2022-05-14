@@ -2,35 +2,47 @@ from ..protocol import Request, Response
 from ..protocol.http import HTTPRequest, HTTPResponse, asBytes
 from ..model import Service, Application
 from ..logging import logger
-from typing import Dict, Callable, Any, Coroutine, Union, Set, Optional, AsyncIterable, Awaitable, cast
+from typing import (
+    Callable,
+    Any,
+    Coroutine,
+    Union,
+    Set,
+    Optional,
+    AsyncIterable,
+    Awaitable,
+    cast,
+)
 import types
 import asyncio
+
+# --
+# ## ASGI Bridge
+#
+# Exposes Extra applications through the ASGI gateway.
 
 logging = logger("asgi.bridge")
 
 # SEE: https://asgi.readthedocs.io/en/latest/specs/main.html
 
-TScope = Dict[str, Any]
-TSend = Callable[[Dict[str, Any]], Coroutine]
+TScope = dict[str, Any]
+TSend = Callable[[dict[str, Any]], Coroutine]
 
 
-async def streamBodyHelper(body: AsyncIterable[Union[bytes, str]], send: Callable[[Dict[str, Any]], Awaitable[None]]):
+async def streamBodyHelper(
+    body: AsyncIterable[Union[bytes, str]],
+    send: Callable[[dict[str, Any]], Awaitable[None]],
+):
     """A helper function that will take a response body and stream it through
     the `send` function."""
     count = 0
     async for chunk in body:
-        await send({
-            "type":   "http.response.body",
-            "body":   asBytes(chunk),
-            "more_body": True
-        })
+        await send(
+            {"type": "http.response.body", "body": asBytes(chunk), "more_body": True}
+        )
         count += 1
     # We notify that it's the end of the body, and we send a 0-byte payload.
-    await send({
-        "type":   "http.response.body",
-        "body":   b"",
-        "more_body": False
-    })
+    await send({"type": "http.response.body", "body": b"", "more_body": False})
 
 
 class ASGIBridge:
@@ -74,21 +86,21 @@ class ASGIBridge:
         # we read for updates. Note that because the Request was created with
         # a reader, the reader_task will only read the ASGI messages not read
         # by the request.
-        writer_task = asyncio.create_task(
-            self.writeToASGI(app, response, scope, send))
+        writer_task = asyncio.create_task(self.writeToASGI(app, response, scope, send))
         reader_task = asyncio.create_task(
-            self.readFromASGI(app, request, scope, receive, send))
+            self.readFromASGI(app, request, scope, receive, send)
+        )
         tasks: Set[asyncio.Future] = {reader_task, writer_task}
         is_running = True
         # This is the main loop where we're reacting to successful reads or
         # writes. In a normal situation, there should be only reads.
         while is_running:
-            done, pending = await asyncio.wait(tasks,
-                                               return_when=asyncio.FIRST_COMPLETED
-                                               )
+            done, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
+            )
             if reader_task in done:
                 # We've got an update from the ASGI server
-                asgi_message = cast(Dict[str, str], reader_task.result())
+                asgi_message = cast(dict[str, str], reader_task.result())
                 asgi_message_type = asgi_message["type"]
                 if asgi_message_type == "http.disconnect":
                     # We cleanup any remaining tasks
@@ -98,15 +110,17 @@ class ASGIBridge:
                             await task
                         except Exception as e:
                             logging.warning(
-                                f"Task failed during cancellation: {task}, {e}")
+                                f"Task failed during cancellation: {task}, {e}"
+                            )
                 else:
-                    logging.warning("Unsupported ASGI message",
-                                    type=asgi_message_type)
+                    logging.warning("Unsupported ASGI message", type=asgi_message_type)
             elif writer_task in done:
                 result = writer_task.result()
             is_running = bool(len(pending))
 
-    async def readFromASGI(self, app: Application, request: HTTPRequest, scope: TScope, receive, send):
+    async def readFromASGI(
+        self, app: Application, request: HTTPRequest, scope: TScope, receive, send
+    ):
         """Reads from the ASGI server, dispatching the message by type to the
         corresponding methods."""
         # SEE: https://asgi.readthedocs.io/en/latest/specs/www.html
@@ -120,7 +134,9 @@ class ASGIBridge:
             logging.warning(f"Unsupported ASGI protocol: {protocol}")
             return None
 
-    async def onASGIHTTPMessage(self, app: Application, request: HTTPRequest, scope: TScope, message, send):
+    async def onASGIHTTPMessage(
+        self, app: Application, request: HTTPRequest, scope: TScope, message, send
+    ):
         """Handles an ASGI HTTP message."""
         # SEE: https://asgi.readthedocs.io/en/latest/specs/www.html
         if not request.isInitialized:
@@ -141,7 +157,9 @@ class ASGIBridge:
             request.close()
         return message
 
-    async def onASGILifespan(self, app: Application, request: HTTPRequest, scope: TScope, message, send):
+    async def onASGILifespan(
+        self, app: Application, request: HTTPRequest, scope: TScope, message, send
+    ):
         """Handles an ASGI lifespan message."""
         # SEE: https://asgi.readthedocs.io/en/latest/specs/lifespan.html
         # It's not ideal to have it here
@@ -158,7 +176,13 @@ class ASGIBridge:
         else:
             raise ValueError(f"Unsupported protocol: {protocol}")
 
-    async def writeToASGI(self, app: Application, response: Union[Coroutine, Response], scope: TScope, send):
+    async def writeToASGI(
+        self,
+        app: Application,
+        response: Union[Coroutine, Response],
+        scope: TScope,
+        send,
+    ):
         # FROM: https://asgi.readthedocs.io/en/latest/specs/www.html
         # Servers are responsible for handling inbound and outbound chunked
         # transfer encodings. A request with a chunked encoded body should be
@@ -171,20 +195,24 @@ class ASGIBridge:
         assert isinstance(response, Response)
         headers = [_ for _ in response.headers.items()]
         try:
-            await send({
-                "type": "http.response.start",
-                "status": response.status,
-                "headers": headers
-            })
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": response.status,
+                    "headers": headers,
+                }
+            )
         except asyncio.CancelledError:
             response.recycle()
             return None
         # Now we take care of the body
         if response.isEmpty:
             try:
-                await send({
-                    "type":   "http.response.body",
-                })
+                await send(
+                    {
+                        "type": "http.response.body",
+                    }
+                )
             except asyncio.CancelledError:
                 pass
         else:
@@ -198,11 +226,13 @@ class ASGIBridge:
                         break
                 else:
                     try:
-                        await send({
-                            "type":   "http.response.body",
-                            "body":   value,
-                            "more_body": count < bodies_left - 1
-                        })
+                        await send(
+                            {
+                                "type": "http.response.body",
+                                "body": value,
+                                "more_body": count < bodies_left - 1,
+                            }
+                        )
                     except asyncio.CancelledError:
                         break
         # We recycle the response
@@ -230,5 +260,6 @@ def server(*services: Union[Application, Service]) -> Callable:
         await bridge.run(app, scope, receive, send)
 
     return application
+
 
 # EOF
