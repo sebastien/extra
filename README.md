@@ -1,18 +1,16 @@
-```
-                  __                   ._.
-  ____  ___  ____/  |_ _______ _____   | |
-_/ __ \ \  \/  /\   __\\_  __ \\__  \  | |
-\  ___/  >    <  |  |   |  | \/ / __ \_ \|
- \___  >/__/\_ \ |__|   |__|   (____  / __
-     \/       \/                    \/  \/
-```
+                      __                   ._.
+      ____  ___  ____/  |_ _______ _____   | |
+    _/ __ \ \  \/  /\   __\\_  __ \\__  \  | |
+    \  ___/  >    <  |  |   |  | \/ / __ \_ \|
+     \___  >/__/\_ \ |__|   |__|   (____  / __
+         \/       \/                    \/  \/
 
-Extra is an asynchronous HTTP/1, HTTP/2 and WebSocket toolkit written
-in Python and compatible with ASGI and WSGI.
+Extra is an asynchronous HTTP/1, HTTP/2 and WebSocket toolkit written in
+Python and compatible with ASGI and WSGI.
 
 It is focused on providing primitives for creating web services,
-implemented to work well both in development and production while providing a
-great developer experience.
+implemented to work well both in development and production while
+providing a great developer experience.
 
 Features:
 
@@ -23,29 +21,32 @@ Features:
 -   Building blocks for channels, pub/sub, topic tree.
 -   Multi-threaded async (leverage all cores)
 -   Dynamically (re)loadable services
+-   Implementation compiled using `mypyc` for performance
 
 Design principles
 
 -   Declarative: decorators to expose methods as web services
--   Stream-oriented:  encourages writing stream processing handlers
--   Service focused: template are left out, but lots of building blocks are
-    available for services.
+-   Stream-oriented: encourages writing stream processing handlers
+-   Service focused: template are left out, but lots of building blocks
+    are available for services.
 
-Extra is the successor of [Retro](https://github.com/sebastien/retro), one of
-the oldest decorator-based framework for HTTP applications and built on the
-15+ years of experience developing and maintaing that toolkit.
+Extra is the successor of [Retro](https://github.com/sebastien/retro),
+one of the oldest decorator-based framework for HTTP applications and
+built on the 15+ years of experience developing and maintainig that
+toolkit.
 
-Extra is designed as a kit, providing easily composable building blocks that
-help you build fast, readable and resilient web services.
+Like Retro, Extra is designed as a kit, providing easily composable building blocks
+that help you build fast, readable and resilient web services.
 
-Similar projects include [Quart](https://github.com/pgjones/quart), [Starlette](https://github.com/encode/starlette).
-and [bareASGI](https://github.com/rob-blackbourn/bareASGI).
+Similar projects include [Quart](https://github.com/pgjones/quart),
+[Starlette](https://github.com/encode/starlette). and
+[bareASGI](https://github.com/rob-blackbourn/bareASGI).
 
 # Example: Hello, World! Service
 
 Here is `helloworld.py`:
 
-```python
+``` python
 from extra import Service, Request, Response, on, server
 
 class HelloWorld(Service):
