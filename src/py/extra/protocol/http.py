@@ -1,10 +1,13 @@
 from ..protocol import Request, Response, Headers, asBytes
-from typing import Any, Optional, Union, BinaryIO, Iterable
+from typing import Any, Optional, Union, BinaryIO, Iterable, Union
 from tempfile import SpooledTemporaryFile
 from extra.util import unquote, Flyweight
 from urllib.parse import parse_qs
 from asyncio import StreamReader
-import io
+from io import BytesIO
+from enum import Enum
+from typing import Optional
+import time
 import json
 import tempfile
 
@@ -54,6 +57,207 @@ class WithHeaders:
         self.headers.reset()
 
 
+class HTTPParserStep(Enum):
+    Request = 0
+    Headers = 1
+    Body = 2
+    End = 3
+
+
+class HTTPParser:
+    """Parses an HTTP request and headers from a stream through the `feed()`
+    method."""
+
+    Pool: list["HTTPParser"] = []
+
+    @classmethod
+    def Get(
+        cls, address: str, port: int, stats: Optional[dict[str, float]] = None
+    ) -> "HTTPParser":
+        if cls.Pool:
+            return cls.Pool.pop().init(address=address, port=port, stats=stats)
+        else:
+            return cls(address=address, port=port, stats=stats)
+
+    @classmethod
+    def Dispose(cls, value: "HTTPParser"):
+        cls.Pool.append(value)
+        return None
+
+    def __init__(
+        self, address: str, port: int, stats: Optional[dict[str, float]] = None
+    ):
+        self.address: str = address
+        self.port: int = port
+        self.started: float = time.monotonic()
+        self.stats: dict[str, float] = stats or {}
+        self.method: Optional[str] = None
+        self.uri: Optional[str] = None
+        self.protocol: Optional[str] = None
+        self.headers: dict[str, str] = {}
+        self.step: HTTPParserStep = HTTPParserStep.Request
+        self.rest: Optional[bytes] = None
+        self.status: int = 0
+        self._stream: Optional[StreamReader] = None
+        self.started = 0.0
+
+    def init(self, address: str, port: int, stats: Optional[dict[str, float]] = None):
+        self.address: str = address
+        self.port: int = port
+        self.started: float = time.monotonic()
+        self.stats: dict[str, float] = stats or {}
+        self.method = None
+        self.uri = None
+        self.protocol = None
+        self.headers = {}
+        self.step = HTTPParserStep.Request
+        self.rest = None
+        self.status = 0
+        self._stream = None
+        self.started = 0.0
+
+    def setInput(self, stream: StreamReader):
+        self._stream = stream
+        return self
+
+    @property
+    def hasReachedBody(self) -> bool:
+        return self.step.value >= HTTPParserStep.Body.value
+
+    def feed(self, data: bytes) -> int:
+        """Feeds data into the context, returning False as soon as we're
+        past reading the body"""
+        if self.step.value >= HTTPParserStep.Headers.value:
+            # If we're past reading the headers (>=2), then it's up
+            # to the application to decode.
+            return 0
+        else:
+            t = self.rest + data if self.rest else data
+            # TODO: We're looking for the final \r\n\r\n that separates
+            # the header from the body.
+            i = t.find(b"\r\n\r\n")
+            if i == -1:
+                self.rest = t
+            else:
+                # We skip the 4 bytes of \r\n\r\n
+                j = i + 4
+                o = self._parseChunk(t, 0, j)
+                assert o <= j
+                self.rest = t[j:] if j < len(t) else None
+            return True
+
+    def _parseChunk(self, data, start, end):
+        """Parses a chunk of the data, which MUST have at least one
+        /r/n in there and end with /r/n."""
+        # NOTE: In essence, this is pretty close to data[stat:end].split("\r\n")
+        # 0 = REQUEST
+        # 1 = HEADERS
+        # 2 = BODY
+        # 3 = DONE
+        step = self.step
+        o = start
+        l = end
+        # We'll stop once we've parsed headers or reach the end passed above.
+        while step.value < HTTPParserStep.Body.value and o < l:
+            # We find the closest line separators. We're guaranteed to
+            # find at least one.
+            i = data.find(b"\r\n", o)
+            # The chunk must have \r\n at the end
+            assert i >= 0
+            # Now we have a line, so we parse it
+            step = self._parseLine(step, data[o:i])
+            # And we increase the offset
+            o = i + 2
+        # We update the state
+        self.step = step
+        return o
+
+    def _parseLine(self, step: HTTPParserStep, line: bytes) -> HTTPParserStep:
+        """Parses a line (without the ending `\r\n`), updating the
+        context's {method,uri,protocol,headers,step} accordingly. This
+        will stop once two empty lines have been encountered."""
+        if step == HTTPParserStep.Request:
+            # That's the REQUEST line
+            j = line.find(b" ")
+            k = line.find(b" ", j + 1)
+            self.method = line[:j].decode()
+            self.uri = line[j + 1 : k].decode()
+            self.protocol = line[k + 1 :].decode()
+            return HTTPParserStep.Headers
+        elif not line:
+            # That's an EMPTY line, probably the one separating the body
+            # from the headers
+            return HTTPParserStep.Body
+        elif step.value >= HTTPParserStep.Headers.value:
+            # That's a HEADER line
+            # FIXME: Not sure why we need to reassign here
+            j = line.index(b":")
+            h = line[:j].decode().strip()
+            j += 1
+            if j < len(line) and line[j] == " ":
+                j += 1
+            v = line[j:].decode().strip()
+            self.headers[h] = v
+            return HTTPParserStep.Headers
+        else:
+            return step
+
+    # TODO: We might want to move that to connection, but right
+    # now the HTTP context is a better fix.
+    # variant of that.
+    async def read(self, size=None) -> Optional[bytes]:
+        """Reads `size` bytes from the context's input stream, using
+        whatever data is left from the previous data feeding."""
+        assert size != 0
+        rest = self.rest
+        # This method is a little bit contrived because e need to test
+        # for all the cases. Also, this needs to be relatively fast as
+        # it's going to be used often.
+        if rest is None:
+            if self._stream:
+                if size is None:
+                    res = await self._stream.read()
+                    return res
+                else:
+                    # FIXME: Somehow when returning directly there
+                    # is an issue when receiving large uploaded files, it
+                    # will block forever.
+                    res = await self._stream.read(size)
+                    return res
+            else:
+                return b""
+        else:
+            self.rest = None
+            if size is None:
+                if self._stream:
+                    return rest + (await self._stream.read())
+                else:
+                    return rest
+            elif len(rest) > size:
+                self.rest = rest[size:]
+                return rest[:size]
+            else:
+                return rest + (
+                    (await self._stream.read(size - len(rest))) if self._stream else b""
+                )
+
+    def asDict(self) -> dict[str, Union[str, list[tuple[str, str]]]]:
+        """Exports a JSONable representation of the context."""
+        return {
+            "method": self.method,
+            "uri": self.uri,
+            "protocol": self.protocol,
+            "headers": [(k, v) for k, v in self.headers.items()],
+        }
+
+
+# --
+# ## HTTP Request
+#
+# The HTTP request object is designed to work both with our custom
+# HTTP parser and with other ways (ASGI).
+
+
 class HTTPRequest(Request, WithHeaders):
     POOL: list["HTTPRequest"] = []
 
@@ -78,9 +282,26 @@ class HTTPRequest(Request, WithHeaders):
 
     # @group(Flyweight)
 
-    def init(self, reader: StreamReader):
+    def init(
+        self,
+        reader: StreamReader,
+        protocol: Optional[str] = None,
+        protocolVersion: Optional[str] = None,
+        method: Optional[str] = None,
+        path: Optional[str] = None,
+        query: Optional[str] = None,
+        ip: Optional[str] = None,
+        port: Optional[int] = None,
+    ):
         super().init()
-        self._reader: StreamReader = reader
+        self._reader = reader
+        self.protocol = protocol
+        self.protocolVersion = protocolVersion
+        self.method = method
+        self.path = path
+        self.query = query
+        self.ip = ip
+        self.port = port
         self._readCount = 0
         self._hasMore = True
         self._body = None
@@ -96,13 +317,16 @@ class HTTPRequest(Request, WithHeaders):
 
     async def read(self, count: int = -1) -> Optional[bytes]:
         """Only use read if you want to acces the raw data in chunks."""
-        if self._hasMore:
+        if self._hasMore and self._reader:
             has_more, data = await self._reader(count)
             self._hasMore = bool(has_more)
             self._readCount += len(data)
             return data
         else:
             return None
+
+    def feed(self, data: bytes):
+        return self.body.feed(data)
 
     async def load(self):
         """Loads all the data and returns a list of bodies."""
@@ -227,7 +451,7 @@ class Body(Flyweight):
     JSON = "json"
 
     def __init__(self, isShort=False):
-        self.spool: Optional[Union[io.BytesIO, tempfile.SpooledTemporaryFile]] = None
+        self.spool: Optional[Union[BytesIO, tempfile.SpooledTemporaryFile]] = None
         self.isShort = isShort
         self.isLoaded = False
         self.contentType: Optional[bytes] = None
@@ -254,7 +478,7 @@ class Body(Flyweight):
         return self._value
 
     def reset(self):
-        if isinstance(self.spool, io.BytesIO):
+        if isinstance(self.spool, BytesIO):
             pass
         elif isinstance(self.spool, tempfile.SpooledTemporaryFile):
             pass
@@ -281,7 +505,7 @@ class Body(Flyweight):
             content_length = self.contentLength
             is_short = content_length and content_length <= BUFFER_MAX_SIZE
             self.spool = (
-                io.BytesIO()
+                BytesIO()
                 if is_short
                 else tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_SIZE)
             )

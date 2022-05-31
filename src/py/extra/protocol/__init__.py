@@ -1,9 +1,21 @@
-from typing import Any, Callable, Optional, Iterable, Any, Tuple, Union, Dict, TypeVar, Generic, List, NamedTuple, AsyncGenerator
+from typing import (
+    Any,
+    Callable,
+    Optional,
+    Iterable,
+    Iterator,
+    Any,
+    Union,
+    TypeVar,
+    Generic,
+    NamedTuple,
+    AsyncGenerator,
+)
 from extra.util import Flyweight
 from enum import Enum
 import types
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 def asBytes(value: Union[str, bytes]) -> bytes:
@@ -18,21 +30,20 @@ def asBytes(value: Union[str, bytes]) -> bytes:
 
 
 class Headers:
-
     @classmethod
-    def FromItems(self, items: Iterable[Tuple[bytes, bytes]]):
+    def FromItems(self, items: Iterable[tuple[bytes, bytes]]):
         headers = Headers()
         for k, v in items:
             headers._headers[k] = [v]
         return headers
 
     def __init__(self):
-        self._headers: Dict[bytes, List[bytes]] = {}
+        self._headers: dict[bytes, list[bytes]] = {}
 
     def reset(self):
         self._headers.clear()
 
-    def items(self) -> Iterable[Tuple[bytes, bytes]]:
+    def items(self) -> Iterable[tuple[bytes, bytes]]:
         return self._headers.items()
 
     def get(self, name: str) -> Any:
@@ -57,40 +68,46 @@ class Headers:
             return value
 
 
+class RequestStatus(Enum):
+    Initialized = 0
+    Open = 1
+    Closed = 3
+
+
 class Request(Flyweight):
 
     # @group Request attributes
 
     def __init__(self):
         Flyweight.__init__(self)
-        self.status = 0
+        self.status: RequestStatus = RequestStatus.Initialized
         self._onClose: Optional[Callable[[Request], None]] = None
 
     def reset(self):
         super().reset()
-        self.status = 0
+        self.status: RequestStatus = RequestStatus.Initialized
         self._onClose = None
 
     @property
     def isOpen(self):
-        return self.status == 1
+        return self.status == RequestStatus.Open
 
     @property
     def isClosed(self):
-        return self.status == 2
+        return self.status == RequestStatus.Closed
 
     def open(self):
-        self.status = 1
+        self.status = RequestStatus.Open
         return self
 
     def close(self):
-        if self.status != 2:
-            self.status = 2
+        if self.status != RequestStatus.closed:
+            self.status = RequestStatus.closed
             if self._onClose:
                 self._onClose(self)
         return self
 
-    def onClose(self, callback: Optional[Callable[['Request'], None]]):
+    def onClose(self, callback: Optional[Callable[["Request"], None]]):
         self._onClose = callback
         return self
 
@@ -149,7 +166,6 @@ class Request(Flyweight):
         pass
 
     # @group Errors
-
     def notFound(self):
         pass
 
@@ -164,18 +180,37 @@ class Request(Flyweight):
 
 
 BodyType = Enum("BodyType", "none value iterator")
-Body = NamedTuple("Body", [("type", BodyType),
-                           ("content", Union[bytes]), ("contentType", bytes)])
+Body = NamedTuple(
+    "Body", [("type", BodyType), ("content", Union[bytes]), ("contentType", bytes)]
+)
+
+
+class ResponseStatus(Enum):
+    Initialized = 0
+    Ready = 1
+    Sent = 2
+
+
+TBody = tuple[Union[bytes, Iterator[bytes]], bytes]
+
+
+# TODO: The response should have ways to stream the bodies and write
+# them to different formats.
+
+
+class ResponseControl(Enum):
+    Chunk = 0
+    Type = 1
+    End = 2
 
 
 class Response(Flyweight):
-
     def __init__(self):
         Flyweight.__init__(self)
-        self.status = -1
-        self.bodies = []
+        self.status: ResponseStatus = ResponseStatus.Initialized
+        self.bodies: list[TBody] = []
 
-    def init(self, status: int):
+    def init(self, status: ResponseStatus):
         self.status = status
         return self
 
@@ -184,8 +219,9 @@ class Response(Flyweight):
         return not self.bodies
 
     def reset(self):
-        self.status = -1
+        self.status = ResponseStatus.Initialized
         self.bodies.clear()
+        return self
 
     def setCookie(self, name: str, value: Any):
         pass
@@ -193,19 +229,33 @@ class Response(Flyweight):
     def setHeader(self, name: str, value: Any):
         pass
 
-    def setContent(self, content: Union[str, bytes, Any], contentType: Optional[Union[str, bytes]] = None) -> 'Response':
-        if isinstance(content, str):
-            # SEE: https://www.w3.org/International/articles/http-charset/index
-            self.bodies.append(
-                (asBytes(content), b"text/plain; charset=utf-8"))
+    def setContent(
+        self,
+        content: Union[str, bytes, Any],
+        contentType: Optional[Union[str, bytes]] = None,
+    ) -> "Response":
+        if isinstance(
+            content, str
+        ):  # SEE: https://www.w3.org/International/articles/http-charset/index
+            self.bodies.append((asBytes(content), b"text/plain; charset=utf-8"))
         elif isinstance(content, bytes):
-            self.bodies.append(
-                (content, asBytes(contentType or b"application/binary")))
+            self.bodies.append((content, asBytes(contentType or b"application/binary")))
         else:
             if not contentType:
                 raise ValueError(
-                    "contentType must be specified when type is not bytes or st")
+                    "contentType must be specified when type is not bytes or st"
+                )
             self.bodies.append((content, asBytes(contentType)))
         return self
+
+    @property
+    def stream(self) -> Iterator[Union[ResponseControl, bytes]]:
+        for content, type in self.bodies:
+            yield ResponseControl.Type
+            yield type
+            yield ResponseControl.Chunk
+            yield content
+        yield ResponseControl.End
+
 
 # EOF

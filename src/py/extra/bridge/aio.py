@@ -6,42 +6,54 @@ from typing import Callable, Union
 from ..model import Application, Service
 from ..bridge import mount
 from ..logging import error
-from ..protocol.http import HTTPRequest
-from ..util.http import HTTPParser
+from ..protocol.http import HTTPRequest, HTTPParser
 
 
 class AIOBridge:
     async def process(
         self, application: Application, reader: StreamReader, writer: StreamWriter
     ):
+        # --
         # We extract meta-information about the connection
         addr = writer.get_extra_info("peername")
         bufsize: int = 256_000
         ends = False
         started = time.time()
         http_parser = HTTPParser(addr, 8080, {})
+        # --
         # We only parse the REQUEST line and the HEADERS. We'll stop
         # once we reach the body. This means that we won't be reading
         # huge requests right away, but let the client decide how to
         # process them.
-        while not ends and http_parser.step < 2:
+        while not (ends or http_parser.hasReachedBody):
             data = await reader.read(bufsize)
             ends = len(data) < bufsize
             if not http_parser.feed(data):
                 break
 
+        # --
         # Now that we've parsed the REQUEST and HEADERS, we set the input
         # and let the application do the processing
         # --
         # FIXME: We may have read past the body, so we should feed the
         # first part
-        request = HTTPRequest.Create().init(reader)
+        request = HTTPRequest.Create().init(
+            # FIXME: We should parse the uri
+            reader,
+            method=http_parser.method,
+            path=http_parser.uri,
+        )
+        if http_parser.rest:
+            request.feed(http_parser.rest)
         while not request.isInitialized:
-            print("FUUUCK", request)
-            break
+            # TODO: We're supposed to have the request initialized here
+            raise RuntimeError(
+                f"Request should be initialized by now with {http_parser.asDict()}: {request}"
+            )
 
         # TODO: We'll need to process the request
         response = application.process(request)
+        print("XXX RESPOSNE", response.bodies)
 
         # TODO: Process the application
         # Here we don't write bodies of HEAD requests, as some browsers
@@ -49,36 +61,40 @@ class AIOBridge:
         write_body: bool = not (http_parser.method == "HEAD")
 
         bytes_written: int = 0
-        # NOTE: It's not clear why this returns different types
-        if isinstance(res, types.GeneratorType):
-            for _ in res:
-                data = self._ensureBytes(_)
-                bytes_written += len(data)
-                if write_body:
-                    writer.write(data)
-        else:
-            if asyncio.iscoroutine(res):
-                res = await res
-            # NOTE: I'm not sure why we need to to asWSGI here
-            r = res.asWSGI(wrt)
-            for _ in r:
-                if isinstance(_, types.AsyncGeneratorType):
-                    async for v in _:
-                        data = self._ensureBytes(v)
-                        written += len(data)
-                        if writer._transport.is_closing():
-                            break
-                        if write_body:
-                            writer.write(data)
-                else:
-                    data = self._ensureBytes(_)
-                    written += len(data)
-                    if writer._transport.is_closing():
-                        break
-                    if write_body:
-                        writer.write(data)
-                if writer._transport.is_closing():
-                    break
+        for atom in response.stream:
+            print("WRITING", atom)
+        # for body, content_type in reponse.bodies:
+        #     writer.write(body)
+        # # NOTE: It's not clear why this returns different types
+        # if isinstance(body, types.GeneratorType):
+        #     for chunk in body:
+        #         data = self._ensureBytes(chunk)
+        #         bytes_written += len(data)
+        #         if write_body:
+        #             writer.write(data)
+        # else:
+        #     if asyncio.iscoroutine(body):
+        #         res = cast(bytes, await body)
+        #     # NOTE: I'm not sure why we need to to asWSGI here
+        #     # r = res.asWSGI(wrt)
+        #     for _ in r:
+        #         if isinstance(_, types.AsyncGeneratorType):
+        #             async for v in _:
+        #                 data = self._ensureBytes(v)
+        #                 written += len(data)
+        #                 if writer._transport.is_closing():
+        #                     break
+        #                 if write_body:
+        #                     writer.write(data)
+        #         else:
+        #             data = self._ensureBytes(_)
+        #             written += len(data)
+        #             if writer._transport.is_closing():
+        #                 break
+        #             if write_body:
+        #                 writer.write(data)
+        #         if writer._transport.is_closing():
+        #             break
 
         # We need to let some time for the schedule to do other stuff, this
         # should prevent the `socket.send() raised exception` errors.
