@@ -61,8 +61,13 @@ class AIOBridge:
         write_body: bool = not (http_parser.method == "HEAD")
 
         bytes_written: int = 0
-        for atom in response.stream:
-            print("WRITING", atom)
+        async for chunk in response.write():
+            print("WRITING", chunk)
+            if writer._transport.is_closing():
+                break
+            else:
+                writer.write(chunk)
+
         # for body, content_type in reponse.bodies:
         #     writer.write(body)
         # # NOTE: It's not clear why this returns different types

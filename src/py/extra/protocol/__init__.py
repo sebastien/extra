@@ -38,6 +38,8 @@ class Headers:
         return headers
 
     def __init__(self):
+        # FIXME: Not sure why there is a list of bytes for the headers
+        # seems really overkill. That should probably be a tuple.
         self._headers: dict[bytes, list[bytes]] = {}
 
     def reset(self):
@@ -55,8 +57,12 @@ class Headers:
                 return value
 
     def set(self, name: str, value: Any) -> Any:
+        # FIXME: This is not even right!
         self._headers[name] = [1, [value]]
         return value
+
+    def has(self, name: str) -> bool:
+        return name in self._headers
 
     def add(self, name: str, value: Any) -> Any:
         if name not in self._headers:
@@ -68,7 +74,7 @@ class Headers:
             return value
 
 
-class RequestStatus(Enum):
+class RequestStep(Enum):
     Initialized = 0
     Open = 1
     Closed = 3
@@ -80,29 +86,29 @@ class Request(Flyweight):
 
     def __init__(self):
         Flyweight.__init__(self)
-        self.status: RequestStatus = RequestStatus.Initialized
+        self.step: RequestStep = RequestStep.Initialized
         self._onClose: Optional[Callable[[Request], None]] = None
 
     def reset(self):
         super().reset()
-        self.status: RequestStatus = RequestStatus.Initialized
+        self.step: RequestStep = RequestStep.Initialized
         self._onClose = None
 
     @property
     def isOpen(self):
-        return self.status == RequestStatus.Open
+        return self.step == RequestStep.Open
 
     @property
     def isClosed(self):
-        return self.status == RequestStatus.Closed
+        return self.step == RequestStep.Closed
 
     def open(self):
-        self.status = RequestStatus.Open
+        self.step = RequestStep.Open
         return self
 
     def close(self):
-        if self.status != RequestStatus.closed:
-            self.status = RequestStatus.closed
+        if self.step != RequestStep.closed:
+            self.step = RequestStep.closed
             if self._onClose:
                 self._onClose(self)
         return self
@@ -185,7 +191,7 @@ Body = NamedTuple(
 )
 
 
-class ResponseStatus(Enum):
+class ResponseStep(Enum):
     Initialized = 0
     Ready = 1
     Sent = 2
@@ -207,11 +213,11 @@ class ResponseControl(Enum):
 class Response(Flyweight):
     def __init__(self):
         Flyweight.__init__(self)
-        self.status: ResponseStatus = ResponseStatus.Initialized
+        self.step: ResponseStep = ResponseStep.Initialized
         self.bodies: list[TBody] = []
 
-    def init(self, status: ResponseStatus):
-        self.status = status
+    def init(self, step: ResponseStep):
+        self.step = step
         return self
 
     @property
@@ -219,7 +225,7 @@ class Response(Flyweight):
         return not self.bodies
 
     def reset(self):
-        self.status = ResponseStatus.Initialized
+        self.step = ResponseStep.Initialized
         self.bodies.clear()
         return self
 
@@ -248,13 +254,17 @@ class Response(Flyweight):
             self.bodies.append((content, asBytes(contentType)))
         return self
 
-    @property
-    def stream(self) -> Iterator[Union[ResponseControl, bytes]]:
+    async def stream(self) -> Iterator[Union[ResponseControl, bytes]]:
         for content, type in self.bodies:
             yield ResponseControl.Type
             yield type
-            yield ResponseControl.Chunk
-            yield content
+            if content is None:
+                pass
+            elif isinstance(content, bytes):
+                yield ResponseControl.Chunk
+                yield content
+            else:
+                raise ValueError(f"Unsupported body value: {content}")
         yield ResponseControl.End
 
 

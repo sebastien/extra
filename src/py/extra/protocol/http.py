@@ -1,5 +1,5 @@
-from ..protocol import Request, Response, Headers, asBytes
-from typing import Any, Optional, Union, BinaryIO, Iterable, Union
+from ..protocol import Request, Response, Headers, ResponseControl, asBytes
+from typing import Any, Optional, Union, BinaryIO, Iterable, Iterator, Union
 from tempfile import SpooledTemporaryFile
 from extra.util import unquote, Flyweight
 from urllib.parse import parse_qs
@@ -19,17 +19,24 @@ import tempfile
 # that defines the main ways to interact with HTTP data. This reimplementation
 # updates the style to leverage type, decorators and have a generally
 # simplified and streamlined API.
+#
+# Here are the principles we're following in the implementation:
+#
+# - Full typing for `mypyc` compilation
+# - As few allocations as possible, we use pre-allocated data as much as we can
+# - Streaming support everywhere to support sync and async modes
+# - Everything is bytes, so it's ready to be output
 
 # 8Mib spool size
 SPOOL_MAX_SIZE = 8 * 1024 * 1024
 BUFFER_MAX_SIZE = 1 * 1024 * 1024
 
 Range = tuple[int, int]
-ContentType = b"content-type"
-ContentLength = b"content-length"
-ContentDisposition = b"content-disposition"
-ContentDescription = b"content-description"
-Location = b"location"
+ContentType = b"Content-Type"
+ContentLength = b"Content-Length"
+ContentDisposition = b"Content-Disposition"
+ContentDescription = b"Content-Description"
+Location = b"Location"
 
 
 def asJSON(value):
@@ -83,6 +90,89 @@ class HTTPParser:
     def Dispose(cls, value: "HTTPParser"):
         cls.Pool.append(value)
         return None
+
+    # @tag(low-level)
+    @classmethod
+    def HeaderOffsets(
+        cls, data: bytes, start: int = 0, end: int = -1
+    ) -> Iterable[tuple[Range, Range]]:
+        """Parses the headers encoded in the `data` from the given `start` offset to the
+        given `end` offset."""
+        end: int = len(data) - 1 if end < 0 else min(len(data) - 1, end)
+        offset: int = start
+        while offset < end:
+            next_eol = data.find(b"\r\n", offset)
+            # If we don't find an EOL, we're reaching the end of the data
+            if next_eol == -1:
+                next_eol = end
+            # Now we look for the value separator
+            next_colon = data.find(b":", offset, end)
+            # If we don't find a header, there's nothing we can do
+            if next_colon == -1:
+                continue
+            else:
+                header_start = offset
+                header_end = next_colon
+                value_start = next_colon + 1
+                value_end = next_eol
+                yield ((header_start, header_end), (value_start, value_end))
+            # We update the cursor
+            offset = next_eol
+
+    @classmethod
+    def Header(
+        cls, data: bytes, offset: int = 0, end: int = -1
+    ) -> Iterable[tuple[Range, Range]]:
+        """A wrapper around `HeaderOffsets` that yields slices of the bytes instead of the
+        offsets."""
+        for (hs, he), (vs, ve) in HTTPParser.HeaderOffsets(data, offset, end):
+            yield (data[hs:he], data[vs:ve])
+
+    @classmethod
+    def HeaderValueOffsets(
+        cls, data: bytes, start: int = 0, end: int = -1
+    ) -> Iterable[tuple[int, int, int, int]]:
+        """Parses a header value and returns an iterator of offsets for name and value
+        in the `data`.
+
+        `multipart/mixed; boundary=inner` will
+        return `{b"":b"multipart/mixed", b"boundary":b"inner"}`
+        """
+        end: int = len(data) - 1 if end < 0 else min(len(data) - 1, end)
+        result: dict[bytes, bytes] = {}
+        offset: int = start
+        while offset < end:
+            # The next semicolumn is the next separator
+            field_end: int = data.find(b";", offset)
+            if field_end == -1:
+                field_end = end
+            value_separator: int = data.find(b"=", offset, field_end)
+            if value_separator == -1:
+                name_start, name_end = offset, offset
+                value_start, value_end = offset, field_end
+            else:
+                name_start, name_end = offset, value_separator
+                value_start, value_end = value_separator + 1, field_end
+            # We strip everything -- 32 == space in ASCII
+            while name_start < name_end and data[name_start] == 32:
+                name_start += 1
+            while name_start < name_end and data[name_end] == 32:
+                name_end -= 1
+            while value_start < value_end and data[value_start] == 32:
+                value_start += 1
+            while value_start < value_end and data[value_end] == 32:
+                value_end -= 1
+            yield name_start, name_end, value_start, value_end
+            offset = field_end + 1
+
+    @classmethod
+    def HeaderValue(
+        cls, data: bytes, start: int = 0, end: int = -1
+    ) -> dict[bytes, bytes]:
+        return dict(
+            (data[ks:ke], data[vs:ve])
+            for ks, ke, vs, ve in HTTPParser.HeaderValueOffsets(data, start, end)
+        )
 
     def __init__(
         self, address: str, port: int, stats: Optional[dict[str, float]] = None
@@ -419,18 +509,119 @@ class HTTPRequest(Request, WithHeaders):
         return HTTPResponse.Create().init(status=404).setContent("Resource not found")
 
 
+# FROM: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
+# JSON.stringify(Object.values(document.querySelectorAll("dt")).map(_ => _.innerText))
+# and then
+# CODE = re.compile(r"(\d+)\s(.+)")
+# {int(_.group(1)):_.group(2) for _ in (CODE.match(_) for _ in l) if _}
+HTTPStatus: dict[int, bytes] = {
+    100: b"Continue",
+    101: b"Switching Protocols",
+    102: b"Processing (WebDAV)",
+    103: b"Early Hints",
+    200: b"OK",
+    201: b"Created",
+    202: b"Accepted",
+    203: b"Non-Authoritative Information",
+    204: b"No Content",
+    205: b"Reset Content",
+    206: b"Partial Content",
+    207: b"Multi-Status (WebDAV)",
+    208: b"Already Reported (WebDAV)",
+    226: b"IM Used (HTTP Delta encoding)",
+    300: b"Multiple Choices",
+    301: b"Moved Permanently",
+    302: b"Found",
+    303: b"See Other",
+    304: b"Not Modified",
+    305: b"Use Proxy ",
+    306: b"unused",
+    307: b"Temporary Redirect",
+    308: b"Permanent Redirect",
+    400: b"Bad Request",
+    401: b"Unauthorized",
+    402: b"Payment Required ",
+    403: b"Forbidden",
+    404: b"Not Found",
+    405: b"Method Not Allowed",
+    406: b"Not Acceptable",
+    407: b"Proxy Authentication Required",
+    408: b"Request Timeout",
+    409: b"Conflict",
+    410: b"Gone",
+    411: b"Length Required",
+    412: b"Precondition Failed",
+    413: b"Payload Too Large",
+    414: b"URI Too Long",
+    415: b"Unsupported Media Type",
+    416: b"Range Not Satisfiable",
+    417: b"Expectation Failed",
+    418: b"I'm a teapot",
+    421: b"Misdirected Request",
+    422: b"Unprocessable Entity (WebDAV)",
+    423: b"Locked (WebDAV)",
+    424: b"Failed Dependency (WebDAV)",
+    425: b"Too Early ",
+    426: b"Upgrade Required",
+    428: b"Precondition Required",
+    429: b"Too Many Requests",
+    431: b"Request Header Fields Too Large",
+    451: b"Unavailable For Legal Reasons",
+    500: b"Internal Server Error",
+    501: b"Not Implemented",
+    502: b"Bad Gateway",
+    503: b"Service Unavailable",
+    504: b"Gateway Timeout",
+    505: b"HTTP Version Not Supported",
+    506: b"Variant Also Negotiates",
+    507: b"Insufficient Storage (WebDAV)",
+    508: b"Loop Detected (WebDAV)",
+    510: b"Not Extended",
+    511: b"Network Authentication Required",
+}
+
+
 class HTTPResponse(Response, WithHeaders):
     POOL: list["HTTPResponse"] = []
 
     def __init__(self):
         super().__init__()
+        self.status: int = 200
+        self.reason: Optional[bytes] = None
         WithHeaders.__init__(self)
 
-    def fromFile(self):
-        pass
-
-    def fromStream(self):
-        pass
+    async def write(self) -> Iterator[bytes]:
+        # FIXME: Is it faster to format? This would be interesting to try out
+        yield b"HTTP/1.1 "
+        yield bytes(f"{self.status} ", "ascii")
+        yield self.reason or HTTPStatus[self.status]
+        yield b"\r\n"
+        if not self.headers.has(ContentType):
+            # FIXME:We should deal with multiple bodies
+            yield ContentType
+            yield b": "
+            yield self.bodies[0][1]
+            yield b"\r\n"
+        if not self.headers.has(ContentLength):
+            # FIXME: We should supprot streaming content and all
+            yield ContentLength
+            yield b": "
+            yield bytes(f"{len(self.bodies[0][1])}", "ascii")
+            yield b"\r\n"
+        yield b"\r\n"
+        for k, l in self.headers.items():
+            yield k
+            yield ": "
+            yield l[0]
+            # TODO: What about the rest?
+            yield b"\r\n"
+        current: Optional[ResponseControl] = None
+        for content, type in self.bodies:
+            yield content
+            #     current = atom
+            # elif current == ResponseControl.Chunk:
+            #     assert isinstance(bytes, atom)
+            #     yield atom
 
 
 # -----------------------------------------------------------------------------
@@ -516,7 +707,7 @@ class Body(Flyweight):
         return self
 
     def process(self):
-        parsed_content = Parse.HeaderValue(self.contentType)
+        parsed_content = HTTPParser.HeaderValue(self.contentType)
         content_type = parsed_content.get(b"")
         print("PARSE CONTENT", parsed_content)
         if content_type == b"multipart/form-data":
@@ -527,102 +718,6 @@ class Body(Flyweight):
                 print(headers, data_file)
         else:
             return None
-
-
-# -----------------------------------------------------------------------------
-#
-# PARSE
-#
-# -----------------------------------------------------------------------------
-
-
-# TODO: Should merge in the util.http stuff as well
-class Parse:
-    """A collection of parsing functions used to extract data from HTTP
-    binary payloads."""
-
-    # @tag(low-level)
-    @classmethod
-    def HeaderOffsets(
-        cls, data: bytes, start: int = 0, end: int = -1
-    ) -> Iterable[tuple[Range, Range]]:
-        """Parses the headers encoded in the `data` from the given `start` offset to the
-        given `end` offset."""
-        end: int = len(data) - 1 if end < 0 else min(len(data) - 1, end)
-        offset: int = start
-        while offset < end:
-            next_eol = data.find(b"\r\n", offset)
-            # If we don't find an EOL, we're reaching the end of the data
-            if next_eol == -1:
-                next_eol = end
-            # Now we look for the value separator
-            next_colon = data.find(b":", offset, end)
-            # If we don't find a header, there's nothing we can do
-            if next_colon == -1:
-                continue
-            else:
-                header_start = offset
-                header_end = next_colon
-                value_start = next_colon + 1
-                value_end = next_eol
-                yield ((header_start, header_end), (value_start, value_end))
-            # We update the cursor
-            offset = next_eol
-
-    @classmethod
-    def Header(
-        cls, data: bytes, offset: int = 0, end: int = -1
-    ) -> Iterable[tuple[Range, Range]]:
-        """A wrapper around `HeaderOffsets` that yields slices of the bytes instead of the
-        offsets."""
-        for (hs, he), (vs, ve) in Parse.HeaderOffsets(data, offset, end):
-            yield (data[hs:he], data[vs:ve])
-
-    @classmethod
-    def HeaderValueOffsets(
-        cls, data: bytes, start: int = 0, end: int = -1
-    ) -> Iterable[tuple[int, int, int, int]]:
-        """Parses a header value and returns an iterator of offsets for name and value
-        in the `data`.
-
-        `multipart/mixed; boundary=inner` will
-        return `{b"":b"multipart/mixed", b"boundary":b"inner"}`
-        """
-        end: int = len(data) - 1 if end < 0 else min(len(data) - 1, end)
-        result: dict[bytes, bytes] = {}
-        offset: int = start
-        while offset < end:
-            # The next semicolumn is the next separator
-            field_end: int = data.find(b";", offset)
-            if field_end == -1:
-                field_end = end
-            value_separator: int = data.find(b"=", offset, field_end)
-            if value_separator == -1:
-                name_start, name_end = offset, offset
-                value_start, value_end = offset, field_end
-            else:
-                name_start, name_end = offset, value_separator
-                value_start, value_end = value_separator + 1, field_end
-            # We strip everything -- 32 == space in ASCII
-            while name_start < name_end and data[name_start] == 32:
-                name_start += 1
-            while name_start < name_end and data[name_end] == 32:
-                name_end -= 1
-            while value_start < value_end and data[value_start] == 32:
-                value_start += 1
-            while value_start < value_end and data[value_end] == 32:
-                value_end -= 1
-            yield name_start, name_end, value_start, value_end
-            offset = field_end + 1
-
-    @classmethod
-    def HeaderValue(
-        cls, data: bytes, start: int = 0, end: int = -1
-    ) -> dict[bytes, bytes]:
-        return dict(
-            (data[ks:ke], data[vs:ve])
-            for ks, ke, vs, ve in Parse.HeaderValueOffsets(data, start, end)
-        )
 
 
 # -----------------------------------------------------------------------------
