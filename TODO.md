@@ -1,3 +1,7 @@
+Cleanup:
+- Make sure it compiles with mypyc
+- Test standalone (CLI) first to make sure it works
+
 Baseline
 
 -   Ensure it runs like retro, with a standalone server by default

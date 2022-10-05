@@ -253,18 +253,12 @@ def server(
     """Creates an ASGI bridge, mounts the services into an application
     and returns the ASGI application handler."""
     bridge = ASGIBridge()
+    components = Components.Make(services)
     # This extracts and instanciates the services and applications that
     # are given here.
-    input_objects = [_() if isinstance(_, type) else _ for _ in services]
-    app_objects: list[Application] = [
-        _ for _ in input_objects if isinstance(_, Application)
-    ]
-    service_objects: list[Service] = [
-        _ for _ in input_objects if isinstance(_, Service)
-    ]
-    app: Application = app_objects[0] if app_objects else Application()
+    app: Application = components.app or Application()
     # Now we mount all the services on the application
-    for srv in service_objects:
+    for srv in components.services:
         logging.info(f"Mounting service: {srv}")
         app.mount(srv)
     # Ands we're ready for the main loop
