@@ -10,6 +10,7 @@ from typing import (
     Generic,
     NamedTuple,
     AsyncGenerator,
+    AsyncIterator,
 )
 from extra.util import Flyweight
 from enum import Enum
@@ -185,19 +186,23 @@ class Request(Flyweight):
         pass
 
 
-BodyType = Enum("BodyType", "none value iterator")
-Body = NamedTuple(
-    "Body", [("type", BodyType), ("content", Union[bytes]), ("contentType", bytes)]
-)
+class BodyType(Enum):
+    Empty = "empty"
+    Value = "value"
+    Iterator = "iterator"
+    AsyncIterator = "asyncIterator"
+
+
+class Body(NamedTuple):
+    type: BodyType
+    content: Union[bytes, Iterator[bytes], AsyncIterator[bytes]]
+    contentType: bytes
 
 
 class ResponseStep(Enum):
     Initialized = 0
     Ready = 1
     Sent = 2
-
-
-TBody = tuple[Union[bytes, Iterator[bytes]], bytes]
 
 
 # TODO: The response should have ways to stream the bodies and write
@@ -214,7 +219,7 @@ class Response(Flyweight):
     def __init__(self):
         Flyweight.__init__(self)
         self.step: ResponseStep = ResponseStep.Initialized
-        self.bodies: list[TBody] = []
+        self.bodies: list[Body] = []
         self.headers: Optional[Headers] = None
         self.status: int = 0
 
@@ -245,15 +250,23 @@ class Response(Flyweight):
         if isinstance(
             content, str
         ):  # SEE: https://www.w3.org/International/articles/http-charset/index
-            self.bodies.append((asBytes(content), b"text/plain; charset=utf-8"))
+            self.bodies.append(
+                Body(BodyType.Value, asBytes(content), b"text/plain; charset=utf-8")
+            )
         elif isinstance(content, bytes):
-            self.bodies.append((content, asBytes(contentType or b"application/binary")))
+            self.bodies.append(
+                Body(
+                    BodyType.Value,
+                    content,
+                    asBytes(contentType or b"application/binary"),
+                )
+            )
         else:
             if not contentType:
                 raise ValueError(
-                    "contentType must be specified when type is not bytes or st"
+                    "contentType must be specified when type is not bytes or str"
                 )
-            self.bodies.append((content, asBytes(contentType)))
+            self.bodies.append((BodyType.Value, content, asBytes(contentType)))
         return self
 
     async def stream(self) -> Iterator[Union[ResponseControl, bytes]]:

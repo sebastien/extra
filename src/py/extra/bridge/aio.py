@@ -53,7 +53,6 @@ class AIOBridge:
 
         # TODO: We'll need to process the request
         response = application.process(request)
-        print("XXX RESPOSNE", response.bodies)
 
         # TODO: Process the application
         # Here we don't write bodies of HEAD requests, as some browsers
@@ -62,7 +61,6 @@ class AIOBridge:
 
         bytes_written: int = 0
         async for chunk in response.write():
-            print("WRITING", chunk)
             if writer.is_closing():
                 break
             else:

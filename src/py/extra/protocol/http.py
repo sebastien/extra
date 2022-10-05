@@ -602,31 +602,20 @@ class HTTPResponse(Response, WithHeaders):
 
     async def write(self) -> AsyncIterator[bytes]:
         # FIXME: Is it faster to format? This would be interesting to try out
-        yield b"HTTP/1.1 "
-        yield bytes(f"{self.status} ", "ascii")
-        yield self.reason or HTTPStatus[self.status]
-        yield b"\r\n"
+        yield f"HTTP/1.1 {self.status} {self.reason or HTTPStatus[self.status]}\r\n".encode()
         if not self.headers.has(ContentType):
             # FIXME:We should deal with multiple bodies
-            yield ContentType
-            yield b": "
-            yield self.bodies[0][1]
-            yield b"\r\n"
+            yield f"{ContentType}: {self.bodies[0][1]}\r\n".encode()
         if not self.headers.has(ContentLength):
-            # FIXME: We should supprot streaming content and all
-            yield ContentLength
-            yield b": "
-            yield bytes(f"{len(self.bodies[0][1])}", "ascii")
-            yield b"\r\n"
+            # FIXME: We should support streaming content and all
+            print(self.bodies)
+            yield f"{ContentLength}: {len(self.bodies[0].content)}\r\n".encode()
         yield b"\r\n"
         for k, l in self.headers.items():
-            yield k
-            yield ": "
-            yield l[0]
             # TODO: What about the rest?
-            yield b"\r\n"
+            yield b"{k}: l[0]\r\n".encode()
         current: Optional[ResponseControl] = None
-        for content, type in self.bodies:
+        for type, content, contentType in self.bodies:
             yield content
             #     current = atom
             # elif current == ResponseControl.Chunk:

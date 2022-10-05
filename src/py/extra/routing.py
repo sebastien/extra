@@ -1,11 +1,8 @@
 from typing import (
     Optional,
     Callable,
-    Dict,
-    Tuple,
     Any,
     Iterable,
-    List,
     Pattern,
     Match,
     Union,
@@ -34,7 +31,7 @@ class Route:
     RE_TEMPLATE = re.compile(r"\{([\w][_\w\d]*)(:([^}]+))?\}")
     RE_SPECIAL = re.compile(r"/\+\*\-\:")
 
-    PATTERNS: Dict[str, Tuple[str, Callable[[str], Any]]] = {
+    PATTERNS: dict[str, tuple[str, Callable[[str], Any]]] = {
         "id": (r"[a-zA-Z0-9\-_]+", str),
         "word": (r"\w+", str),
         "name": (r"\w[\-\w]*", str),
@@ -88,8 +85,8 @@ class Route:
 
     def __init__(self, text: str, handler: Optional["Handler"] = None):
         self.text: str = text
-        self.chunks: List[Any] = self.Parse(text)
-        self.params: List[str] = [_[1] for _ in self.chunks if _[0] == "P"]
+        self.chunks: list[Any] = self.Parse(text)
+        self.params: list[str] = [_[1] for _ in self.chunks if _[0] == "P"]
         self.handler: Optional[Handler] = handler
         self._pattern: Optional[str] = None
         self._regexp: Optional[Pattern] = None
@@ -110,8 +107,8 @@ class Route:
             self._regexp = re.compile(self.toRegExp())
         return self._regexp
 
-    def toRegExpChunks(self) -> List[str]:
-        res: List[str] = []
+    def toRegExpChunks(self) -> list[str]:
+        res: list[str] = []
         for chunk in self.chunks:
             if chunk[0] == "T":
                 res.append(chunk[1])
@@ -124,7 +121,7 @@ class Route:
     def toRegExp(self) -> str:
         return "".join(self.toRegExpChunks())
 
-    def match(self, path: str) -> Optional[Dict[str, str]]:
+    def match(self, path: str) -> Optional[dict[str, str]]:
         matches = self.regexp.match(path)
         return dict((_, matches.group(_)) for _ in self.params) if matches else None
 
@@ -153,10 +150,10 @@ class Prefix:
     def __init__(self, value: Optional[str] = None, parent: Optional["Prefix"] = None):
         self.value = value
         self.parent = parent
-        self.children: Dict[str, Prefix] = {}
+        self.children: dict[str, Prefix] = {}
 
     def simplify(self):
-        simplified: Dict[str, Prefix] = {}
+        simplified: dict[str, Prefix] = {}
         children = self.children
         # Any consecutive chain like A―B―C gets simplified to ABC
         while len(children) == 1:
@@ -232,7 +229,7 @@ class Handler:
     def __init__(
         self,
         functor: Callable,
-        methods: List[str],
+        methods: list[str],
         priority: int = 0,
         expose: bool = False,
         contentType=None,
@@ -245,7 +242,7 @@ class Handler:
             bytes(contentType, "utf8") if isinstance(contentType, str) else contentType
         )
 
-    def __call__(self, request: Request, params: Dict[str, Any]) -> Response:
+    def __call__(self, request: Request, params: dict[str, Any]) -> Response:
         if self.expose:
             value: Any = self.functor(**params)
             # The `respond` method will take care of handling the different
@@ -271,7 +268,7 @@ class Dispatcher:
     on a given path/URI."""
 
     def __init__(self):
-        self.routes: Dict[str, List[Route]] = {}
+        self.routes: dict[str, list[Route]] = {}
         self.isPrepared = True
 
     def register(self, handler: Handler, prefix: Optional[str] = None):
@@ -293,7 +290,7 @@ class Dispatcher:
 
     def match(
         self, method: str, path: str
-    ) -> Tuple[Optional[Route], Optional[Union[bool, Match]]]:
+    ) -> tuple[Optional[Route], Optional[Union[bool, Match]]]:
         """Matches a given `method` and `path` with the registered route, returning
         the matching route and the match information."""
         if method not in self.routes:
