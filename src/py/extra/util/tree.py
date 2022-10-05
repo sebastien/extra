@@ -32,7 +32,7 @@ class Event:
         self.name = name
         self.data = data
         self.created = time.time()
-        self.target: Optional['Node'] = None
+        self.target: Optional["Node"] = None
         self.isPropagating: bool = True
 
     def stop(self):
@@ -41,6 +41,7 @@ class Event:
 
     def __str__(self):
         return f"<Event {self.name}={self.data}>"
+
 
 # -----------------------------------------------------------------------------
 #
@@ -58,8 +59,8 @@ class Node:
     def __init__(self):
         self.id: int = Node.ID
         Node.ID += 1
-        self._children: List['Node'] = []
-        self.parent: Optional['Node'] = None
+        self._children: List["Node"] = []
+        self.parent: Optional["Node"] = None
         self.data: Optional[any] = None
         self.meta: Dict[str, any] = {}
         self.handlers: Optional[Dict[str, Callable]] = None
@@ -95,27 +96,27 @@ class Node:
         return depth
 
     @property
-    def root(self) -> 'Node':
+    def root(self) -> "Node":
         node = self
         while node.parent:
             node = node.parent
         return node
 
     @property
-    def ancestors(self) -> Iterable['Node']:
+    def ancestors(self) -> Iterable["Node"]:
         node = self.parent
         while node:
             yield node
             node = node.parent
 
     @property
-    def descendants(self) -> Iterable['Node']:
+    def descendants(self) -> Iterable["Node"]:
         for child in self.children:
             yield child
             yield from child.descendants
 
     @property
-    def leaves(self) -> Iterable['Node']:
+    def leaves(self) -> Iterable["Node"]:
         if not self.children:
             yield self
         else:
@@ -149,7 +150,9 @@ class Node:
         handler can only be bound once."""
         self.handlers = self.handlers or {}
         handlers = self.handlers.setdefault(event, [])
-        assert callback not in handlers, f"Registering callback twice in node {self}: {callback}"
+        assert (
+            callback not in handlers
+        ), f"Registering callback twice in node {self}: {callback}"
         handlers.append(callback)
         return self
 
@@ -158,7 +161,9 @@ class Node:
         which requires the event handler to have previously been bound."""
         handlers = self.handlers.get(event) if self.handlers else None
         if handlers:
-            assert callback not in handlers, f"Callback not registered in node {self}: {callback}"
+            assert (
+                callback not in handlers
+            ), f"Callback not registered in node {self}: {callback}"
             handlers.remove(callback)
         return self
 
@@ -181,7 +186,7 @@ class Node:
             self.parent._dispatchEvent(event)
         return event
 
-    def add(self, node: 'Node') -> 'Node':
+    def add(self, node: "Node") -> "Node":
         if node not in self.children:
             node.parent = self
             self.children.append(node)
@@ -196,7 +201,7 @@ class Node:
             _.childChanged = max(changed, _.childChanged)
         return self
 
-    def walk(self) -> Iterable['Node']:
+    def walk(self) -> Iterable["Node"]:
         yield self
         for c in self.children:
             yield from c.walk()
@@ -211,6 +216,7 @@ class Node:
     def __str__(self):
         return f"<Node:{self.id} +{len(self.children)}>"
 
+
 # -----------------------------------------------------------------------------
 #
 # NAMED NODE
@@ -223,11 +229,13 @@ class NamedNode(Node):
     of being anonymous and indexed. This structure makes it easy to
     implement registries and filesystem-like hierarchies."""
 
-    def __init__(self, name: Optional[str] = None, parent: Optional['NamedNode'] = None):
+    def __init__(
+        self, name: Optional[str] = None, parent: Optional["NamedNode"] = None
+    ):
         super().__init__()
         self._name: Optional[str] = name
-        self._children: Dict[str, 'NamedNode'] = dict()
-        self.parent: Optional['NamedNode'] = None
+        self._children: Dict[str, "NamedNode"] = dict()
+        self.parent: Optional["NamedNode"] = None
         # We bind the node if a parent was set
         if parent:
             assert name, "Cannot set a parent without setting a name."
@@ -261,7 +269,7 @@ class NamedNode(Node):
     def clear(self):
         return [child.detach() for child in self.children]
 
-    def remove(self, node: 'NamedNode'):
+    def remove(self, node: "NamedNode"):
         assert node.parent == self
         assert self._children[node.name] == node
         del self._children[node.name]
@@ -271,13 +279,14 @@ class NamedNode(Node):
     def detach(self):
         return self.parent.remove(self) if self.parent else self
 
-    def add(self, node: 'Node') -> 'NamedNode':
+    def add(self, node: "Node") -> "NamedNode":
         assert isinstance(
-            node, NamedNode), "NamedNode can only take a compatible subclass"
+            node, NamedNode
+        ), "NamedNode can only take a compatible subclass"
         assert node.name, "Node can only be added if named"
         return self.set(node.name, node)
 
-    def set(self, key: str, node: 'NamedNode') -> 'NamedNode':
+    def set(self, key: str, node: "NamedNode") -> "NamedNode":
         assert key, f"Cannot set node with key '{key}' in: {self.path}"
         # We remove the previous child, if any
         previous = self._children.get(key)
@@ -293,10 +302,10 @@ class NamedNode(Node):
     def has(self, key: str) -> bool:
         return key in self._children
 
-    def get(self, key: str) -> Optional['NamedNode']:
+    def get(self, key: str) -> Optional["NamedNode"]:
         return self._children[key] if key in self._children else None
 
-    def resolve(self, path: str, strict=True) -> Optional['NamedNode']:
+    def resolve(self, path: str, strict=True) -> Optional["NamedNode"]:
         context: NamedNode = self
         for k in path.split(self.SEPARATOR):
             if not context.has(k):
@@ -305,7 +314,7 @@ class NamedNode(Node):
                 context = cast(NamedNode, context.get(k))
         return context
 
-    def ensure(self, path: str) -> 'NamedNode':
+    def ensure(self, path: str) -> "NamedNode":
         context: NamedNode = self
         for k in path.split(self.SEPARATOR):
             if not context:
@@ -315,13 +324,17 @@ class NamedNode(Node):
                 continue
             elif not context.has(k):
                 context = context.set(k, self.__class__(name=k))
-                assert not context or context.parent, f"Created node should have parent {context}"
+                assert (
+                    not context or context.parent
+                ), f"Created node should have parent {context}"
             else:
                 context = cast(NamedNode, context.get(k))
-                assert not context or context.parent, f"Retrieved node should have parent {context}"
+                assert (
+                    not context or context.parent
+                ), f"Retrieved node should have parent {context}"
         return context
 
-    def walk(self) -> Iterable['NamedNode']:
+    def walk(self) -> Iterable["NamedNode"]:
         yield self
         for c in self.children:
             yield from c.walk()
@@ -337,6 +350,7 @@ class NamedNode(Node):
     def __str__(self):
         return f"<NamedNode:{self.name}:{self.id} +{len(self.children)}>"
 
+
 # -----------------------------------------------------------------------------
 #
 # FILESYSTEM NODE
@@ -350,14 +364,28 @@ class FilesystemNode(NamedNode):
     dict."""
 
     SEPARATOR = "/"
-    def DATA_PREDICATE(_): return _.endswith(".data.json.gz")
-    def META_PREDICATE(_): return _.endswith(".meta.json.gz")
-    def DATA_EXTRACT(_): return _[:-(len(".data.json.gz"))]
-    def META_EXTRACT(_): return _[:-(len(".meta.json.gz"))]
+
+    def DATA_PREDICATE(_):
+        return _.endswith(".data.json.gz")
+
+    def META_PREDICATE(_):
+        return _.endswith(".meta.json.gz")
+
+    def DATA_EXTRACT(_):
+        return _[: -(len(".data.json.gz"))]
+
+    def META_EXTRACT(_):
+        return _[: -(len(".meta.json.gz"))]
+
     DATA_FORMAT = "{name}.data.json.gz"
     META_FORMAT = "{name}.meta.json.gz"
-    def SERIALIZE(data, fd): return json.dump(data, fd)
-    def DESERIALIZE(fd): return json.load(fd)
+
+    def SERIALIZE(data, fd):
+        return json.dump(data, fd)
+
+    def DESERIALIZE(fd):
+        return json.load(fd)
+
     RE_NAME_NORMALIZE = re.compile(r"[\\/ ]")
     CHAR_NAME_NORMALIZE = "_"
 
@@ -365,12 +393,23 @@ class FilesystemNode(NamedNode):
     def NormalizeKey(cls, key: Optional[str]):
         return cls.RE_NAME_NORMALIZE.sub(cls.CHAR_NAME_NORMALIZE, key) if key else key
 
-    def __init__(self, name: Optional[str] = None, parent: Optional['FilesystemNode'] = None, base: Union[None, str, Path] = None):
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        parent: Optional["FilesystemNode"] = None,
+        base: Union[None, str, Path] = None,
+    ):
         super().__init__(self.NormalizeKey(name), parent)
-        self._base: Optional[Path] = Path(base) if isinstance(
-            base, str) else base if isinstance(base, Path) else None
-        self._children: weakref.WeakValueDictionary[str,
-                                                    FilesystemNode] = weakref.WeakValueDictionary()
+        self._base: Optional[Path] = (
+            Path(base)
+            if isinstance(base, str)
+            else base
+            if isinstance(base, Path)
+            else None
+        )
+        self._children: weakref.WeakValueDictionary[
+            str, FilesystemNode
+        ] = weakref.WeakValueDictionary()
 
     # FIXME: These should probably be cached, as it's a lot of objects
     # created on property access.
@@ -382,7 +421,9 @@ class FilesystemNode(NamedNode):
             # has a trailing /
             return Path(self.META_FORMAT.format(name=self.basePath))
         else:
-            assert self.name, f"If the node has a parent, it must have a name: {self.path}"
+            assert (
+                self.name
+            ), f"If the node has a parent, it must have a name: {self.path}"
             name = self.META_FORMAT.format(name=self.name)
             return cast(FilesystemNode, self.parent).basePath.joinpath(name)
 
@@ -393,7 +434,9 @@ class FilesystemNode(NamedNode):
             # has a trailing /
             return Path(self.DATA_FORMAT.format(name=self.basePath))
         else:
-            assert self.name, f"If the node has a parent, it must have a name: {self.path}"
+            assert (
+                self.name
+            ), f"If the node has a parent, it must have a name: {self.path}"
             name = self.DATA_FORMAT.format(name=self.name)
             return cast(FilesystemNode, self.parent).basePath.joinpath(name)
 
@@ -401,17 +444,19 @@ class FilesystemNode(NamedNode):
     def basePath(self) -> Path:
         """The base path is the path where this nodes files would be."""
         # NOTE: A node without parent has no name, so we use the base
-        return self._base if not self.parent else self.parent.basePath.joinpath(self.name)
+        return (
+            self._base if not self.parent else self.parent.basePath.joinpath(self.name)
+        )
 
     @property
     def hasBase(self):
         return bool(self.root._base)
 
     @property
-    def children(self) -> List['FilesystemNode']:
+    def children(self) -> List["FilesystemNode"]:
         return list(self.pullChildren().values())
 
-    def pullChildren(self) -> Dict[str, 'FilesystemNode']:
+    def pullChildren(self) -> Dict[str, "FilesystemNode"]:
         """Pulls/syncs the children from the filesystem, returning a map. This
         has the effect of updating the `_children` map."""
         if not self.hasBase:
@@ -453,15 +498,17 @@ class FilesystemNode(NamedNode):
 
     def has(self, key: str) -> bool:
         # We test for children, meta or data files
-        return self.dataPath.exists() or self.metaPath.exists() or self.basePath.exists()
+        return (
+            self.dataPath.exists() or self.metaPath.exists() or self.basePath.exists()
+        )
 
-    def set(self, key: str, node: 'FilesystemNode') -> 'FilesystemNode':
+    def set(self, key: str, node: "FilesystemNode") -> "FilesystemNode":
         key = self.NormalizeKey(key)
         if node:
             node.key = key
         return super().set(key, node)
 
-    def get(self, key: str) -> Optional['FilesystemNode']:
+    def get(self, key: str) -> Optional["FilesystemNode"]:
         key = self.NormalizeKey(key)
         node = self._children.get(key)
         # NOTE: We're pulling from the weak dictionary
@@ -521,16 +568,18 @@ class FilesystemNode(NamedNode):
             if data_path.exists():
                 with gzip.open(self._ensurePathParent(data_path), "rt") as f:
                     pulled_data = self.__class__.DESERIALIZE(f)
-            self.data = merge(
-                self.data, pulled_data) if merge and self.data else pulled_data
+            self.data = (
+                merge(self.data, pulled_data) if merge and self.data else pulled_data
+            )
         if meta:
             pulled_meta = None
             meta_path = self.metaPath
             if meta_path.exists():
                 with gzip.open(self._ensurePathParent(meta_path), "rt") as f:
                     pulled_meta = self.__class__.DESERIALIZE(f)
-            self.meta = merge(
-                self.meta, pulled_meta) if merge and self.meta else pulled_meta
+            self.meta = (
+                merge(self.meta, pulled_meta) if merge and self.meta else pulled_meta
+            )
         return self
 
     def copyTo(self, store, meta=True, data=True, limit=-1):
@@ -543,8 +592,7 @@ class FilesystemNode(NamedNode):
         target.push(meta=meta, data=data)
         if limit != 0:
             for child in self.children:
-                self.get(child).copyTo(store, meta=meta,
-                                       data=data, limit=limit - 1)
+                self.get(child).copyTo(store, meta=meta, data=data, limit=limit - 1)
         return target
 
     def _ensurePathParent(self, path: Path = None):
@@ -563,11 +611,11 @@ class FilesystemNode(NamedNode):
         elif self.has(name):
             return self.get(name)
         else:
-            raise KeyError(
-                f"Node {self.path} has no children with name: {name}")
+            raise KeyError(f"Node {self.path} has no children with name: {name}")
 
     def __str__(self):
         return f"<FilesystemNode:{self.name}:{self.id} +{len(self.children)}>"
+
 
 # -----------------------------------------------------------------------------
 #
@@ -577,7 +625,6 @@ class FilesystemNode(NamedNode):
 
 
 class ASCII:
-
     @classmethod
     def Format(cls, node: Node, prefix="") -> Iterable[str]:
         # FIXME: It's ~OK but needs improvement
@@ -590,7 +637,6 @@ class ASCII:
 
 
 class Graphviz:
-
     @classmethod
     def Format(cls, root: Node) -> Iterable[str]:
         yield "digraph {"
@@ -622,5 +668,6 @@ def toGraphviz(node):
 
 def store(path):
     return FilesystemNode(base=path)
+
 
 # EOF

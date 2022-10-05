@@ -4,7 +4,9 @@ from ..protocol.http import HTTPRequest
 from typing import Dict, Callable, Any, Coroutine, Union, Iterable
 
 
-def server(*services: Union[Application, Service]) -> Callable[[str, str], Iterable[bytes]]:
+def server(
+    *services: Union[Application, Service]
+) -> Callable[[str, str], Iterable[bytes]]:
     app = mount(services)
 
     def run(method: str, path: str) -> Iterable[bytes]:
@@ -20,6 +22,8 @@ def server(*services: Union[Application, Service]) -> Callable[[str, str], Itera
             yield chunk
         response.recycle()
         request.recycle()
+
     return run
+
 
 # EOF

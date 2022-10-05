@@ -1,10 +1,9 @@
 from typing import TypeVar, Generic, List
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class Channel(Generic[T]):
-
     def __init__(self):
         self._buffer: List[T] = []
         self._isOpen = False
@@ -13,11 +12,11 @@ class Channel(Generic[T]):
     def isOpen(self) -> bool:
         return self._isOpen
 
-    def open(self) -> 'Channel':
+    def open(self) -> "Channel":
         self._isOpen = True
         return self
 
-    def close(self) -> 'Channel':
+    def close(self) -> "Channel":
         self._isOpen = False
         return self
 
@@ -46,5 +45,6 @@ class Channel(Generic[T]):
 
 async def consume(channel: Channel):
     yield None
+
 
 # EOF

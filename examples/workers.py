@@ -12,7 +12,6 @@ def producer(channel: Channel):
 
 
 class API(Service):
-
     def __init__(self, channel: Channel):
         super().__init__()
         self.channel: Optional[Channel] = None

@@ -1,7 +1,7 @@
 # @group(Utility)
 
-class Flyweight:
 
+class Flyweight:
     @classmethod
     def Recycle(cls, value):
         cls.POOL.append(value)
@@ -29,5 +29,6 @@ def unquote(text: bytes) -> bytes:
         return text[1:-1]
     else:
         return text
+
 
 # EOF

@@ -8,7 +8,6 @@ served with a live transformation phase.
 
 
 class Localhost(FileService):
-
     def processECMAScript(self):
         pass
 

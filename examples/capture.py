@@ -2,7 +2,6 @@ from extra import Service, HTTPRequest, HTTPResponse, on, serve
 
 
 class CaptureService(Service):
-
     @on(GET_POST="/upload")
     async def catchall(self, request: HTTPRequest) -> HTTPResponse:
         # while True:

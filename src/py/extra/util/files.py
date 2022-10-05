@@ -72,7 +72,8 @@ def write(value, path):
             f.write(value)
     else:
         raise ValueError(
-            f"No writer found for {path} and value {value}, pick one of {','.join(WRITERS.keys())}")
+            f"No writer found for {path} and value {value}, pick one of {','.join(WRITERS.keys())}"
+        )
 
 
 def read(path):
@@ -95,5 +96,6 @@ def getFileOpener(path):
         if path.endswith(key):
             return COMPRESSION[key]
     return open
+
 
 # EOF

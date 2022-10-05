@@ -3,9 +3,11 @@ from .feature.pubsub import pub, sub
 import os
 import sys
 import time
+
 try:
     import colorama
     from colorama import Fore, Back, Style
+
     colorama.init()
 except ImportError as e:
     colorama = None
@@ -35,19 +37,23 @@ class Logger:
 
     EFFECTOR_REGISTERED = False
     INSTANCE = None
-    FORMAT = {
-        "default": f"    {{message}}{Style.RESET_ALL}",
-        "error": f"{Style.BRIGHT}{Fore.RED}[!] {{message}}{Style.RESET_ALL}",
-        "warning": f"{Style.DIM}{Fore.YELLOW} !  {{message}}{Style.RESET_ALL}",
-        "metric": f"{Style.DIM}{Fore.YELLOW} →  {Fore.WHITE}{{name}} = {Style.BRIGHT}{Fore.YELLOW}{{value}}{Style.RESET_ALL}",
-        "info": f" »  {{message}}{Style.RESET_ALL}",
-    } if colorama else {
-        "default": "    {message}",
-        "error": f" ✘ {{message}}",
-        "warning": f" !  {{message}}",
-        "metric": f" →  {{name}} = {{value}}",
-        "info": f" »  {{message}}",
-    }
+    FORMAT = (
+        {
+            "default": f"    {{message}}{Style.RESET_ALL}",
+            "error": f"{Style.BRIGHT}{Fore.RED}[!] {{message}}{Style.RESET_ALL}",
+            "warning": f"{Style.DIM}{Fore.YELLOW} !  {{message}}{Style.RESET_ALL}",
+            "metric": f"{Style.DIM}{Fore.YELLOW} →  {Fore.WHITE}{{name}} = {Style.BRIGHT}{Fore.YELLOW}{{value}}{Style.RESET_ALL}",
+            "info": f" »  {{message}}{Style.RESET_ALL}",
+        }
+        if colorama
+        else {
+            "default": "    {message}",
+            "error": f" ✘ {{message}}",
+            "warning": f" !  {{message}}",
+            "metric": f" →  {{name}} = {{value}}",
+            "info": f" »  {{message}}",
+        }
+    )
 
     @classmethod
     def Instance(cls):
@@ -78,7 +84,8 @@ class Logger:
                 if not exists:
                     f.write("timestamp	key	code\n")
                 f.write(
-                    f"{time.strftime('%Y-%m-%d %H:%M:%S %z')}	{event.data['key']}	{event.data['code']}\n")
+                    f"{time.strftime('%Y-%m-%d %H:%M:%S %z')}	{event.data['key']}	{event.data['code']}\n"
+                )
         if event_type == "metric":
             # We log metrics in a file
             exists = os.path.exists("metrics.tsv")
@@ -86,7 +93,8 @@ class Logger:
                 if not exists:
                     f.write("timestamp	name	value\n")
                 f.write(
-                    f"{time.strftime('%Y-%m-%d %H:%M:%S %z')}	{event.data['name']}	{event.data['value']}\n")
+                    f"{time.strftime('%Y-%m-%d %H:%M:%S %z')}	{event.data['name']}	{event.data['value']}\n"
+                )
 
     def __init__(self, path: str):
         self.path = path
@@ -108,13 +116,21 @@ class Logger:
         self.warnings += 1
         return self.raw(message, type="warning", **kwargs)
 
-    def error(self, code, detail,  **kwargs):
+    def error(self, code, detail, **kwargs):
         self.errors += 1
-        return self.raw(f"{code}: {detail.format(code=code, **kwargs) if kwargs.get('format') != False else detail}", type="error", code=code, detail=detail, **kwargs)
+        return self.raw(
+            f"{code}: {detail.format(code=code, **kwargs) if kwargs.get('format') != False else detail}",
+            type="error",
+            code=code,
+            detail=detail,
+            **kwargs,
+        )
 
     def metric(self, name, value, **kwargs):
         self.metrics += 1
-        return self.raw(f"{name}={value}", type="metric", name=name, value=value, **kwargs)
+        return self.raw(
+            f"{name}={value}", type="metric", name=name, value=value, **kwargs
+        )
 
     # TODO: This should definitely log and raise the exception
     def exception(self, message, **kwargs):
@@ -132,9 +148,10 @@ class Logger:
         start = time.time()
 
         def timer_end(start=start, name=name):
-            elapsed = time.time()-start
+            elapsed = time.time() - start
             self.metric(f"timer.{name}", elapsed)
             return elapsed
+
         return timer_end
 
 
@@ -166,7 +183,7 @@ def warning(message, **kwargs):
     return Logger.Instance().warning(message, **kwargs)
 
 
-def error(code, detail,  **kwargs):
+def error(code, detail, **kwargs):
     return Logger.Instance().error(code, detail, **kwargs)
 
 
@@ -180,5 +197,6 @@ def raw(message, type, **kwargs):
 
 def timer(name):
     return Logger.Instance().timer(name)
+
 
 # EOF

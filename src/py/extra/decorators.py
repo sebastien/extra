@@ -39,6 +39,7 @@ def on(priority=0, **methods):
     >        returns request.respond(...)
 
     The @Request class offers many methods to create and send responses."""
+
     def decorator(function):
         v = function.__dict__.setdefault(EXTRA.ON, [])
         function.__dict__.setdefault(EXTRA.ON_PRIORITY, priority)
@@ -49,7 +50,9 @@ def on(priority=0, **methods):
                 for _ in url:
                     v.append((http_method, _))
         return function
+
     return decorator
+
 
 # TODO: We could have an extractor method that would extract sepcific parameters from
 # the request body. Ex:
@@ -65,6 +68,7 @@ def expose(priority=0, compress=False, contentType=None, raw=False, **methods):
     an URL and to ensure that the result will be JSON-ified before being sent.
     This is perfect if you have an existing python class and want to expose it
     to the web."""
+
     def decorator(function):
         function.__dict__.setdefault(EXTRA.EXPOSE, True)
         function.__dict__.setdefault(EXTRA.EXPOSE_JSON, None)
@@ -72,7 +76,7 @@ def expose(priority=0, compress=False, contentType=None, raw=False, **methods):
         function.__dict__.setdefault(EXTRA.EXPOSE_COMPRESS, compress)
         function.__dict__.setdefault(EXTRA.EXPOSE_CONTENT_TYPE, contentType)
         # This is copy and paste of the @on body
-        v = function.__dict__.setdefault(EXTRA.ON,   [])
+        v = function.__dict__.setdefault(EXTRA.ON, [])
         function.__dict__.setdefault(EXTRA.ON_PRIORITY, int(priority))
         for http_method, url in list(methods.items()):
             if type(url) not in (list, tuple):
@@ -84,6 +88,7 @@ def expose(priority=0, compress=False, contentType=None, raw=False, **methods):
                     else:
                         v.append((method, _))
         return function
+
     return decorator
 
 
@@ -91,10 +96,12 @@ def when(*predicates):
     """The @when(...) decorate allows to specify that the wrapped method will
     only be executed when the given predicate (decorated with `@on`)
     succeeds."""
+
     def decorator(function):
         v = function.__dict__.setdefault(EXTRA.WHEN, [])
         v.extend(predicates)
         return function
+
     return decorator
 
 

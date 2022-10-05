@@ -7,7 +7,6 @@ from ..protocol.http import HTTPRequest
 
 
 class FileService(Service):
-
     def __init__(self, root: Path = "."):
         super().__init__()
         self.root = Path(root)
@@ -57,5 +56,6 @@ class FileService(Service):
 
     def resolvePath(self, path: Union[str, Path]) -> Path:
         return self.root.joinpath(path)
+
 
 # EOF

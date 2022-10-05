@@ -1,7 +1,19 @@
-from typing import Optional, Callable, Dict, Tuple, Any, Iterable, List, Pattern, Match, Union
+from typing import (
+    Optional,
+    Callable,
+    Dict,
+    Tuple,
+    Any,
+    Iterable,
+    List,
+    Pattern,
+    Match,
+    Union,
+)
 from .protocol import Request, Response
 from .decorators import EXTRA
 from .logging import logger
+
 # TODO: Support re2, orjson
 import re
 
@@ -23,24 +35,24 @@ class Route:
     RE_SPECIAL = re.compile(r"/\+\*\-\:")
 
     PATTERNS: Dict[str, Tuple[str, Callable[[str], Any]]] = {
-        'id': (r'[a-zA-Z0-9\-_]+', str),
-        'word': (r'\w+', str),
-        'name': (r'\w[\-\w]*', str),
-        'alpha': (r'[a-zA-Z]+', str),
-        'string': (r'[^/]+', str),
-        'digits': (r'\d+', int),
-        'number': (r'\-?\d*\.?\d+', lambda x: x.find(".") != -1 and float(x) or int(x)),
-        'int': (r'\-?\d+', int),
-        'integer': (r'\-?\d+', int),
-        'float': (r'\-?\d*.?\d+', float),
-        'file': (r'\w+(.\w+)', str),
-        'chunk': (r'[^/^.]+', str),
-        'path': (r'[^:@]+', str),
-        'segment': (r'[^/]+', str),
-        'any': (r'.+', str),
-        'rest': (r'.+', str),
-        'range': (r'\-?\d*\:\-?\d*', lambda x: x.split(':')),
-        'lang': (r"((\w\w)/)?", lambda x: x[:-1]),
+        "id": (r"[a-zA-Z0-9\-_]+", str),
+        "word": (r"\w+", str),
+        "name": (r"\w[\-\w]*", str),
+        "alpha": (r"[a-zA-Z]+", str),
+        "string": (r"[^/]+", str),
+        "digits": (r"\d+", int),
+        "number": (r"\-?\d*\.?\d+", lambda x: x.find(".") != -1 and float(x) or int(x)),
+        "int": (r"\-?\d+", int),
+        "integer": (r"\-?\d+", int),
+        "float": (r"\-?\d*.?\d+", float),
+        "file": (r"\w+(.\w+)", str),
+        "chunk": (r"[^/^.]+", str),
+        "path": (r"[^:@]+", str),
+        "segment": (r"[^/]+", str),
+        "any": (r".+", str),
+        "rest": (r".+", str),
+        "range": (r"\-?\d*\:\-?\d*", lambda x: x.split(":")),
+        "lang": (r"((\w\w)/)?", lambda x: x[:-1]),
     }
 
     @classmethod
@@ -49,8 +61,7 @@ class Route:
         try:
             re.compile(regexp)
         except Exception as e:
-            raise ValueError(
-                f"Regular expression '{regexp}' is malformed: {e}")
+            raise ValueError(f"Regular expression '{regexp}' is malformed: {e}")
         cls.PATTERNS[type.lower()] = (regexp, parser)
         return cls
 
@@ -63,18 +74,19 @@ class Route:
         # We escape the special characters
         # escape = lambda _:cls.RE_SPECIAL.sub(lambda _:"\\" + _, _)
         for match in cls.RE_TEMPLATE.finditer(expression):
-            chunks.append(('T', expression[offset:match.start()]))
+            chunks.append(("T", expression[offset : match.start()]))
             name = match.group(1)
             pattern = (match.group(3) or name).lower()
             if pattern not in cls.PATTERNS:
                 raise ValueError(
-                    f"Route pattern '{pattern}' is not registered, pick one of: {', '.join(sorted(cls.PATTERNS.keys()))}")
-            chunks.append(('P', name, cls.PATTERNS[pattern]))
+                    f"Route pattern '{pattern}' is not registered, pick one of: {', '.join(sorted(cls.PATTERNS.keys()))}"
+                )
+            chunks.append(("P", name, cls.PATTERNS[pattern]))
             offset = match.end()
-        chunks.append(('T', expression[offset:]))
+        chunks.append(("T", expression[offset:]))
         return chunks
 
-    def __init__(self, text: str, handler: Optional['Handler'] = None):
+    def __init__(self, text: str, handler: Optional["Handler"] = None):
         self.text: str = text
         self.chunks: List[Any] = self.Parse(text)
         self.params: List[str] = [_[1] for _ in self.chunks if _[0] == "P"]
@@ -119,6 +131,7 @@ class Route:
     def __repr__(self) -> str:
         return f"(Route \"{self.toRegExp()}\" ({' '.join(_ for _ in self.params)}))"
 
+
 # -----------------------------------------------------------------------------
 #
 # PREFIX
@@ -137,7 +150,7 @@ class Prefix:
             root.register(_)
         return root
 
-    def __init__(self, value: Optional[str] = None, parent: Optional['Prefix'] = None):
+    def __init__(self, value: Optional[str] = None, parent: Optional["Prefix"] = None):
         self.value = value
         self.parent = parent
         self.children: Dict[str, Prefix] = {}
@@ -179,6 +192,7 @@ class Prefix:
     def __repr__(self):
         return f"'{self.value or '⦰'}'→({', '.join(repr(_) for _ in self.children.values())})"
 
+
 # -----------------------------------------------------------------------------
 #
 # HANDLER
@@ -199,23 +213,37 @@ class Handler:
     # passed as attributes, but it should not really be a stack of transforms.
     @classmethod
     def Get(cls, value):
-        return Handler(
-            functor=value,
-            methods=getattr(value, EXTRA.ON),
-            priority=getattr(value, EXTRA.ON_PRIORITY),
-            expose=getattr(value, EXTRA.EXPOSE) if hasattr(
-                value, EXTRA.EXPOSE) else None,
-            contentType=getattr(value, EXTRA.EXPOSE_CONTENT_TYPE) if hasattr(
-                value, EXTRA.EXPOSE_CONTENT_TYPE) else None,
-        ) if cls.Has(value) else None
+        return (
+            Handler(
+                functor=value,
+                methods=getattr(value, EXTRA.ON),
+                priority=getattr(value, EXTRA.ON_PRIORITY),
+                expose=getattr(value, EXTRA.EXPOSE)
+                if hasattr(value, EXTRA.EXPOSE)
+                else None,
+                contentType=getattr(value, EXTRA.EXPOSE_CONTENT_TYPE)
+                if hasattr(value, EXTRA.EXPOSE_CONTENT_TYPE)
+                else None,
+            )
+            if cls.Has(value)
+            else None
+        )
 
-    def __init__(self, functor: Callable, methods: List[str], priority: int = 0, expose: bool = False, contentType=None):
+    def __init__(
+        self,
+        functor: Callable,
+        methods: List[str],
+        priority: int = 0,
+        expose: bool = False,
+        contentType=None,
+    ):
         self.functor = functor
         self.methods = methods
         self.priority = priority
         self.expose = expose
-        self.contentType = bytes(contentType, "utf8") if isinstance(
-            contentType, str) else contentType
+        self.contentType = (
+            bytes(contentType, "utf8") if isinstance(contentType, str) else contentType
+        )
 
     def __call__(self, request: Request, params: Dict[str, Any]) -> Response:
         if self.expose:
@@ -229,6 +257,7 @@ class Handler:
     def __repr__(self):
         methods = " ".join(f'({k} "{v}")' for k, v in self.methods)
         return f"(Handler {self.priority} ({methods}) '{self.functor}' {' :expose' if self.expose else ''})"
+
 
 # -----------------------------------------------------------------------------
 #
@@ -262,7 +291,9 @@ class Dispatcher:
         self.isPrepared = True
         return self
 
-    def match(self, method: str, path: str) -> Tuple[Optional[Route], Optional[Union[bool, Match]]]:
+    def match(
+        self, method: str, path: str
+    ) -> Tuple[Optional[Route], Optional[Union[bool, Match]]]:
         """Matches a given `method` and `path` with the registered route, returning
         the matching route and the match information."""
         if method not in self.routes:
@@ -288,6 +319,11 @@ class Dispatcher:
                     matched_match = match
                     matched_route = route
                     matched_priority = route.priority
-            return (matched_route, matched_match) if matched_match is not None else (None, None)
+            return (
+                (matched_route, matched_match)
+                if matched_match is not None
+                else (None, None)
+            )
+
 
 # EOF

@@ -4,7 +4,8 @@ try:
     from fastapi import FastAPI
 except ImportError:
     raise ImportError(
-        "FastAPI not available, run: python -m pip install --user fastapi")
+        "FastAPI not available, run: python -m pip install --user fastapi"
+    )
 
 app = FastAPI()
 
@@ -17,5 +18,6 @@ def read_root():
 @app.get("/items/{item_id}")
 def read_item(item_id: int, q: str = None):
     return {"item_id": item_id, "q": q}
+
 
 # EOF

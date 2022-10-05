@@ -5,7 +5,6 @@ from extra import server, expose, Service
 
 
 class API(Service):
-
     @expose(GET="/")
     def hello(self):
         return {"Hello": "World"}

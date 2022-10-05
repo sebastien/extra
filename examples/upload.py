@@ -15,7 +15,6 @@ curl   -F "userid=1"   -F "filecomment=This is an image file"   -F "image=@/home
 
 
 class UploadService(Service):
-
     @expose(GET=("/", "/index"), contentType="text/html")
     def index(self) -> bytes:
         return b"<form action=/upload method=POST><input type=file /><button type=submit>Upload</button></form>"

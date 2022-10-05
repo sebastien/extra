@@ -153,7 +153,7 @@ def run(
     server = loop.run_until_complete(coro)
     socket = server.sockets[0].getsockname()
     print(
-        "Extra {font_server}aio{reset} server listening on {font_url}http://{host}:{port}{reset}".format(
+        "Extra {font_server}AIO{reset} server listening on {font_url}http://{host}:{port}{reset}".format(
             host=socket[0],
             port=socket[1],
             font_server="",

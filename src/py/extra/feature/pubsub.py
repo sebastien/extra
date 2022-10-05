@@ -6,7 +6,7 @@ class Topics:
     """A topic tree backed by the `NamedNode` tree. The topic tree is used
     to bind handlers that provide an effect upon subscription."""
 
-    INSTANCE: 'Topics' = None
+    INSTANCE: "Topics" = None
 
     @classmethod
     def Instance(cls):
@@ -51,5 +51,6 @@ def sub(path: str, callback):
 def unsub(path: str, callback):
     """The inverse of 'sub'"""
     return Topics.Ensure(path).off("pub", callback)
+
 
 # EOF

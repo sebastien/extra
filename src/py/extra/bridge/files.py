@@ -9,42 +9,41 @@ from typing import Optional, Union, Dict, List, Iterable
 
 
 class FUSEBridge(fuse.Operations):
-
     def getattr(self, path, fh=None):
         uid, gid, pid = fuse.fuse_get_context()
-        if path == '/':
+        if path == "/":
             st = dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
-        elif path == '/uid':
-            size = len('%s\n' % uid)
+        elif path == "/uid":
+            size = len("%s\n" % uid)
             st = dict(st_mode=(S_IFREG | 0o444), st_size=size)
-        elif path == '/gid':
-            size = len('%s\n' % gid)
+        elif path == "/gid":
+            size = len("%s\n" % gid)
             st = dict(st_mode=(S_IFREG | 0o444), st_size=size)
-        elif path == '/pid':
-            size = len('%s\n' % pid)
+        elif path == "/pid":
+            size = len("%s\n" % pid)
             st = dict(st_mode=(S_IFREG | 0o444), st_size=size)
         else:
             raise fuse.FuseOSError(ENOENT)
-        st['st_ctime'] = st['st_mtime'] = st['st_atime'] = time.time()
+        st["st_ctime"] = st["st_mtime"] = st["st_atime"] = time.time()
         return st
 
     def read(self, path, size, offset, fh):
         uid, gid, pid = fuse.fuse_get_context()
 
         def encoded(x):
-            return ('%s\n' % x).encode('utf-8')
+            return ("%s\n" % x).encode("utf-8")
 
-        if path == '/uid':
+        if path == "/uid":
             return encoded(uid)
-        elif path == '/gid':
+        elif path == "/gid":
             return encoded(gid)
-        elif path == '/pid':
+        elif path == "/pid":
             return encoded(pid)
 
-        raise RuntimeError('unexpected path: %r' % path)
+        raise RuntimeError("unexpected path: %r" % path)
 
     def readdir(self, path):
-        return ['.', '..', 'uid', 'gid', 'pid']
+        return [".", "..", "uid", "gid", "pid"]
 
     # Disable unused operations:
     access = None
@@ -63,5 +62,5 @@ def serve(*services: Union[Application, Service]):
 
 
 def run(server, path: str, foreground=True, allowOther=True):
-    #handler = fuse.FUSE(server, "pouet", foreground=True, allow_other=True)
+    # handler = fuse.FUSE(server, "pouet", foreground=True, allow_other=True)
     pass
