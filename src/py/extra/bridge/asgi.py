@@ -9,6 +9,7 @@ from typing import (
     Union,
     Set,
     Optional,
+    Type,
     AsyncIterable,
     Awaitable,
     cast,
@@ -70,7 +71,7 @@ class ASGIBridge:
             # as shutdown so we shutdown everything.
             # SEE:SHUTDOWN
             if await self.readFromASGI(app, request, scope, receive, send) == False:
-                log("asgi.bridge", "Shutdown message received, canceling the request")
+                logging.log("Shutdown message received, canceling the request")
                 request.recycle()
                 return None
 
@@ -159,7 +160,13 @@ class ASGIBridge:
         return message
 
     async def onASGILifespan(
-        self, app: Application, request: HTTPRequest, scope: TScope, message, send
+        # TODO: We should type all arguments
+        self,
+        app: Application,
+        request: HTTPRequest,
+        scope: TScope,
+        message,
+        send,
     ):
         """Handles an ASGI lifespan message."""
         # SEE: https://asgi.readthedocs.io/en/latest/specs/lifespan.html
@@ -175,14 +182,14 @@ class ASGIBridge:
             # SEE:SHUTDOWN
             return False
         else:
-            raise ValueError(f"Unsupported protocol: {protocol}")
+            raise ValueError(f"Unsupported message type: {message['type']}")
 
     async def writeToASGI(
         self,
         app: Application,
         response: Union[Coroutine, Response],
         scope: TScope,
-        send,
+        send: Callable[[dict[str, Any]], Awaitable[Any]],
     ):
         # FROM: https://asgi.readthedocs.io/en/latest/specs/www.html
         # Servers are responsible for handling inbound and outbound chunked
@@ -194,7 +201,7 @@ class ASGIBridge:
         if isinstance(response, Coroutine):
             response = await response
         assert isinstance(response, Response)
-        headers = [_ for _ in response.headers.items()]
+        headers = [_ for _ in response.headers.items()] if response.headers else []
         try:
             await send(
                 {
@@ -240,20 +247,26 @@ class ASGIBridge:
         response.recycle()
 
 
-def server(*services: Union[Application, Service]) -> Callable:
+def server(
+    *services: Union[Application, Service, Type[Application], Type[Service]]
+) -> Callable:
     """Creates an ASGI bridge, mounts the services into an application
     and returns the ASGI application handler."""
     bridge = ASGIBridge()
     # This extracts and instanciates the services and applications that
     # are given here.
-    services = [_() if isinstance(_, type) else _ for _ in services]
-    app = [_ for _ in services if isinstance(_, Application)]
-    services = [_ for _ in services if isinstance(_, Service)]
-    app = cast(Application, app[0] if app else Application())
+    input_objects = [_() if isinstance(_, type) else _ for _ in services]
+    app_objects: list[Application] = [
+        _ for _ in input_objects if isinstance(_, Application)
+    ]
+    service_objects: list[Service] = [
+        _ for _ in input_objects if isinstance(_, Service)
+    ]
+    app: Application = app_objects[0] if app_objects else Application()
     # Now we mount all the services on the application
-    for service in services:
-        logging.info(f"Mounting service: {service}")
-        app.mount(service)
+    for srv in service_objects:
+        logging.info(f"Mounting service: {srv}")
+        app.mount(srv)
     # Ands we're ready for the main loop
 
     async def application(scope: TScope, receive, send):

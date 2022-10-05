@@ -1,5 +1,6 @@
-from typing import Optional, Dict, Iterable, Callable, Union, List, cast
+from typing import Optional, Iterable, Callable, Union, Any, cast
 from pathlib import Path
+from io import BytesIO
 import os
 import re
 import time
@@ -28,7 +29,7 @@ class Event:
     """Wraps some data and binds it to a name. An event is propagated up
     a tree until its `isPropagating` attribute is set to `False`."""
 
-    def __init__(self, name: str, data: Optional[any] = None):
+    def __init__(self, name: str, data: Optional[Any] = None):
         self.name = name
         self.data = data
         self.created = time.time()
@@ -59,11 +60,11 @@ class Node:
     def __init__(self):
         self.id: int = Node.ID
         Node.ID += 1
-        self._children: List["Node"] = []
+        self._children: list["Node"] = []
         self.parent: Optional["Node"] = None
-        self.data: Optional[any] = None
-        self.meta: Dict[str, any] = {}
-        self.handlers: Optional[Dict[str, Callable]] = None
+        self.data: Optional[Any] = None
+        self.meta: dict[str, Any] = {}
+        self.handlers: Optional[dict[str, list[Callable]]] = None
         self.changed = time.time()
         self.childChanged = self.changed
 
@@ -159,7 +160,9 @@ class Node:
     def off(self, event: str, callback: Callable):
         """Unbinds an event handler (`callback`) from the given even path,
         which requires the event handler to have previously been bound."""
-        handlers = self.handlers.get(event) if self.handlers else None
+        handlers: Optional[list[Callable]] = (
+            self.handlers.get(event) if self.handlers else None
+        )
         if handlers:
             assert (
                 callback not in handlers
@@ -234,7 +237,7 @@ class NamedNode(Node):
     ):
         super().__init__()
         self._name: Optional[str] = name
-        self._children: Dict[str, "NamedNode"] = dict()
+        self._children: dict[str, "NamedNode"] = dict()
         self.parent: Optional["NamedNode"] = None
         # We bind the node if a parent was set
         if parent:
@@ -365,26 +368,32 @@ class FilesystemNode(NamedNode):
 
     SEPARATOR = "/"
 
-    def DATA_PREDICATE(_):
+    @staticmethod
+    def DATA_PREDICATE(_: str) -> bool:
         return _.endswith(".data.json.gz")
 
-    def META_PREDICATE(_):
+    @staticmethod
+    def META_PREDICATE(_: str) -> bool:
         return _.endswith(".meta.json.gz")
 
-    def DATA_EXTRACT(_):
+    @staticmethod
+    def DATA_EXTRACT(_: str) -> bool:
         return _[: -(len(".data.json.gz"))]
 
-    def META_EXTRACT(_):
+    @staticmethod
+    def META_EXTRACT(_: str) -> bool:
         return _[: -(len(".meta.json.gz"))]
 
-    DATA_FORMAT = "{name}.data.json.gz"
-    META_FORMAT = "{name}.meta.json.gz"
+    DATA_FORMAT: str = "{name}.data.json.gz"
+    META_FORMAT: str = "{name}.meta.json.gz"
 
-    def SERIALIZE(data, fd):
-        return json.dump(data, fd)
+    @staticmethod
+    def SERIALIZE(data: Any, stream: BytesIO):
+        return json.dump(data, stream)
 
-    def DESERIALIZE(fd):
-        return json.load(fd)
+    @staticmethod
+    def DESERIALIZE(stream: BytesIO):
+        return json.load(stream)
 
     RE_NAME_NORMALIZE = re.compile(r"[\\/ ]")
     CHAR_NAME_NORMALIZE = "_"
@@ -453,10 +462,10 @@ class FilesystemNode(NamedNode):
         return bool(self.root._base)
 
     @property
-    def children(self) -> List["FilesystemNode"]:
+    def children(self) -> list["FilesystemNode"]:
         return list(self.pullChildren().values())
 
-    def pullChildren(self) -> Dict[str, "FilesystemNode"]:
+    def pullChildren(self) -> dict[str, "FilesystemNode"]:
         """Pulls/syncs the children from the filesystem, returning a map. This
         has the effect of updating the `_children` map."""
         if not self.hasBase:

@@ -7,9 +7,9 @@ from ..protocol.http import HTTPRequest
 
 
 class FileService(Service):
-    def __init__(self, root: Path = "."):
+    def __init__(self, root: Optional[Path] = None):
         super().__init__()
-        self.root = Path(root)
+        self.root: Path = Path(".") if not root else root
         self.canWrite = lambda r, p: False
         self.canRead = lambda r, p: True
 
@@ -17,14 +17,14 @@ class FileService(Service):
     def info(self, request: HTTPRequest, path: str):
         local_path = self.resolvePath(path)
         if not self.canRead(request, local_path):
-            return request.notAuthorized(f"Not authoried to access path: {path}")
+            return request.notAuthorized(f"Not authorized to access path: {path}")
         return request.respond("OK")
 
     @on(GET="/{path:any}")
     def read(self, request: HTTPRequest, path: str):
         local_path = self.resolvePath(path)
         if not self.canRead(request, local_path):
-            return request.notAuthorized(f"Not authoried to access path: {path}")
+            return request.notAuthorized(f"Not authorized to access path: {path}")
         return request.respond("OK")
 
     @on(PUT_PATCH="/{path:any}")

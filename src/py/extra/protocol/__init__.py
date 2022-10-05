@@ -175,7 +175,7 @@ class Request(Flyweight):
     def notFound(self):
         pass
 
-    def notAuthorized(self):
+    def notAuthorized(self, messase: Optional[str] = None):
         pass
 
     def notModified(self):
@@ -215,6 +215,8 @@ class Response(Flyweight):
         Flyweight.__init__(self)
         self.step: ResponseStep = ResponseStep.Initialized
         self.bodies: list[TBody] = []
+        self.headers: Optional[Headers] = None
+        self.status: int = 0
 
     def init(self, step: ResponseStep):
         self.step = step

@@ -7,7 +7,8 @@ from typing import Dict, Callable, Any, Coroutine, Union, Iterable
 def server(
     *services: Union[Application, Service]
 ) -> Callable[[str, str], Iterable[bytes]]:
-    app = mount(services)
+
+    app: Application = mount(*services)
 
     def run(method: str, path: str) -> Iterable[bytes]:
         route, params = app.dispatcher.match(method, path)

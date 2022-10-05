@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Callable, Any
 from ..util.tree import NamedNode
 
 
@@ -19,7 +19,7 @@ class Topics:
         return cls.Instance().get(path)
 
     @classmethod
-    def Ensure(cls, path: str):
+    def Ensure(cls, path: str) -> NamedNode:
         return cls.Instance().ensure(path)
 
     def __init__(self):
@@ -32,7 +32,7 @@ class Topics:
         return self.root.ensure(path)
 
 
-def pub(path: str, **fields):
+def pub(path: str, **fields: Any) -> bool:
     """Publishes the given message at the given path."""
     topic = Topics.Get(path)
     if topic:
@@ -42,13 +42,13 @@ def pub(path: str, **fields):
         return False
 
 
-def sub(path: str, callback):
+def sub(path: str, callback: Callable) -> NamedNode:
     """Subscribes to the given path, triggering the given callback when
     the path is activated."""
     return Topics.Ensure(path).on("pub", callback)
 
 
-def unsub(path: str, callback):
+def unsub(path: str, callback) -> NamedNode:
     """The inverse of 'sub'"""
     return Topics.Ensure(path).off("pub", callback)
 

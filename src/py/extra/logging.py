@@ -183,7 +183,7 @@ def warning(message, **kwargs):
     return Logger.Instance().warning(message, **kwargs)
 
 
-def error(code, detail, **kwargs):
+def error(code: str, detail: str, **kwargs):
     return Logger.Instance().error(code, detail, **kwargs)
 
 

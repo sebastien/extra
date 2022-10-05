@@ -1,6 +1,6 @@
 from .routing import Handler, Dispatcher, Route
 from .protocol.http import HTTPRequest, HTTPResponse
-from typing import Optional, Iterable, Callable
+from typing import Optional, Iterable, Callable, Any
 import sys
 import importlib
 
@@ -35,7 +35,7 @@ class Service:
         self.name: str = name or self.__class__.__name__
         self.app: Optional[Application] = None
         self.prefix = self.PREFIX
-        self._handlers: Optional[tuple[Handler]] = None
+        self._handlers: Optional[list[Handler]] = None
 
     async def start(self):
         pass
@@ -48,9 +48,9 @@ class Service:
         return self.app != None
 
     @property
-    def handlers(self) -> tuple[Handler]:
+    def handlers(self) -> list[Handler]:
         if self._handlers is None:
-            self._handlers = tuple(self.iterHandlers())
+            self._handlers = list(self.iterHandlers())
         return self._handlers
 
     def iterHandlers(self) -> Iterable[Handler]:
@@ -80,15 +80,15 @@ class Application:
         self.stop()
         # FIXME: We need to restore the service state/configuration
         services: list[Service] = []
-        reloaded: list[Module] = []
+        reloaded: list[Any] = []
         for service in self.services:
-            parent_class = service.__class__
-            parent_class_name = parent_class.__name__
-            parent_module_name = parent_class.__module__
-            parent_module = sys.modules[parent_module_name]
+            parent_class: type = service.__class__
+            parent_class_name: str = parent_class.__name__
+            parent_module_name: str = parent_class.__module__
+            parent_module: Any = sys.modules[parent_module_name]
             if parent_module not in reloaded:
                 reloaded.append(parent_module)
-                parent_module = importlib.reload(parent_module_name)
+                parent_module = importlib.reload(parent_module)
             if hasattr(parent_module, parent_class_name):
                 services.append(
                     getattr(parent_module, parent_class_name).ReloadFrom(service)
@@ -99,6 +99,7 @@ class Application:
                 )
         self.services = services
         self.start()
+        return self
 
     async def start(self) -> "Application":
         self.dispatcher.prepare()

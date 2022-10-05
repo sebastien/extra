@@ -63,7 +63,7 @@ class AIOBridge:
         bytes_written: int = 0
         async for chunk in response.write():
             print("WRITING", chunk)
-            if writer._transport.is_closing():
+            if writer.is_closing():
                 break
             else:
                 writer.write(chunk)
@@ -114,12 +114,12 @@ class AIOBridge:
         #   File "/usr/lib64/python3.6/asyncio/selector_events.py", line 807, in write_eof
         #     self._sock.shutdown(socket.SHUT_WR)
         # AttributeError: 'NoneType' object has no attribute 'shutdown'
-        if writer._transport and not writer._transport.is_closing():
+        if not writer.is_closing():
             try:
                 writer.write_eof()
                 await writer.drain()
             except OSError as e:
-                error("aio", "OSERROR", str(e))
+                error("AIO/OSERROR", f"Transport draining failed: {e}", origin="aio")
                 writer.close()
 
 
@@ -148,8 +148,9 @@ def run(
 ):
     """Runs the given services/application using the embedded AsyncIO HTTP server."""
     loop = asyncio.get_event_loop()
-    server = AIOServer(mount(*services), host, port)
-    coro = asyncio.start_server(server.request, host, port)
+    aio_server = AIOServer(mount(*services), host, port)
+    # This the stock AIO processing
+    coro = asyncio.start_server(aio_server.request, host, port)
     server = loop.run_until_complete(coro)
     socket = server.sockets[0].getsockname()
     print(

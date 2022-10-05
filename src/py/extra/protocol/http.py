@@ -1,5 +1,14 @@
 from ..protocol import Request, Response, Headers, ResponseControl, asBytes
-from typing import Any, Optional, Union, BinaryIO, Iterable, Iterator, Union
+from typing import (
+    Any,
+    Optional,
+    Union,
+    BinaryIO,
+    Iterable,
+    Iterator,
+    AsyncIterator,
+    Union,
+)
 from tempfile import SpooledTemporaryFile
 from extra.util import unquote, Flyweight
 from urllib.parse import parse_qs
@@ -361,6 +370,7 @@ class HTTPRequest(Request, WithHeaders):
         self.query: Optional[str] = None
         self.ip: Optional[str] = None
         self.port: Optional[int] = None
+        self.version: Optional[str] = None
         self._body: Optional[Body] = None
         self._reader: Optional[StreamReader] = None
         self._readCount: int = 0
@@ -590,7 +600,7 @@ class HTTPResponse(Response, WithHeaders):
         self.reason: Optional[bytes] = None
         WithHeaders.__init__(self)
 
-    async def write(self) -> Iterator[bytes]:
+    async def write(self) -> AsyncIterator[bytes]:
         # FIXME: Is it faster to format? This would be interesting to try out
         yield b"HTTP/1.1 "
         yield bytes(f"{self.status} ", "ascii")
