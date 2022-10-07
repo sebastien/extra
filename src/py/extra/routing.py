@@ -39,12 +39,12 @@ class TextChunk(NamedTuple):
     text: str
 
 
-class RoutePatternChunk(NamedTuple):
+class ParameterChunk(NamedTuple):
     name: str
     pattern: RoutePattern
 
 
-TChunk = Union[TextChunk, RoutePatternChunk]
+TChunk = Union[TextChunk, ParameterChunk]
 
 
 class Route:
@@ -105,7 +105,7 @@ class Route:
                 raise ValueError(
                     f"Route pattern '{pattern}' is not registered, pick one of: {', '.join(sorted(cls.PATTERNS.keys()))}"
                 )
-            chunks.append(RoutePatternChunk(name, cls.PATTERNS[pattern]))
+            chunks.append(ParameterChunk(name, cls.PATTERNS[pattern]))
             offset = match.end()
         chunks.append(TextChunk(expression[offset:]))
         return chunks
@@ -113,7 +113,9 @@ class Route:
     def __init__(self, text: str, handler: Optional["Handler"] = None):
         self.text: str = text
         self.chunks: list[TChunk] = self.Parse(text)
-        self.params: list[str] = [_.name for _ in self.chunks if _.type == "P"]
+        self.params: list[str] = [
+            _.name for _ in self.chunks if isinstance(_, ParameterChunk)
+        ]
         self.handler: Optional[Handler] = handler
         self._pattern: Optional[str] = None
         self._regexp: Optional[Pattern] = None
@@ -131,7 +133,7 @@ class Route:
     @property
     def regexp(self):
         if not self._regexp:
-            self._regexp = re.compile(self.toRegExp())
+            self._regexp = re.compile(f"^{self.toRegExp()}$")
         return self._regexp
 
     def toRegExpChunks(self) -> list[str]:
@@ -139,8 +141,7 @@ class Route:
         for chunk in self.chunks:
             if isinstance(chunk, TextChunk):
                 res.append(chunk.text)
-            elif isinstance(chunk, RoutePatternChunk):
-                res.append(chunk.text)
+            elif isinstance(chunk, ParameterChunk):
                 res.append(f"(?P<{chunk.name}>{chunk.pattern.expr})")
             else:
                 raise ValueError(f"Unsupported chunk type: {chunk}")
