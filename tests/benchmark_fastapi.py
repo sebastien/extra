@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# NOTE: To run, `uvicorn benchmark_fastapi:app`
+# NOTE: To run, `uvicorn benchmark-fastapi:app`
 try:
     from fastapi import FastAPI
 except ImportError:

@@ -13,12 +13,35 @@ requires ab python readlink
 BASE=$(dirname $(readlink -f $0))
 LOG=$(mktemp --suffix .log benchmark-log-XXX)
 SUMMARY=
-for TEST in $BASE/benchmark-*.py; do
+TESTS=$@
+if [ -z "$@" ]; then
+	TESTS=$BASE/benchmark-*.??
+fi
+for TEST in $TESTS; do
 	echo ""
 	echo "001 DO> Running server $TEST, logging to $LOG"
-	python $TEST 2> $LOG  &
-	CPID=$!
-	sleep 1
+	EXT="$(echo -n $TEST | tail -c3)"
+	case $EXT in
+		.py)
+			python $TEST 2> $LOG  &
+			CPID=$!
+			;;
+		.sh)
+			bash $TEST 2> $LOG  &
+			CPID=$!
+			;;
+		*)
+			echo "ERR Unsupported benchmark suffix: $EXT in $TEST"
+			CPID=$!
+	esac
+	if [ -z "$CPID" ]; then
+		echo WTF
+		exit 1
+	else
+		if ps -p "$CPID" > /dev/null; then
+			sleep 1
+		fi
+	fi
 	echo "002 DO> Running Benchmark"
 	OUTPUT="$(ab -n10000 -c100 http://localhost:8000/ | tr '\n' '^')"
 	RESULT=$?
@@ -34,7 +57,7 @@ for TEST in $BASE/benchmark-*.py; do
 		SUMMARY="$SUMMARY;$(basename $TEST)	$RPS"
 	fi
 	if ps -p $CPID > /dev/null; then
-		kill -9 $CPID  &> /dev/null
+		pkill -P $CPID  &> /dev/null
 	fi
 done
 if [ -e $LOG ]; then
