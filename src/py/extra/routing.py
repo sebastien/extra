@@ -5,7 +5,12 @@ from typing import (
     Iterable,
     Pattern,
     Match,
+    Type,
     Union,
+    Generic,
+    NamedTuple,
+    ClassVar,
+    TypeVar,
 )
 from .protocol import Request, Response
 from .decorators import EXTRA
@@ -22,6 +27,25 @@ logging = logger("extra.routing")
 #
 # -----------------------------------------------------------------------------
 
+T = TypeVar("T")
+
+
+class RoutePattern(NamedTuple):
+    expr: str
+    extractor: Union[Type[Any], Callable[[str], Any]]
+
+
+class TextChunk(NamedTuple):
+    text: str
+
+
+class RoutePatternChunk(NamedTuple):
+    name: str
+    pattern: RoutePattern
+
+
+TChunk = Union[TextChunk, RoutePatternChunk]
+
 
 class Route:
     """Parses a route where template expressions are like `{name}` or
@@ -31,62 +55,65 @@ class Route:
     RE_TEMPLATE = re.compile(r"\{([\w][_\w\d]*)(:([^}]+))?\}")
     RE_SPECIAL = re.compile(r"/\+\*\-\:")
 
-    PATTERNS: dict[str, tuple[str, Callable[[str], Any]]] = {
-        "id": (r"[a-zA-Z0-9\-_]+", str),
-        "word": (r"\w+", str),
-        "name": (r"\w[\-\w]*", str),
-        "alpha": (r"[a-zA-Z]+", str),
-        "string": (r"[^/]+", str),
-        "digits": (r"\d+", int),
-        "number": (r"\-?\d*\.?\d+", lambda x: x.find(".") != -1 and float(x) or int(x)),
-        "int": (r"\-?\d+", int),
-        "integer": (r"\-?\d+", int),
-        "float": (r"\-?\d*.?\d+", float),
-        "file": (r"\w+(.\w+)", str),
-        "chunk": (r"[^/^.]+", str),
-        "path": (r"[^:@]+", str),
-        "segment": (r"[^/]+", str),
-        "any": (r".+", str),
-        "rest": (r".+", str),
-        "range": (r"\-?\d*\:\-?\d*", lambda x: x.split(":")),
-        "lang": (r"((\w\w)/)?", lambda x: x[:-1]),
+    PATTERNS: ClassVar[dict[str, RoutePattern]] = {
+        "id": RoutePattern(r"[a-zA-Z0-9\-_]+", str),
+        "word": RoutePattern(r"\w+", str),
+        "name": RoutePattern(r"\w[\-\w]*", str),
+        "alpha": RoutePattern(r"[a-zA-Z]+", str),
+        "string": RoutePattern(r"[^/]+", str),
+        "digits": RoutePattern(r"\d+", int),
+        "number": RoutePattern(
+            r"\-?\d*\.?\d+", lambda x: x.find(".") != -1 and float(x) or int(x)
+        ),
+        "int": RoutePattern(r"\-?\d+", int),
+        "integer": RoutePattern(r"\-?\d+", int),
+        "float": RoutePattern(r"\-?\d*.?\d+", float),
+        "file": RoutePattern(r"\w+(.\w+)", str),
+        "chunk": RoutePattern(r"[^/^.]+", str),
+        "path": RoutePattern(r"[^:@]+", str),
+        "segment": RoutePattern(r"[^/]+", str),
+        "any": RoutePattern(r".+", str),
+        "rest": RoutePattern(r".+", str),
+        "range": RoutePattern(r"\-?\d*\:\-?\d*", lambda x: x.split(":")),
+        "lang": RoutePattern(r"((\w\w)/)?", lambda x: x[:-1]),
     }
 
     @classmethod
-    def AddType(cls, type: str, regexp: str, parser: Callable[[str], Any] = str):
+    def AddPattern(cls, type: str, regexp: str, parser: Callable[[str], T] = str):
+        """Registers a new RoutePattern into `Route.PATTERNS`"""
         # We do a precompilation to make sure it's working
         try:
             re.compile(regexp)
         except Exception as e:
             raise ValueError(f"Regular expression '{regexp}' is malformed: {e}")
-        cls.PATTERNS[type.lower()] = (regexp, parser)
+        cls.PATTERNS[type.lower()] = RoutePattern(regexp, parser)
         return cls
 
     @classmethod
-    def Parse(cls, expression: str, isStart=True):
+    def Parse(cls, expression: str, isStart=True) -> list[TChunk]:
         """Parses routes expressses as strings where patterns are denoted
         as `{name}` or `{name:pattern}`"""
-        chunks = []
-        offset = 0
+        chunks: list[TChunk] = []
+        offset: int = 0
         # We escape the special characters
         # escape = lambda _:cls.RE_SPECIAL.sub(lambda _:"\\" + _, _)
         for match in cls.RE_TEMPLATE.finditer(expression):
-            chunks.append(("T", expression[offset : match.start()]))
+            chunks.append(TextChunk(expression[offset : match.start()]))
             name = match.group(1)
             pattern = (match.group(3) or name).lower()
             if pattern not in cls.PATTERNS:
                 raise ValueError(
                     f"Route pattern '{pattern}' is not registered, pick one of: {', '.join(sorted(cls.PATTERNS.keys()))}"
                 )
-            chunks.append(("P", name, cls.PATTERNS[pattern]))
+            chunks.append(RoutePatternChunk(name, cls.PATTERNS[pattern]))
             offset = match.end()
-        chunks.append(("T", expression[offset:]))
+        chunks.append(TextChunk(expression[offset:]))
         return chunks
 
     def __init__(self, text: str, handler: Optional["Handler"] = None):
         self.text: str = text
-        self.chunks: list[Any] = self.Parse(text)
-        self.params: list[str] = [_[1] for _ in self.chunks if _[0] == "P"]
+        self.chunks: list[TChunk] = self.Parse(text)
+        self.params: list[str] = [_.name for _ in self.chunks if _.type == "P"]
         self.handler: Optional[Handler] = handler
         self._pattern: Optional[str] = None
         self._regexp: Optional[Pattern] = None
@@ -110,10 +137,11 @@ class Route:
     def toRegExpChunks(self) -> list[str]:
         res: list[str] = []
         for chunk in self.chunks:
-            if chunk[0] == "T":
-                res.append(chunk[1])
-            elif chunk[0] == "P":
-                res.append(f"(?P<{chunk[1]}>{chunk[2][0]})")
+            if isinstance(chunk, TextChunk):
+                res.append(chunk.text)
+            elif isinstance(chunk, RoutePatternChunk):
+                res.append(chunk.text)
+                res.append(f"(?P<{chunk.name}>{chunk.pattern.expr})")
             else:
                 raise ValueError(f"Unsupported chunk type: {chunk}")
         return res

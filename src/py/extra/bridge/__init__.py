@@ -1,4 +1,4 @@
-from typing import Union, cast
+from typing import Union, NamedTuple, Optional, cast
 from ..model import Service, Application
 
 
