@@ -14,7 +14,7 @@ providing a great developer experience.
 
 Features:
 
--   ASGI & WSGI support (gives HTTP/1, HTTP/2 and WebSocket)
+-   Multiple backends: ASGI, WSGI, AsyncIO, AIOHTTP, AWS Lambda, socket, file
 -   Streaming reads and writes, lazy decoding and encoding
 -   Embedded asynchronous HTTP/1 development server
 -   Mount services on FUSE and query from the CLI
