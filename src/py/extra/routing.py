@@ -48,12 +48,62 @@ class ParameterChunk(NamedTuple):
 TChunk = Union[TextChunk, ParameterChunk]
 
 
+class Routes:
+    """The routes can compile a set of path containing route template
+    expressions into a single"""
+
+    @classmethod
+    def Compile(cls, routes: list[str]) -> Iterator[str]:
+        """Compiles the list of routes into a single regex that can match
+        all of these routes, and extract the arguments. To avoid duplicates,
+        arguments are suffixed with a number, and each matching rule is assigned
+        a matching variable R0…Rn."""
+        tree = Prefix.Make([f"{r}(?P<R_{i}>$)" for i, r in enumerate(routes)])
+        j: int = 0
+        chunks: list[str] = []
+        for chunk in tree.iterRegExpr():
+            i: int = 0
+            n: int = len(chunk)
+            for pat in Route.RE_TEMPLATE.finditer(chunk):
+                if pat.start() != i:
+                    chunks.append(chunk[i : pat.start()])
+                p_name = pat.group("name")
+                p_type = pat.group("type") or p_name
+                chunks.append(f"(?P<{p_name}_{j}>{Route.PATTERNS[p_type].expr})")
+                j += 1
+                i = pat.end()
+            if i < n:
+                chunks.append(chunk[i:])
+        return re.compile("".join(chunks))
+
+    def __init__(self, *routes: str):
+        self.paths = routes
+        self.regexp = self.Compile(routes)
+
+    def match(self, path: str) -> Optional[tuple[int, dict[str, Any]]]:
+        if not (match := self.regexp.match(path)):
+            return None
+        else:
+            route: int = 0
+            params: dict[str, Any] = {}
+            for name, value in match.groupdict().items():
+                if value is None:
+                    continue
+                else:
+                    name, index = name.split("_", 1)
+                    if name == "R":
+                        route = int(index)
+                    else:
+                        params[name] = value
+            return (route, params)
+
+
 class Route:
     """Parses a route where template expressions are like `{name}` or
     `{name:type}`. Routes can have priorities and be assigned handlers,
     they are then registered in the dispatcher to match requests."""
 
-    RE_TEMPLATE = re.compile(r"\{([\w][_\w\d]*)(:([^}]+))?\}")
+    RE_TEMPLATE = re.compile(r"\{(?P<name>[\w][_\w\d]*)(:(?P<type>[^}]+))?\}")
     RE_SPECIAL = re.compile(r"/\+\*\-\:")
 
     PATTERNS: ClassVar[dict[str, RoutePattern]] = {
@@ -177,6 +227,7 @@ class Prefix:
         root = Prefix()
         for _ in values:
             root.register(_)
+        root.simplify()
         return root
 
     def __init__(self, value: Optional[str] = None, parent: Optional["Prefix"] = None):

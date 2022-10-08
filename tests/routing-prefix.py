@@ -1,4 +1,4 @@
-from extra.routing import Prefix
+from extra.routing import Prefix, Routes
 import re
 
 # --
@@ -33,33 +33,21 @@ assert str(prefix.simplify()) == expected
 # Now, were things get interesting, is that when we can use them
 # to match an HTTP path with a single regular expression, finding the matching
 # route and extracting the parameters, all at the same time.
-def route(i: int, route: str) -> str:
-    return f"{route}(?P<R{i}>$)"
 
 
 # We add a trailing '?' to our list of strings so that
 # we get proper splits
-prefix = Prefix.Make(
-    (
-        route(i, _)
-        for i, _ in enumerate(
-            [
-                "users",
-                "user/{id}",
-                "user/{id}/posts",
-                "posts",
-                "posts/query",
-                "post/{id}",
-                "post/{id}/query",
-            ]
-        )
-    )
+routes = Routes(
+    "users",
+    "user/{id}",
+    "user/{id}/posts",
+    "posts",
+    "posts/query",
+    "post/{id}",
+    "post/{id}/query",
 )
 
-print(prefix.simplify())
-print(prefix.toRegExpr())
-# TODO: We need to find a workaround to the duplicate ids
-regexp = re.compile(prefix.toRegExpr().replace("{id}", r"(?P<id>\w+)"))
+# # TODO: We need to find a workaround to the duplicate ids
 for path in [
     "users",
     "user/john",
@@ -70,8 +58,8 @@ for path in [
     "post/hello",
     "post/hello/query",
 ]:
-    if match := regexp.match(path):
-        print(f"... OK '{path}' matched: {match.groupdict()}")
+    if match := routes.match(path):
+        print(f"... OK '{path}' matched: {match} with '{routes.paths[match[0]]}'")
     else:
         print(f"... FAIL '{path}' did not match")
 # EOF
