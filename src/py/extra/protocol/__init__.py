@@ -4,6 +4,7 @@ from typing import (
     Optional,
     Iterable,
     Iterator,
+    ItemsView,
     Any,
     Union,
     TypeVar,
@@ -46,32 +47,28 @@ class Headers:
     def reset(self):
         self._headers.clear()
 
-    def items(self) -> Iterable[tuple[bytes, bytes]]:
+    def items(self) -> ItemsView[bytes, list[bytes]]:
         return self._headers.items()
 
-    def get(self, name: str) -> Any:
+    def get(self, name: bytes) -> Optional[Union[bytes, list[bytes]]]:
         if name in self._headers:
-            count, value = self._headers[name]
-            if count == 1:
-                return value[0]
-            else:
-                return value
+            value = self._headers[name]
+            return value[0] if len(value) == 1 else value
+        else:
+            return None
 
-    def set(self, name: str, value: Any) -> Any:
-        # FIXME: This is not even right!
-        self._headers[name] = [1, [value]]
+    def set(self, name: bytes, value: Any) -> Any:
+        self._headers[name] = [value]
         return value
 
-    def has(self, name: str) -> bool:
+    def has(self, name: bytes) -> bool:
         return name in self._headers
 
-    def add(self, name: str, value: Any) -> Any:
+    def add(self, name: bytes, value: Any) -> Any:
         if name not in self._headers:
             return self.set(name, value)
         else:
-            v = self._headers[name]
-            v[0] += 1
-            v[1].append(value)
+            self._headers[name].append(value)
             return value
 
 
@@ -187,10 +184,10 @@ class Request(Flyweight):
 
 
 class BodyType(Enum):
-    Empty = "empty"
-    Value = "value"
-    Iterator = "iterator"
-    AsyncIterator = "asyncIterator"
+    Empty = b"empty"
+    Value = b"value"
+    Iterator = b"iterator"
+    AsyncIterator = b"asyncIterator"
 
 
 class Body(NamedTuple):
@@ -223,8 +220,17 @@ class Response(Flyweight):
         self.headers: Optional[Headers] = None
         self.status: int = 0
 
-    def init(self, step: ResponseStep):
+    def init(
+        self,
+        step: ResponseStep = ResponseStep.Initialized,
+        bodies: Optional[list[Body]] = None,
+        headers: Optional[Headers] = None,
+        status: int = 0,
+    ):
         self.step = step
+        self.bodies = [] if bodies is None else bodies
+        self.headers = headers
+        self.status = status
         return self
 
     @property
@@ -266,13 +272,14 @@ class Response(Flyweight):
                 raise ValueError(
                     "contentType must be specified when type is not bytes or str"
                 )
-            self.bodies.append((BodyType.Value, content, asBytes(contentType)))
+            self.bodies.append(Body(BodyType.Value, content, asBytes(contentType)))
         return self
 
-    async def stream(self) -> Iterator[Union[ResponseControl, bytes]]:
-        for content, type in self.bodies:
+    def stream(self) -> Iterator[Union[ResponseControl, bytes]]:
+        for body in self.bodies:
             yield ResponseControl.Type
-            yield type
+            yield body.type.value
+            content = body.content
             if content is None:
                 pass
             elif isinstance(content, bytes):

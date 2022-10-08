@@ -133,6 +133,8 @@ class Route:
     @property
     def regexp(self):
         if not self._regexp:
+            # NOTE: Not sure if it's a good thing to have the prefix/suffix
+            # for an exact match.
             self._regexp = re.compile(f"^{self.toRegExp()}$")
         return self._regexp
 

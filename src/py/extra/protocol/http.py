@@ -1,4 +1,11 @@
-from ..protocol import Request, Response, Headers, ResponseControl, asBytes
+from ..protocol import (
+    Request,
+    Response,
+    ResponseStep,
+    Headers,
+    ResponseControl,
+    asBytes,
+)
 from typing import (
     Any,
     Optional,
@@ -103,19 +110,19 @@ class HTTPParser:
     # @tag(low-level)
     @classmethod
     def HeaderOffsets(
-        cls, data: bytes, start: int = 0, end: int = -1
+        cls, data: bytes, start: int = 0, end: Optional[int] = None
     ) -> Iterable[tuple[Range, Range]]:
         """Parses the headers encoded in the `data` from the given `start` offset to the
         given `end` offset."""
-        end: int = len(data) - 1 if end < 0 else min(len(data) - 1, end)
         offset: int = start
-        while offset < end:
+        end_offset = len(data) if end is None else len(data) + end if end < 0 else end
+        while offset < end_offset:
             next_eol = data.find(b"\r\n", offset)
             # If we don't find an EOL, we're reaching the end of the data
             if next_eol == -1:
-                next_eol = end
+                next_eol = end_offset
             # Now we look for the value separator
-            next_colon = data.find(b":", offset, end)
+            next_colon = data.find(b":", offset, end_offset)
             # If we don't find a header, there's nothing we can do
             if next_colon == -1:
                 continue
@@ -130,8 +137,8 @@ class HTTPParser:
 
     @classmethod
     def Header(
-        cls, data: bytes, offset: int = 0, end: int = -1
-    ) -> Iterable[tuple[Range, Range]]:
+        cls, data: bytes, offset: int = 0, end: Optional[int] = None
+    ) -> Iterable[tuple[bytes, bytes]]:
         """A wrapper around `HeaderOffsets` that yields slices of the bytes instead of the
         offsets."""
         for (hs, he), (vs, ve) in HTTPParser.HeaderOffsets(data, offset, end):
@@ -139,7 +146,7 @@ class HTTPParser:
 
     @classmethod
     def HeaderValueOffsets(
-        cls, data: bytes, start: int = 0, end: int = -1
+        cls, data: bytes, start: int = 0, end: Optional[int] = None
     ) -> Iterable[tuple[int, int, int, int]]:
         """Parses a header value and returns an iterator of offsets for name and value
         in the `data`.
@@ -147,14 +154,14 @@ class HTTPParser:
         `multipart/mixed; boundary=inner` will
         return `{b"":b"multipart/mixed", b"boundary":b"inner"}`
         """
-        end: int = len(data) - 1 if end < 0 else min(len(data) - 1, end)
+        end_offset = len(data) if end is None else len(data) + end if end < 0 else end
         result: dict[bytes, bytes] = {}
         offset: int = start
-        while offset < end:
+        while offset < end_offset:
             # The next semicolumn is the next separator
             field_end: int = data.find(b";", offset)
             if field_end == -1:
-                field_end = end
+                field_end = end_offset
             value_separator: int = data.find(b"=", offset, field_end)
             if value_separator == -1:
                 name_start, name_end = offset, offset
@@ -176,7 +183,7 @@ class HTTPParser:
 
     @classmethod
     def HeaderValue(
-        cls, data: bytes, start: int = 0, end: int = -1
+        cls, data: bytes, start: int = 0, end: Optional[int] = None
     ) -> dict[bytes, bytes]:
         return dict(
             (data[ks:ke], data[vs:ve])
@@ -224,28 +231,27 @@ class HTTPParser:
         return self.step.value >= HTTPParserStep.Body.value
 
     def feed(self, data: bytes) -> int:
-        """Feeds data into the context, returning False as soon as we're
-        past reading the body"""
+        """Feeds data into the context, returning the number of bytes read."""
         if self.step.value >= HTTPParserStep.Headers.value:
             # If we're past reading the headers (>=2), then it's up
             # to the application to decode.
             return 0
         else:
-            t = self.rest + data if self.rest else data
-            # TODO: We're looking for the final \r\n\r\n that separates
-            # the header from the body.
-            i = t.find(b"\r\n\r\n")
-            if i == -1:
-                self.rest = t
-            else:
-                # We skip the 4 bytes of \r\n\r\n
-                j = i + 4
-                o = self._parseChunk(t, 0, j)
-                assert o <= j
-                self.rest = t[j:] if j < len(t) else None
-            return True
+            t: bytes = self.rest + data if self.rest else data
+            o: int = 0
+            n: int = len(t)
+            i: int = 0
+            while (
+                (i := t.find(b"\r\n", o)) >= 0
+                and self.step.value < HTTPParserStep.Body.value
+                and o < n
+            ):
+                self.step = self._parseLine(self.step, t, o, i)
+                o = i + 2
+            self.rest = t[o:]
+            return o
 
-    def _parseChunk(self, data, start, end):
+    def _parseChunk(self, data: bytes, start: int = 0, end: Optional[int] = None):
         """Parses a chunk of the data, which MUST have at least one
         /r/n in there and end with /r/n."""
         # NOTE: In essence, this is pretty close to data[stat:end].split("\r\n")
@@ -262,26 +268,37 @@ class HTTPParser:
             # find at least one.
             i = data.find(b"\r\n", o)
             # The chunk must have \r\n at the end
-            assert i >= 0
+            if i < 0:
+                raise ValueError(
+                    f"Chunk should end with \\r\\n: {data[start:end]} at {start}"
+                )
             # Now we have a line, so we parse it
-            step = self._parseLine(step, data[o:i])
+            step = self._parseLine(step, data, o, o + i)
             # And we increase the offset
             o = i + 2
         # We update the state
         self.step = step
         return o
 
-    def _parseLine(self, step: HTTPParserStep, line: bytes) -> HTTPParserStep:
+    def _parseLine(
+        self,
+        step: HTTPParserStep,
+        line: bytes,
+        start: int = 0,
+        end: Optional[int] = None,
+    ) -> HTTPParserStep:
         """Parses a line (without the ending `\r\n`), updating the
         context's {method,uri,protocol,headers,step} accordingly. This
         will stop once two empty lines have been encountered."""
         if step == HTTPParserStep.Request:
             # That's the REQUEST line
-            j = line.find(b" ")
-            k = line.find(b" ", j + 1)
-            self.method = line[:j].decode()
+            j = line.find(b" ", start)
+            k = line.find(b" ", j + 1) if j >= 0 else -1
+            if k < 0:
+                raise ValueError(f"Could not parse line: {line}")
+            self.method = line[start:j].decode()
             self.uri = line[j + 1 : k].decode()
-            self.protocol = line[k + 1 :].decode()
+            self.protocol = line[k + 1 : end].decode()
             return HTTPParserStep.Headers
         elif not line:
             # That's an EMPTY line, probably the one separating the body
@@ -290,12 +307,14 @@ class HTTPParser:
         elif step.value >= HTTPParserStep.Headers.value:
             # That's a HEADER line
             # FIXME: Not sure why we need to reassign here
-            j = line.index(b":")
-            h = line[:j].decode().strip()
+            j = line.index(b":", start)
+            if j < 0:
+                raise ValueError(f"Malformed header line: {line}")
+            h = line[start:j].decode().strip()
             j += 1
             if j < len(line) and line[j] == " ":
                 j += 1
-            v = line[j:].decode().strip()
+            v = line[j:end].decode().strip()
             self.headers[h] = v
             return HTTPParserStep.Headers
         else:
@@ -346,8 +365,14 @@ class HTTPParser:
             "method": self.method,
             "uri": self.uri,
             "protocol": self.protocol,
+            "address": self.address,
+            "port": self.port,
             "headers": [(k, v) for k, v in self.headers.items()],
+            "started": self.started,
         }
+
+    def __repr__(self):
+        return f"(HTTPParser method={self.method } uri={self.uri} step={self.step} rest={self.rest})"
 
 
 # --
@@ -384,7 +409,7 @@ class HTTPRequest(Request, WithHeaders):
 
     def init(
         self,
-        reader: StreamReader,
+        reader: Optional[StreamReader] = None,
         protocol: Optional[str] = None,
         protocolVersion: Optional[str] = None,
         method: Optional[str] = None,
@@ -596,24 +621,39 @@ class HTTPResponse(Response, WithHeaders):
 
     def __init__(self):
         super().__init__()
-        self.status: int = 200
+        self.status: int = 0
+        self.bodies: Optional[list[Body]] = None
         self.reason: Optional[bytes] = None
         WithHeaders.__init__(self)
 
-    async def write(self) -> AsyncIterator[bytes]:
+    def init(
+        self,
+        step: ResponseStep = ResponseStep.Initialized,
+        headers: Optional[Headers] = None,
+        bodies: Optional[list["Body"]] = None,
+        status: int = 0,
+        reason: Optional[bytes] = None,
+    ) -> "HTTPResponse":
+        super().init(step=step, headers=headers, status=status)
+        self.bodies = [] if bodies is None else bodies
+        self.reason = reason
+        return self
+
+    def write(self) -> Iterator[bytes]:
         # FIXME: Is it faster to format? This would be interesting to try out
-        yield f"HTTP/1.1 {self.status} {self.reason or HTTPStatus[self.status]}\r\n".encode()
-        if not self.headers.has(ContentType):
-            # FIXME:We should deal with multiple bodies
-            yield f"{ContentType}: {self.bodies[0][1]}\r\n".encode()
-        if not self.headers.has(ContentLength):
-            # FIXME: We should support streaming content and all
-            print(self.bodies)
-            yield f"{ContentLength}: {len(self.bodies[0].content)}\r\n".encode()
-        yield b"\r\n"
-        for k, l in self.headers.items():
-            # TODO: What about the rest?
-            yield b"{k}: l[0]\r\n".encode()
+        yield f"HTTP/1.1 {self.status} {(self.reason if self.reason else HTTPStatus.get(self.status, b'Unknown status')).decode('ascii')}\r\n".encode()
+        if self.headers:
+            if not self.headers.has(ContentType):
+                # FIXME:We should deal with multiple bodies
+                yield f"{ContentType}: {self.bodies[0][1]}\r\n".encode()
+            if not self.headers.has(ContentLength):
+                # FIXME: We should support streaming content and all
+                print(self.bodies)
+                yield f"{ContentLength}: {len(self.bodies[0].content)}\r\n".encode()
+            yield b"\r\n"
+            for k, l in self.headers.items():
+                # TODO: What about the rest?
+                yield b"{k}: l[0]\r\n".encode()
         current: Optional[ResponseControl] = None
         for type, content, contentType in self.bodies:
             yield content
@@ -621,6 +661,9 @@ class HTTPResponse(Response, WithHeaders):
             # elif current == ResponseControl.Chunk:
             #     assert isinstance(bytes, atom)
             #     yield atom
+
+    def __iter__(self) -> Iterator[bytes]:
+        return self.write()
 
 
 # -----------------------------------------------------------------------------
