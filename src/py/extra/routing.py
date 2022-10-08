@@ -12,7 +12,7 @@ from typing import (
     ClassVar,
     TypeVar,
 )
-from .protocol import Request, Response
+from .protocol.http import HTTPRequest, HTTPResponse
 from .decorators import EXTRA
 from .logging import logger
 
@@ -135,7 +135,7 @@ class Route:
         if not self._regexp:
             # NOTE: Not sure if it's a good thing to have the prefix/suffix
             # for an exact match.
-            self._regexp = re.compile(f"^{self.toRegExp()}$")
+            self._regexp = re.compile(f"^/{self.toRegExp()}$")
         return self._regexp
 
     def toRegExpChunks(self) -> list[str]:
@@ -260,21 +260,29 @@ class Handler:
     def __init__(
         self,
         functor: Callable,
-        methods: list[str],
+        methods: list[tuple[str, str]],
         priority: int = 0,
         expose: bool = False,
         contentType=None,
     ):
         self.functor = functor
-        self.methods = methods
+        # This extracts and noramlizes the methods
+        # NOTE: This may have been done at the decoartor level
+        self.methods: dict[str, list[str]] = {}
+        for method, path in methods:
+            self.methods.setdefault(method, []).append(path)
+
         self.priority = priority
         self.expose = expose
         self.contentType = (
             bytes(contentType, "utf8") if isinstance(contentType, str) else contentType
         )
 
-    def __call__(self, request: Request, params: dict[str, Any]) -> Response:
+    # NOTE: For now we only do HTTP Requests, we'll see if we can generalise.
+    def __call__(self, request: HTTPRequest, params: dict[str, Any]) -> HTTPResponse:
         if self.expose:
+            # NOTE: This pattern is hard to optimise, maybe we could do something
+            # better, like code-generated dispatcher.
             value: Any = self.functor(**params)
             # The `respond` method will take care of handling the different
             # types of responses there.
@@ -300,14 +308,16 @@ class Dispatcher:
 
     def __init__(self):
         self.routes: dict[str, list[Route]] = {}
-        self.isPrepared = True
+        self.isPrepared: bool = True
 
     def register(self, handler: Handler, prefix: Optional[str] = None):
-        for method, path in handler.methods:
-            route = Route(prefix + path if prefix else path, handler)
-            logging.info(f"Registered route: {route}")
-            self.routes.setdefault(method, []).append(route)
-            self.isPrepared = False
+        """Registers the handlers and their routes, adding the prefix if given."""
+        for method, paths in handler.methods.items():
+            for path in paths:
+                route: Route = Route(f"{prefix}{path}" if prefix else path, handler)
+                logging.info(f"Registered route: {route}")
+                self.routes.setdefault(method, []).append(route)
+                self.isPrepared = False
         return self
 
     def prepare(self):
@@ -324,12 +334,14 @@ class Dispatcher:
     ) -> tuple[Optional[Route], Optional[Union[bool, Match]]]:
         """Matches a given `method` and `path` with the registered route, returning
         the matching route and the match information."""
+        print("GOT", method, path)
+        print("ROUTES", self.routes)
         if method not in self.routes:
             return (None, False)
         else:
-            matched_match = None
-            matched_route = None
-            matched_priority = -1
+            matched_match: Optional[Match] = None
+            matched_route: Optional[Route] = None
+            matched_priority: int = -1
             # NOTE: The problem here is that we're going through
             # *all* the registered routes for any URL. So the more routes,
             # the slower this is going to be.
@@ -338,7 +350,7 @@ class Dispatcher:
             for route in self.routes[method]:
                 if route.priority < matched_priority:
                     continue
-                match = route.match(path)
+                match: Match = route.match(path)
                 # FIXME: Maybe use a debug stream here
                 # print("ROUTE", method, path, ":", route, "=", match)
                 if match is None:

@@ -6,7 +6,7 @@ class Topics:
     """A topic tree backed by the `NamedNode` tree. The topic tree is used
     to bind handlers that provide an effect upon subscription."""
 
-    INSTANCE: "Topics" = None
+    INSTANCE: Optional["Topics"] = None
 
     @classmethod
     def Instance(cls):
