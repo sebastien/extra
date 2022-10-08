@@ -34,7 +34,7 @@ for route in ROUTES:
             )
             failed += 1
 if failed:
-    print("FAIL {failed} tests failed")
+    print(f"FAIL {failed} tests failed")
     print("ERR")
 else:
     print("OK! All tests passed")

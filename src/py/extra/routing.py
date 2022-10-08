@@ -3,6 +3,7 @@ from typing import (
     Callable,
     Any,
     Iterable,
+    Iterator,
     Pattern,
     Match,
     Type,
@@ -135,7 +136,7 @@ class Route:
         if not self._regexp:
             # NOTE: Not sure if it's a good thing to have the prefix/suffix
             # for an exact match.
-            self._regexp = re.compile(f"^/{self.toRegExp()}$")
+            self._regexp = re.compile(f"^{self.toRegExp()}$")
         return self._regexp
 
     def toRegExpChunks(self) -> list[str]:
@@ -179,13 +180,14 @@ class Prefix:
         return root
 
     def __init__(self, value: Optional[str] = None, parent: Optional["Prefix"] = None):
-        self.value = value
+        self.value: Optional[str] = value
         self.parent = parent
         self.children: dict[str, Prefix] = {}
 
-    def simplify(self):
+    def simplify(self) -> "Prefix":
+        """Simplifies the prefix tree by joining together nodes that are similar"""
         simplified: dict[str, Prefix] = {}
-        children = self.children
+        children: dic[str, Prefix] = self.children
         # Any consecutive chain like A―B―C gets simplified to ABC
         while len(children) == 1:
             for key, prefix in children.items():
@@ -213,6 +215,18 @@ class Prefix:
             for j, line in enumerate(child.iterLines(level + 1)):
                 leader = ("└─ " if i == last_i else "├─ ") if j == 0 else "   "
                 yield leader + line
+
+    def toRegExpr(self) -> str:
+        return "".join(_ for _ in self.iterRegExpr())
+
+    def iterRegExpr(self) -> Iterator[str]:
+        if self.value:
+            yield self.value
+        if self.children:
+            for i, _ in enumerate(self.children):
+                yield f"(" if i == 0 else f"|"
+                yield from self.children[_].iterRegExpr()
+            yield ")"
 
     def __str__(self):
         return "\n".join(self.iterLines())
@@ -314,7 +328,9 @@ class Dispatcher:
         """Registers the handlers and their routes, adding the prefix if given."""
         for method, paths in handler.methods.items():
             for path in paths:
-                route: Route = Route(f"{prefix}{path}" if prefix else path, handler)
+                path = f"{prefix}{path}" if prefix else path
+                path = f"/{path}" if not path.startswith("/") else path
+                route: Route = Route(path, handler)
                 logging.info(f"Registered route: {route}")
                 self.routes.setdefault(method, []).append(route)
                 self.isPrepared = False
@@ -334,8 +350,6 @@ class Dispatcher:
     ) -> tuple[Optional[Route], Optional[Union[bool, Match]]]:
         """Matches a given `method` and `path` with the registered route, returning
         the matching route and the match information."""
-        print("GOT", method, path)
-        print("ROUTES", self.routes)
         if method not in self.routes:
             return (None, False)
         else:
