@@ -41,19 +41,19 @@ class Logger:
     INSTANCE = None
     FORMAT = (
         {
-            "default": f"    {{message}}{Style.RESET_ALL}",
-            "error": f"{Style.BRIGHT}{Fore.RED}[!] {{message}}{Style.RESET_ALL}",
-            "warning": f"{Style.DIM}{Fore.YELLOW} !  {{message}}{Style.RESET_ALL}",
-            "metric": f"{Style.DIM}{Fore.YELLOW} →  {Fore.WHITE}{{name}} = {Style.BRIGHT}{Fore.YELLOW}{{value}}{Style.RESET_ALL}",
-            "info": f" »  {{message}}{Style.RESET_ALL}",
+            "default": f"[{{origin}}]   {{message}}{Style.RESET_ALL}",
+            "error": f"[{{origin}}]{Style.BRIGHT}{Fore.RED}[!]{{message}}{Style.RESET_ALL}",
+            "warning": f"[{{origin}}]{Style.DIM}{Fore.YELLOW} ! {{message}}{Style.RESET_ALL}",
+            "metric": f"[{{origin}}]{Style.DIM}{Fore.YELLOW} → {Fore.WHITE}{{name}} = {Style.BRIGHT}{Fore.YELLOW}{{value}}{Style.RESET_ALL}",
+            "info": f"[{{origin}}] » {{message}}{Style.RESET_ALL}",
         }
         if colorama
         else {
-            "default": "    {message}",
-            "error": f" ✘ {{message}}",
-            "warning": f" !  {{message}}",
-            "metric": f" →  {{name}} = {{value}}",
-            "info": f" »  {{message}}",
+            "default": "[{{origin}}]   {message}",
+            "error": f"[{{origin}}] ✘ {{message}}",
+            "warning": f"[{{origin}}] ! {{message}}",
+            "metric": f"[{{origin}}] → {{name}} = {{value}}",
+            "info": f"[{{origin}}] » {{message}}",
         }
     )
 
@@ -79,24 +79,25 @@ class Logger:
         # This is the user-friendly output.
         sys.stdout.write(fmt.format(**(event.data)))
         sys.stdout.write("\n")
-        if event_type == "error" and "key" in event.data and "code" in event.data:
-            # We log errors in a file for later reference
-            exists = os.path.exists("errors.tsv")
-            with open("errors.tsv", "at") as f:
-                if not exists:
-                    f.write("timestamp	key	code\n")
-                f.write(
-                    f"{time.strftime('%Y-%m-%d %H:%M:%S %z')}	{event.data['key']}	{event.data['code']}\n"
-                )
-        if event_type == "metric":
-            # We log metrics in a file
-            exists = os.path.exists("metrics.tsv")
-            with open("metrics.tsv", "at") as f:
-                if not exists:
-                    f.write("timestamp	name	value\n")
-                f.write(
-                    f"{time.strftime('%Y-%m-%d %H:%M:%S %z')}	{event.data['name']}	{event.data['value']}\n"
-                )
+        # FIXME: This should be done elsewhere
+        # if event_type == "error" and "key" in event.data and "code" in event.data:
+        #     # We log errors in a file for later reference
+        #     exists = os.path.exists("errors.tsv")
+        #     with open("errors.tsv", "at") as f:
+        #         if not exists:
+        #             f.write("timestamp	key	code\n")
+        #         f.write(
+        #             f"{time.strftime('%Y-%m-%d %H:%M:%S %z')}	{event.data['key']}	{event.data['code']}\n"
+        #         )
+        # if event_type == "metric":
+        #     # We log metrics in a file
+        #     exists = os.path.exists("metrics.tsv")
+        #     with open("metrics.tsv", "at") as f:
+        #         if not exists:
+        #             f.write("timestamp	name	value\n")
+        #         f.write(
+        #             f"{time.strftime('%Y-%m-%d %H:%M:%S %z')}	{event.data['name']}	{event.data['value']}\n"
+        #         )
 
     def __init__(self, path: str):
         self.path = path
@@ -144,7 +145,12 @@ class Logger:
         if not Logger.EFFECTOR_REGISTERED:
             sub("logs", Logger.Effector)
             Logger.EFFECTOR_REGISTERED = True
-        pub(f"logs.{self.path}", message=message, **kwargs)
+        pub(
+            f"logs.{self.path}",
+            message=message,
+            origin=kwargs.get("origin", self.path),
+            **kwargs,
+        )
 
     def timer(self, name):
         start = time.time()
