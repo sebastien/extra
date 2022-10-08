@@ -1,46 +1,56 @@
-from extra import Service, Request, Response, on, expose, serve
+from extra import Service, Request, Response, on, expose, run
 import time
 
-# @title API Example
+# --
+# # Extra API Example
 
 
 class API(Service):
 
-    PREFIX = "api"
+    PREFIX = "api/"
 
-    # @p Using `expose` automatically exposes the method through the web
+    # --
+    # Using `expose` automatically exposes the method through the web
     # service, encoding the results as JSON
     @expose(GET="time")
     def time(self):
+        """Returns the local time"""
         return time.time()
 
-    # @p Adding an `init` method allows for initialising the state of the
+    # --
+    # Adding an `init` method allows for initialising the state of the
     # service.
     def init(self):
         self.count = 0
 
     @expose(GET="counter")
     async def counter(self):
+        """Returns the value of the given counter"""
         return self.count
 
-    # @p The route syntax supports types that will be automatically mapped
-    # to the handler's argumentsj
+    # --
+    # The route syntax supports types that will be automatically mapped
+    # to the handler's arguments.
     @expose(GET="counter/add/{count:int}")
     async def increment(self, count: int):
+        """Increments the counter by `count`. See `counter`."""
         self.count += count
         return self.count
 
-    # @p The `on` decorator adds the request as the first argument but
-    # also expectes a response as a return value.
+    # --
+    # The `on` decorator adds the request as the first argument but
+    # also expects a response as a return value.
     #
     # Note the `GET_POST` syntax that denotes that we're supporting both
     # `GET` and `POST` methods.
     @on(GET_POST="pong")
     async def pong(self, request: Request) -> Response:
+        """Returns the contents of the request as-as, encoded as JSON"""
         await request.load()
         return request.returns(request.data)
 
 
-# NOTE: You can start this with `uvicorn helloword:app`
-app = serve(API)
+if __name__ == "__main__":
+    app = run(API)
+
 # EOF
