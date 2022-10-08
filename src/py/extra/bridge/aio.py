@@ -147,7 +147,7 @@ class AIOServer:
 
 
 def run(
-    *components: Union[Application, Service, type[Application], type[Service]],
+    *components: Union[Application, Service],
     host: str = "0.0.0.0",
     port: int = 8000,
     backlog: int = 10_000,

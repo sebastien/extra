@@ -1,17 +1,17 @@
 import functools
-from typing import Callable
+from typing import Callable, ClassVar
 from enum import Enum
 
 
-class EXTRA(Enum):
-    ON = "_extra_on"
-    ON_PRIORITY = "_extra_on_priority"
-    EXPOSE = "_extra_expose"
-    EXPOSE_JSON = "_extra_expose_json"
-    EXPOSE_RAW = "_extra_expose_raw"
-    EXPOSE_COMPRESS = "_extra_expose_compress"
-    EXPOSE_CONTENT_TYPE = "_extra_expose_content_type"
-    WHEN = "_extra_when"
+class EXTRA:
+    ON: ClassVar[str] = "_extra_on"
+    ON_PRIORITY: ClassVar[str] = "_extra_on_priority"
+    EXPOSE: ClassVar[str] = "_extra_expose"
+    EXPOSE_JSON: ClassVar[str] = "_extra_expose_json"
+    EXPOSE_RAW: ClassVar[str] = "_extra_expose_raw"
+    EXPOSE_COMPRESS: ClassVar[str] = "_extra_expose_compress"
+    EXPOSE_CONTENT_TYPE: ClassVar[str] = "_extra_expose_content_type"
+    WHEN: ClassVar[str] = "_extra_when"
 
 
 def on(priority=0, **methods):

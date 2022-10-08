@@ -249,9 +249,7 @@ class ASGIBridge:
         response.recycle()
 
 
-def run(
-    *components: Union[Application, Service, Type[Application], Type[Service]]
-) -> Callable:
+def run(*components: Union[Application, Service]) -> Callable:
     """Creates an ASGI bridge, mounts the services into an application
     and returns the ASGI application handler."""
     bridge = ASGIBridge()

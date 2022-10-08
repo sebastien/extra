@@ -9,9 +9,7 @@ from .logging import logger
 from typing import Union, Callable, Type
 
 
-def run(
-    *components: Union[Application, Service, type[Application], type[Service]]
-) -> Bridge:
+def run(*components: Union[Application, Service]) -> Bridge:
     """Runs the given components"""
     return aio_run(*components)
 

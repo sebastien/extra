@@ -40,7 +40,7 @@ TPubSubHandler = Callable[[str, TPubSubEvent], Optional[bool]]
 
 class PubSub:
     def __init__(self):
-        self.topics: dict[str, list[TPubSubHandler]] = []
+        self.topics: dict[str, list[TPubSubHandler]] = {}
 
     def pub(self, topic: str, event: TPubSubEvent) -> TPubSubEvent:
         if topic in self.topics:
@@ -58,7 +58,12 @@ class PubSub:
 
 
 BUS = PubSub()
-pub = BUS.pub
+
+
+def pub(topic: str, **props: Any):
+    BUS.pub(topic, props)
+
+
 sub = BUS.sub
 
 # -----------------------------------------------------------------------------

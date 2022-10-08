@@ -47,27 +47,16 @@ class Components(NamedTuple):
     """Groups Application and Service objects together"""
 
     @staticmethod
-    def Make(
-        components: Iterable[
-            Union[Application, Service, type[Application], type[Service]]
-        ]
-    ):
+    def Make(components: Iterable[Union[Application, Service]]):
         apps: list[Application] = []
         services: list[Service] = []
         for item in components:
-            value: Union[Application, Service] = (
-                item() if isinstance(item, type) else item
-            )
-            if isinstance(value, Application):
-                apps.append(value)
-            elif isinstance(value, Service):
-                services.append(value)
-            elif isinstance(value, type[Service]):
-                services.append(value())
-            elif isinstance(value, type[Application]):
-                apps.append(value())
+            if isinstance(item, Application):
+                apps.append(item)
+            elif isinstance(item, Service):
+                services.append(item)
             else:
-                raise RuntimeError(f"Unsupported component type {type(value)}: {value}")
+                raise RuntimeError(f"Unsupported component type {type(item)}: {item}")
         return Components(apps[0] if apps else Application(), apps, services)
 
     app: Optional[Application]
@@ -75,15 +64,11 @@ class Components(NamedTuple):
     services: list[Service]
 
 
-def components(
-    *components: Union[Application, Service, type[Application], type[Service]]
-) -> Components:
+def components(*components: Union[Application, Service]) -> Components:
     return Components.Make(components)
 
 
-def mount(
-    *components: Union[Application, Service, type[Application], type[Service]]
-) -> Application:
+def mount(*components: Union[Application, Service]) -> Application:
     """Mounts the given components into ana application"""
     c = Components.Make(components)
     app: Application = c.app

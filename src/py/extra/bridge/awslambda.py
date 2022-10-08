@@ -25,9 +25,7 @@ class AWSLambdaHandler:
         return {}
 
 
-def run(
-    *services: Union[Application, Service, type[Application], type[Service]]
-) -> AWSLambdaHandler:
+def run(*services: Union[Application, Service]) -> AWSLambdaHandler:
     """Runs the given services/application using the embedded AsyncIO HTTP server."""
     return AWSLambdaHandler(mount(*services))
 

@@ -8,6 +8,6 @@ class HelloWorld(Service):
 
 
 if __name__ == "__main__":
-    run(HelloWorld)
+    run(HelloWorld())
 
 # EOF
