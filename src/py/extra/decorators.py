@@ -1,8 +1,9 @@
 import functools
-from typing import List, Callable
+from typing import Callable
+from enum import Enum
 
 
-class EXTRA:
+class EXTRA(Enum):
     ON = "_extra_on"
     ON_PRIORITY = "_extra_on_priority"
     EXPOSE = "_extra_expose"

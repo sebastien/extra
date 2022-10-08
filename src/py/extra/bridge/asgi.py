@@ -38,11 +38,12 @@ async def streamBodyHelper(
     """A helper function that will take a response body and stream it through
     the `send` function."""
     count = 0
-    async for chunk in body:
-        await send(
-            {"type": "http.response.body", "body": asBytes(chunk), "more_body": True}
-        )
-        count += 1
+    # FIXME: MyPyC does not support async generators
+    # async for chunk in body:
+    #     await send(
+    #         {"type": "http.response.body", "body": asBytes(chunk), "more_body": True}
+    #     )
+    #     count += 1
     # We notify that it's the end of the body, and we send a 0-byte payload.
     await send({"type": "http.response.body", "body": b"", "more_body": False})
 

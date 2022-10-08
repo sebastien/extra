@@ -53,8 +53,10 @@ class Route:
     `{name:type}`. Routes can have priorities and be assigned handlers,
     they are then registered in the dispatcher to match requests."""
 
-    RE_TEMPLATE = re.compile(r"\{(?P<name>[\w][_\w\d]*)(:(?P<type>[^}]+))?\}")
-    RE_SPECIAL = re.compile(r"/\+\*\-\:")
+    RE_TEMPLATE: ClassVar[Pattern] = re.compile(
+        r"\{(?P<name>[\w][_\w\d]*)(:(?P<type>[^}]+))?\}"
+    )
+    RE_SPECIAL: ClassVar[Pattern] = re.compile(r"/\+\*\-\:")
 
     PATTERNS: ClassVar[dict[str, RoutePattern]] = {
         "id": RoutePattern(r"[a-zA-Z0-9\-_]+", str),
@@ -85,15 +87,16 @@ class Route:
         type: str,
         regexp: str,
         parser: Union[Type[str], Callable[[str], Any]] = str,
-    ):
+    ) -> "RoutePattern":
         """Registers a new RoutePattern into `Route.PATTERNS`"""
         # We do a precompilation to make sure it's working
         try:
             re.compile(regexp)
         except Exception as e:
             raise ValueError(f"Regular expression '{regexp}' is malformed: {e}")
-        cls.PATTERNS[type.lower()] = RoutePattern(regexp, parser)
-        return cls
+        res: RoutePattern = RoutePattern(regexp, parser)
+        cls.PATTERNS[type.lower()] = res
+        return res
 
     @classmethod
     def Parse(cls, expression: str, isStart=True) -> list[TChunk]:
@@ -105,8 +108,8 @@ class Route:
         # escape = lambda _:cls.RE_SPECIAL.sub(lambda _:"\\" + _, _)
         for match in cls.RE_TEMPLATE.finditer(expression):
             chunks.append(TextChunk(expression[offset : match.start()]))
-            name = match.group(1)
-            pattern = (match.group(3) or name).lower()
+            name: str = match.group(1)
+            pattern: str = (match.group(3) or name).lower()
             if pattern not in cls.PATTERNS:
                 raise ValueError(
                     f"Route pattern '{pattern}' is not registered, pick one of: {', '.join(sorted(cls.PATTERNS.keys()))}"
@@ -127,17 +130,20 @@ class Route:
         self._regexp: Optional[Pattern] = None
 
     @property
-    def priority(self):
+    def priority(self) -> int:
         return self.handler.priority if self.handler else 0
 
     @property
-    def pattern(self):
+    def pattern(self) -> str:
         if not self._pattern:
-            self._pattern = self.toRegExp()
-        return self._pattern
+            pat = self.toRegExp()
+            self._pattern = pat
+            return pat
+        else:
+            return self._pattern
 
     @property
-    def regexp(self):
+    def regexp(self) -> Pattern:
         if not self._regexp:
             # NOTE: Not sure if it's a good thing to have the prefix/suffix
             # for an exact match.

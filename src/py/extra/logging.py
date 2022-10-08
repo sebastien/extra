@@ -1,5 +1,6 @@
-from typing import Optional
-from extra.feature.pubsub import pub, sub
+from typing import Optional, Callable, Optional, ClassVar, Any
+
+# from extra.feature.pubsub import pub, sub
 import os
 import sys
 import time
@@ -26,6 +27,40 @@ to generate metrics and events as well as generating human-readable messages.
 See `Logger.Effector` for more detail.
 """
 
+
+TPubSubEvent = dict[str, Any]
+TPubSubHandler = Callable[[str, TPubSubEvent], Optional[bool]]
+
+# -----------------------------------------------------------------------------
+#
+# MICRO PUB-SUB
+#
+# -----------------------------------------------------------------------------
+
+
+class PubSub:
+    def __init__(self):
+        self.topics: dict[str, list[TPubSubHandler]] = []
+
+    def pub(self, topic: str, event: TPubSubEvent) -> TPubSubEvent:
+        if topic in self.topics:
+            for h in self.topics[topic]:
+                h(topic, event)
+        return event
+
+    def sub(self, topic: str, handler: TPubSubHandler) -> "PubSub":
+        self.topics.setdefault(topic, []).append(handler)
+        return self
+
+    def unsub(self, topic: str, handler: TPubSubHandler) -> "PubSub":
+        self.topics[topic].remove(handler)
+        return self
+
+
+BUS = PubSub()
+pub = BUS.pub
+sub = BUS.sub
+
 # -----------------------------------------------------------------------------
 #
 # LOGGER
@@ -37,28 +72,18 @@ class Logger:
     """Wraps logging methods in a `path` used to publish messages to using
     the underlying pub/sub module."""
 
-    EFFECTOR_REGISTERED = False
-    INSTANCE = None
-    FORMAT = (
-        {
-            #  "default": f"[{{origin}}]   {{message}}{Style.RESET_ALL}",
-            #  "error": f"[{{origin}}]{Style.BRIGHT}{Fore.RED}[!]{{message}}{Style.RESET_ALL}",
-            #  "warning": f"[{{origin}}]{Style.DIM}{Fore.YELLOW} ! {{message}}{Style.RESET_ALL}",
-            #  "metric": f"[{{origin}}]{Style.DIM}{Fore.YELLOW} → {Fore.WHITE}{{name}} = {Style.BRIGHT}{Fore.YELLOW}{{value}}{Style.RESET_ALL}",
-            #  "info": f"[{{origin}}] » {{message}}{Style.RESET_ALL}",
-        }
-        if colorama
-        else {
-            "default": "[{{origin}}]   {message}",
-            "error": f"[{{origin}}] ✘ {{message}}",
-            "warning": f"[{{origin}}] ! {{message}}",
-            "metric": f"[{{origin}}] → {{name}} = {{value}}",
-            "info": f"[{{origin}}] » {{message}}",
-        }
-    )
+    EFFECTOR_REGISTERED: ClassVar[bool] = False
+    INSTANCE: ClassVar[Optional["Logger"]] = None
+    FORMAT: ClassVar[dict[str, str]] = {
+        "default": "[{{origin}}]   {message}",
+        "error": f"[{{origin}}] ✘ {{message}}",
+        "warning": f"[{{origin}}] ! {{message}}",
+        "metric": f"[{{origin}}] → {{name}} = {{value}}",
+        "info": f"[{{origin}}] » {{message}}",
+    }
 
     @classmethod
-    def Instance(cls):
+    def Instance(cls) -> "Logger":
         if not cls.INSTANCE:
             cls.INSTANCE = Logger("default")
         return cls.INSTANCE

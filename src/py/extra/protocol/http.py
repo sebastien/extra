@@ -82,14 +82,6 @@ def asJSON(value):
 #     pass
 
 
-class WithHeaders:
-    def __init__(self):
-        self.headers = Headers()
-
-    def reset(self):
-        self.headers.reset()
-
-
 class HTTPParserStep(Enum):
     Request = 0
     Headers = 1
@@ -101,7 +93,7 @@ class HTTPParser:
     """Parses an HTTP request and headers from a stream through the `feed()`
     method."""
 
-    Pool: list["HTTPParser"] = []
+    Pool: ClassVar[list["HTTPParser"]] = []
 
     @classmethod
     def Get(
@@ -337,11 +329,11 @@ class HTTPParser:
     # TODO: We might want to move that to connection, but right
     # now the HTTP context is a better fix.
     # variant of that.
-    async def read(self, size=None) -> Optional[bytes]:
+    async def read(self, size: Optional[int] = None) -> Optional[bytes]:
         """Reads `size` bytes from the context's input stream, using
         whatever data is left from the previous data feeding."""
         assert size != 0
-        rest = self.rest
+        rest: Optional[bytes] = self.rest
         # This method is a little bit contrived because e need to test
         # for all the cases. Also, this needs to be relatively fast as
         # it's going to be used often.
@@ -362,16 +354,20 @@ class HTTPParser:
             self.rest = None
             if size is None:
                 if self._stream:
-                    return rest + (await self._stream.read())
+                    chunk_a: bytes = await self._stream.read()
+                    return chunk_a if rest is None else rest + chunk_a
                 else:
                     return rest
-            elif len(rest) > size:
+            elif rest and len(rest) > size:
                 self.rest = rest[size:]
                 return rest[:size]
-            else:
-                return rest + (
-                    (await self._stream.read(size - len(rest))) if self._stream else b""
+            elif self._stream:
+                chunk_b: bytes = await self._stream.read(
+                    size - (0 if rest is None else len(rest))
                 )
+                return chunk_b if not rest else rest + chunk_b
+            else:
+                return rest or b""
 
     def asDict(self) -> dict[str, Any]:
         """Exports a JSONable representation of the context."""
@@ -396,12 +392,12 @@ class HTTPParser:
 # HTTP parser and with other ways (ASGI).
 
 
-class HTTPRequest(Request, WithHeaders):
-    POOL: list["HTTPRequest"] = []
+class HTTPRequest(Request):
+    POOL: ClassVar[list["HTTPRequest"]] = []
 
     def __init__(self):
         super().__init__()
-        WithHeaders.__init__(self)
+        self.headers = Headers()
         self.protocol: Optional[str] = None
         self.protocolVersion: Optional[str] = None
         self.method: Optional[str] = None
@@ -448,7 +444,7 @@ class HTTPRequest(Request, WithHeaders):
 
     def reset(self):
         super().reset()
-        WithHeaders.reset(self)
+        self.headers.reset(self)
         self._body = self._body.reset() if self._body else None
         return self
 
@@ -489,7 +485,7 @@ class HTTPRequest(Request, WithHeaders):
         return self
 
     @property
-    def body(self) -> RequestBody:
+    def body(self) -> "RequestBody":
         if not self._body:
             body = RequestBody.Create()
             self._body = body
@@ -567,8 +563,17 @@ class HTTPRequest(Request, WithHeaders):
 
     # @group(Errors)
 
+    def notAuthorized(
+        self, message: Optional[Union[str, bytes]] = None
+    ) -> "HTTPResponse":
+        return (
+            HTTPResponse.Create()
+            .init(status=401)
+            .setContent(message or b"Operation not authorized")
+        )
+
     def notFound(self) -> "HTTPResponse":
-        return HTTPResponse.Create().init(status=404).setContent("Resource not found")
+        return HTTPResponse.Create().init(status=404).setContent(b"Resource not found")
 
 
 # FROM: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
@@ -643,27 +648,24 @@ HTTPStatus: dict[int, bytes] = {
 }
 
 
-class HTTPResponse(Response, WithHeaders):
-    POOL: list["HTTPResponse"] = []
+class HTTPResponse(Response):
+    POOL: ClassVar[list["HTTPResponse"]] = []
 
     def __init__(self):
         super().__init__()
         self.status: int = 0
-        self.bodies: Optional[list[ResponseBody]] = None
         self.reason: Optional[bytes] = None
-        WithHeaders.__init__(self)
 
     def init(
         self,
         *,
         step: ResponseStep = ResponseStep.Initialized,
+        bodies: Optional[list[ResponseBody]] = None,
         headers: Optional[Headers] = None,
-        bodies: Optional[list["ResponseBody"]] = None,
         status: int = 0,
         reason: Optional[bytes] = None,
     ) -> "HTTPResponse":
-        super().init(step=step, headers=headers, status=status)
-        self.bodies = [] if bodies is None else bodies
+        super().init(step=step, headers=headers, status=status, bodies=bodies)
         self.reason = reason
         return self
 
@@ -868,7 +870,7 @@ class Decode:
         # is a big problem.
         rest = b""
         read_size = bufferSize + boundary_length
-        state = None
+        state: Optional[str] = None
         # We want this implementation to be efficient and stream the data, which
         # is especially important when large files (imagine uploading a video)
         # are processed.

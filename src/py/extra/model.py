@@ -1,7 +1,7 @@
 from .routing import Handler, Dispatcher, Route
 from .protocol.http import HTTPRequest, HTTPResponse
 from .logging import Logger
-from typing import Optional, Iterable, Callable, Any
+from typing import Optional, Iterable, Callable, ClassVar, Any
 import sys
 import importlib
 import asyncio
@@ -16,8 +16,8 @@ logging: Logger = Logger.Instance()
 
 
 class Service:
-    PREFIX = ""
-    NO_HANDLER = [
+    PREFIX: ClassVar[str] = ""
+    NO_HANDLER: ClassVar[list[str]] = [
         "name",
         "app",
         "prefix",

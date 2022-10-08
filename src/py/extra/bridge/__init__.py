@@ -1,7 +1,7 @@
 from typing import Union, NamedTuple, Optional, Iterable, cast
 from io import BytesIO
-from ..model import Service, Application
-from ..protocol.http import HTTPRequest, HTTPResponse, HTTPParser
+from extra.model import Service, Application
+from extra.protocol.http import HTTPRequest, HTTPResponse, HTTPParser
 
 
 class Bridge:

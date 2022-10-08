@@ -44,8 +44,9 @@ class Channel(Generic[T]):
         raise NotImplemented
 
 
-async def consume(channel: Channel):
-    yield None
+# NOTE: MypyC does not support async gen
+#  async def consume(channel: Channel):
+#      yield None
 
 
 # EOF

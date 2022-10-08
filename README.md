@@ -14,14 +14,18 @@ providing a great developer experience.
 
 Features:
 
--   Multiple backends: ASGI, WSGI, AsyncIO, AIOHTTP, AWS Lambda, socket, file
 -   Streaming reads and writes, lazy decoding and encoding
 -   Embedded asynchronous HTTP/1 development server
+-   Implementation compiled using `mypyc` for performance
+
+Planned:
+
 -   Mount services on FUSE and query from the CLI
+-   Multiple backends: ASGI, WSGI, AsyncIO, AIOHTTP, AWS Lambda, socket,
+    file
 -   Building blocks for channels, pub/sub, topic tree.
 -   Multi-threaded async (leverage all cores)
 -   Dynamically (re)loadable services
--   Implementation compiled using `mypyc` for performance
 
 Design principles
 
@@ -35,8 +39,9 @@ one of the oldest decorator-based framework for HTTP applications and
 built on the 15+ years of experience developing and maintainig that
 toolkit.
 
-Like Retro, Extra is designed as a kit, providing easily composable building blocks
-that help you build fast, readable and resilient web services.
+Like Retro, Extra is designed as a kit, providing easily composable
+building blocks that help you build fast, readable and resilient web
+services.
 
 Similar projects include [Quart](https://github.com/pgjones/quart),
 [Starlette](https://github.com/encode/starlette). and

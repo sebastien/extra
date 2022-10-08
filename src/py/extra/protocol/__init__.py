@@ -93,88 +93,89 @@ class Request(Flyweight):
         self._onClose = None
 
     @property
-    def isOpen(self):
+    def isOpen(self) -> bool:
         return self.step == RequestStep.Open
 
     @property
-    def isClosed(self):
+    def isClosed(self) -> bool:
         return self.step == RequestStep.Closed
 
-    def open(self):
+    # NOTE: Not sure why we need these
+    def open(self) -> "Request":
         self.step = RequestStep.Open
         return self
 
-    def close(self):
-        if self.step != RequestStep.closed:
-            self.step = RequestStep.closed
+    def close(self) -> "Request":
+        if self.step != RequestStep.Closed:
+            self.step = RequestStep.Closed
             if self._onClose:
                 self._onClose(self)
         return self
 
-    def onClose(self, callback: Optional[Callable[["Request"], None]]):
+    def onClose(self, callback: Optional[Callable[["Request"], None]]) -> "Request":
         self._onClose = callback
         return self
 
     @property
-    def uri(self):
-        pass
+    def uri(self) -> str:
+        raise NotImplemented
 
     # @group Params
 
-    @property
-    def params(self):
-        pass
+    # @property
+    # def params(self):
+    #     pass
 
-    def getParam(self, name: str) -> Any:
-        pass
+    # def getParam(self, name: str) -> Any:
+    #     pass
 
     # @group Loading
 
-    @property
-    def isLoaded(self):
-        pass
+    # @property
+    # def isLoaded(self):
+    #     pass
 
-    @property
-    def loadProgress(self):
-        pass
+    # @property
+    # def loadProgress(self):
+    #     pass
 
-    def load(self) -> Any:
-        pass
+    # def load(self) -> Any:
+    #     pass
 
     # @group Files
 
-    @property
-    def files(self):
-        pass
+    # @property
+    # def files(self):
+    #     pass
 
-    def getFile(self, name: str) -> Any:
-        pass
+    # def getFile(self, name: str) -> Any:
+    #     pass
 
     # @group Responses
-    def multiple(self):
-        pass
+    # def multiple(self):
+    #     pass
 
-    def bounce(self):
-        pass
+    # def bounce(self):
+    #     pass
 
-    def stream(self):
-        pass
+    # def stream(self):
+    #     pass
 
-    def local(self):
-        pass
+    # def local(self):
+    #     pass
 
-    # @group Errors
-    def notFound(self):
-        pass
+    # # @group Errors
+    # def notFound(self):
+    #     pass
 
-    def notAuthorized(self, messase: Optional[str] = None):
-        pass
+    # def notAuthorized(self, messase: Optional[str] = None):
+    #     pass
 
-    def notModified(self):
-        pass
+    # def notModified(self):
+    #     pass
 
-    def fail(self):
-        pass
+    # def fail(self):
+    #     pass
 
 
 class ResponseBodyType(Enum):
@@ -229,7 +230,7 @@ class Response(Flyweight):
         return self
 
     @property
-    def isEmpty(self):
+    def isEmpty(self) -> bool:
         return not self.bodies
 
     def reset(self):
