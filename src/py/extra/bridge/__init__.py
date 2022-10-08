@@ -5,6 +5,11 @@ from ..protocol.http import HTTPRequest, HTTPResponse, HTTPParser
 
 
 class Bridge:
+    """Bridges in Extra act as an interface (or a bridge) between the
+    HTTP client and the underlying service infrastructure, whether it's
+    a socket, a file or an API. The bridge is the foundation for Extra's
+    modularity."""
+
     def __init__(self, application: Application):
         self.application: Application = application
         if not self.application:
@@ -14,7 +19,13 @@ class Bridge:
         response = self.application.process(request)
         return response
 
-    def requestBytes(self, request: bytes) -> HTTPResponse:
+    def request(self, request: Union[bytes, BytesIO]) -> HTTPResponse:
+        if isinstance(request, bytes):
+            return self.requestFromBytes(request)
+        else:
+            return self.requestFromStream(request)
+
+    def requestFromBytes(self, request: bytes) -> HTTPResponse:
         # FIXME: Port should be sourced from somewhere else
         http_parser = HTTPParser("0.0.0.0", 80, {})
         read = http_parser.feed(request)
@@ -26,14 +37,15 @@ class Bridge:
             request.feed(http_parser.rest)
         if not request.isInitialized:
             raise RuntimeError(f"Request is not initialized {request}")
-            print("FAILED!", request)
         return self.process(request)
 
-    def requestStream(self, reader: BytesIO):
+    def requestFromStream(self, reader: BytesIO):
         raise NotImplementedError
 
 
 class Components(NamedTuple):
+    """Groups Application and Service objects together"""
+
     @staticmethod
     def Make(components: Union[Application, Service, type[Application], type[Service]]):
         apps: list[Application] = []
@@ -46,13 +58,17 @@ class Components(NamedTuple):
                 apps.append(value)
             elif isinstance(value, Service):
                 services.append(value)
+            elif isinstance(value, type[Service]):
+                services.append(value())
+            elif isinstance(value, type[Application]):
+                apps.append(value())
             else:
                 raise RuntimeError(f"Unsupported component type {type(value)}: {value}")
         return Components(apps[0] if apps else Application(), apps, services)
 
     app: Optional[Application]
     apps: list[Application]
-    services: list[Application]
+    services: list[Service]
 
 
 def components(
@@ -64,10 +80,11 @@ def components(
 def mount(
     *components: Union[Application, Service, type[Application], type[Service]]
 ) -> Application:
+    """Mounts the given components into ana application"""
     c = Components.Make(components)
-    app: Application = c.app or Application()
+    app: Application = c.app
     # Now we mount all the services on the application
-    for service in services:
+    for service in c.services:
         app.mount(service)
     # app.start()
     return app

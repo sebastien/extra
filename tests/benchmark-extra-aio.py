@@ -1,4 +1,5 @@
-from extra import server, expose, Service
+from extra import Service, expose
+from extra.bridge.aio import run
 
 # NOTE: This is like FastAPI's example
 # https://fastapi.tiangolo.com/
@@ -10,7 +11,7 @@ class API(Service):
         return {"Hello": "World"}
 
 
-# To run: uvicorn benchmark_api:app
-app = server(API())
+if __name__ == "__main__":
+    run(API())
 
 # EOF

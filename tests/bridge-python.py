@@ -13,8 +13,14 @@ GET /any HTTP/1.1\r
 Host: localhost\r
 Connection: keep-alive"""
 
-bridge = run(HelloWorld)
-for line in bridge.requestBytes(REQUEST):
-    print("line", line)
+RESPONSE = b"""\
+HTTP/1.1 200 OK\r
+Hello, World!"""
+
+
+server = run(HelloWorld)
+response = server.request(REQUEST)
+
+assert b"".join(_ for _ in response) == RESPONSE
 
 # EOF

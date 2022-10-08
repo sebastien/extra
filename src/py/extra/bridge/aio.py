@@ -8,6 +8,12 @@ from ..bridge import mount
 from ..logging import error
 from ..protocol.http import HTTPRequest, HTTPParser
 
+BAD_REQUEST = b"""\
+HTTP1/1 400 Bad Request\r
+Content-Length: 0\r
+\r
+"""
+
 
 class AIOBridge:
     async def process(
@@ -15,19 +21,23 @@ class AIOBridge:
     ):
         # --
         # We extract meta-information about the connection
-        addr = writer.get_extra_info("peername")
+        addr: str = writer.get_extra_info("peername")
         bufsize: int = 256_000
-        ends = False
+        ends: bool = False
         started = time.time()
+        # FIXME: Port should be sourced elsewhere
         http_parser = HTTPParser(addr, 8080, {})
+        read: int = 0
         # --
         # We only parse the REQUEST line and the HEADERS. We'll stop
         # once we reach the body. This means that we won't be reading
         # huge requests right away, but let the client decide how to
         # process them.
         while not (ends or http_parser.hasReachedBody):
-            data = await reader.read(bufsize)
-            ends = len(data) < bufsize
+            data: bytes = await reader.read(bufsize)
+            n: int = len(data)
+            read += n
+            ends = n < bufsize
             if not http_parser.feed(data):
                 break
 
@@ -44,27 +54,27 @@ class AIOBridge:
             path=http_parser.uri,
         )
         if http_parser.rest:
+            read += len(http_parser.rest)
             request.feed(http_parser.rest)
-        while not request.isInitialized:
-            # TODO: We're supposed to have the request initialized here
-            raise RuntimeError(
-                f"Request should be initialized by now with {http_parser.asDict()}: {request}"
-            )
+        if request.isInitialized:
+            writer.write(BAD_REQUEST)
+        else:
 
-        # TODO: We'll need to process the request
-        response = application.process(request)
+            # TODO: We'll need to process the request
+            response = application.process(request)
 
-        # TODO: Process the application
-        # Here we don't write bodies of HEAD requests, as some browsers
-        # simply won't read the body.
-        write_body: bool = not (http_parser.method == "HEAD")
+            # TODO: Process the application
+            # Here we don't write bodies of HEAD requests, as some browsers
+            # simply won't read the body.
+            write_body: bool = not (http_parser.method == "HEAD")
 
-        bytes_written: int = 0
-        async for chunk in response.write():
-            if writer.is_closing():
-                break
-            else:
-                writer.write(chunk)
+            bytes_written: int = 0
+            for chunk in response.write():
+                if writer.is_closing():
+                    break
+                else:
+                    writer.write(chunk)
+                await writer.drain()
 
         # for body, content_type in reponse.bodies:
         #     writer.write(body)
@@ -124,7 +134,7 @@ class AIOBridge:
 class AIOServer:
     """A simple asyncio-based asynchronous server"""
 
-    def __init__(self, application: Application, host="127.0.0.1", port=8000):
+    def __init__(self, application: Application, host="0.0.0.0", port=8000):
         self.host: str = host
         self.port: int = port
         self.app: Application = application
@@ -142,13 +152,16 @@ class AIOServer:
 
 
 def run(
-    *services: Union[Application, Service], host: str = "127.0.0.1", port: int = 8001
+    *services: Union[Application, Service],
+    host: str = "0.0.0.0",
+    port: int = 8000,
+    backlog: int = 10_000,
 ):
     """Runs the given services/application using the embedded AsyncIO HTTP server."""
     loop = asyncio.get_event_loop()
     aio_server = AIOServer(mount(*services), host, port)
     # This the stock AIO processing
-    coro = asyncio.start_server(aio_server.request, host, port)
+    coro = asyncio.start_server(aio_server.request, host, port, backlog=backlog)
     server = loop.run_until_complete(coro)
     socket = server.sockets[0].getsockname()
     print(

@@ -154,13 +154,7 @@ class Request(Flyweight):
     def multiple(self):
         pass
 
-    def redirect(self):
-        pass
-
     def bounce(self):
-        pass
-
-    def returns(self):
         pass
 
     def stream(self):
@@ -222,6 +216,7 @@ class Response(Flyweight):
 
     def init(
         self,
+        *,
         step: ResponseStep = ResponseStep.Initialized,
         bodies: Optional[list[Body]] = None,
         headers: Optional[Headers] = None,

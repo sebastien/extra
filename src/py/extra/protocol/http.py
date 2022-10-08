@@ -208,10 +208,10 @@ class HTTPParser:
         self.started = 0.0
 
     def init(self, address: str, port: int, stats: Optional[dict[str, float]] = None):
-        self.address: str = address
-        self.port: int = port
-        self.started: float = time.monotonic()
-        self.stats: dict[str, float] = stats or {}
+        self.address = address
+        self.port = port
+        self.started = time.monotonic()
+        self.stats = stats or {}
         self.method = None
         self.uri = None
         self.protocol = None
@@ -263,14 +263,16 @@ class HTTPParser:
         o = start
         l = end
         # We'll stop once we've parsed headers or reach the end passed above.
-        while step.value < HTTPParserStep.Body.value and o < l:
+        while step.value < HTTPParserStep.Body.value and (
+            o < l if l is not None else True
+        ):
             # We find the closest line separators. We're guaranteed to
             # find at least one.
             i = data.find(b"\r\n", o)
             # The chunk must have \r\n at the end
             if i < 0:
                 raise ValueError(
-                    f"Chunk should end with \\r\\n: {data[start:end]} at {start}"
+                    f"Chunk should end with \\r\\n: {repr(data[start:end])} at {start}"
                 )
             # Now we have a line, so we parse it
             step = self._parseLine(step, data, o, o + i)
@@ -290,12 +292,14 @@ class HTTPParser:
         """Parses a line (without the ending `\r\n`), updating the
         context's {method,uri,protocol,headers,step} accordingly. This
         will stop once two empty lines have been encountered."""
-        if step == HTTPParserStep.Request:
+        if start == end or start >= len(line):
+            return step
+        elif step == HTTPParserStep.Request:
             # That's the REQUEST line
             j = line.find(b" ", start)
             k = line.find(b" ", j + 1) if j >= 0 else -1
             if k < 0:
-                raise ValueError(f"Could not parse line: {line}")
+                raise ValueError(f"Could not parse line: {repr(line)}")
             self.method = line[start:j].decode()
             self.uri = line[j + 1 : k].decode()
             self.protocol = line[k + 1 : end].decode()
@@ -307,9 +311,9 @@ class HTTPParser:
         elif step.value >= HTTPParserStep.Headers.value:
             # That's a HEADER line
             # FIXME: Not sure why we need to reassign here
-            j = line.index(b":", start)
+            j = line.find(b":", start)
             if j < 0:
-                raise ValueError(f"Malformed header line: {line}")
+                raise ValueError(f"Malformed header line: {repr(line)}")
             h = line[start:j].decode().strip()
             j += 1
             if j < len(line) and line[j] == " ":
@@ -359,7 +363,7 @@ class HTTPParser:
                     (await self._stream.read(size - len(rest))) if self._stream else b""
                 )
 
-    def asDict(self) -> dict[str, Union[str, list[tuple[str, str]]]]:
+    def asDict(self) -> dict[str, Any]:
         """Exports a JSONable representation of the context."""
         return {
             "method": self.method,
@@ -440,20 +444,23 @@ class HTTPRequest(Request, WithHeaders):
 
     # @group(Loading)
 
-    async def read(self, count: int = -1) -> Optional[bytes]:
-        """Only use read if you want to acces the raw data in chunks."""
+    # FIXME: Count should probably not be -1 if we want to stream
+    async def read(self, count: int = 65_000) -> Optional[bytes]:
+        """Only use read if you want to access the raw data in chunks."""
         if self._hasMore and self._reader:
-            has_more, data = await self._reader(count)
-            self._hasMore = bool(has_more)
-            self._readCount += len(data)
+            data: bytes = await self._reader.read(count)
+            read: int = len(data)
+            self._hasMore = read == count
+            self._readCount += read
             return data
         else:
             return None
 
     def feed(self, data: bytes):
+        """Feeds some (input) data into that request"""
         return self.body.feed(data)
 
-    async def load(self):
+    async def load(self) -> "HTTPRequest":
         """Loads all the data and returns a list of bodies."""
         body = self.body
         while True:
@@ -474,15 +481,18 @@ class HTTPRequest(Request, WithHeaders):
     @property
     def body(self) -> "Body":
         if not self._body:
-            self._body = Body.Create()
-        return self._body
+            body = Body.Create()
+            self._body = body
+            return body
+        else:
+            return self._body
 
     # @group(Headers)
     @property
     def contentLength(self) -> int:
         return int(self.headers.get(ContentType))
 
-    def setContentLength(self, length: int):
+    def setContentLength(self, length: int) -> "HTTPRequest":
         self.headers.set(ContentLength, b"%d" % (length))
         return self
 
@@ -490,15 +500,17 @@ class HTTPRequest(Request, WithHeaders):
     def contentType(self) -> bytes:
         return self.headers.get(ContentType)
 
-    def setContentType(self, value: Union[str, bytes]):
+    def setContentType(self, value: Union[str, bytes]) -> "HTTPRequest":
         self.headers.set(ContentType, asBytes(value))
         return self
 
-    def setHeader(self, name: Union[str, bytes], value: Union[str, bytes]):
+    def setHeader(
+        self, name: Union[str, bytes], value: Union[str, bytes]
+    ) -> "HTTPRequest":
         self.headers.set(name, value)
         return self
 
-    def getHeader(self, name: Union[str, bytes]):
+    def getHeader(self, name: Union[str, bytes]) -> Optional[bytes]:
         return self.headers.get(name)
 
     # @group(Responses)
@@ -508,35 +520,39 @@ class HTTPRequest(Request, WithHeaders):
         value: Any,
         contentType: Optional[Union[str, bytes]] = b"application/json",
         status: int = 200,
-    ):
+    ) -> "HTTPResponse":
         # FIXME: This should be a stream writer
-        return HTTPResponse.Create().init(status).setContent(asJSON(value), contentType)
+        return (
+            HTTPResponse.Create()
+            .init(status=status)
+            .setContent(asJSON(value), contentType)
+        )
 
     def respond(
         self,
         value: Any,
         contentType: Optional[Union[str, bytes]] = None,
         status: int = 200,
-    ):
-        return HTTPResponse.Create().init(status).setContent(value, contentType)
+    ) -> "HTTPResponse":
+        return HTTPResponse.Create().init(status=status).setContent(value, contentType)
 
     def redirect(
         self,
-        url,
+        url: bytes,
         content: Optional[Union[str, bytes]] = None,
         contentType=b"text/plain",
         permanent=False,
-    ):
+    ) -> "HTTPResponse":
         """Responds to this request by a redirection to the following URL"""
         return self.respond(
             content, contentType, status=301 if permanent else 302
         ).setHeader(Location, url)
 
-    def respondFile(self):
-        return HTTPResponse.Create().init(200).fromFile()
+    def respondFile(self) -> "HTTPResponse":
+        return HTTPResponse.Create().init(status=200).fromFile()
 
-    def respondStream(self):
-        return HTTPResponse.Create().init(200).fromStream()
+    def respondStream(self) -> "HTTPResponse":
+        return HTTPResponse.Create().init(status=200).fromStream()
 
     # @group(Errors)
 
@@ -628,6 +644,7 @@ class HTTPResponse(Response, WithHeaders):
 
     def init(
         self,
+        *,
         step: ResponseStep = ResponseStep.Initialized,
         headers: Optional[Headers] = None,
         bodies: Optional[list["Body"]] = None,
@@ -642,18 +659,17 @@ class HTTPResponse(Response, WithHeaders):
     def write(self) -> Iterator[bytes]:
         # FIXME: Is it faster to format? This would be interesting to try out
         yield f"HTTP/1.1 {self.status} {(self.reason if self.reason else HTTPStatus.get(self.status, b'Unknown status')).decode('ascii')}\r\n".encode()
+        if not (self.headers and self.headers.has(ContentType)):
+            # FIXME:We should deal with multiple bodies
+            yield f"{ContentType}: {self.bodies[0][1]}\r\n".encode()
+        if not (self.headers and self.headers.has(ContentLength)):
+            # FIXME: We should support streaming content and all
+            yield f"{ContentLength}: {len(self.bodies[0].content)}\r\n".encode()
         if self.headers:
-            if not self.headers.has(ContentType):
-                # FIXME:We should deal with multiple bodies
-                yield f"{ContentType}: {self.bodies[0][1]}\r\n".encode()
-            if not self.headers.has(ContentLength):
-                # FIXME: We should support streaming content and all
-                print(self.bodies)
-                yield f"{ContentLength}: {len(self.bodies[0].content)}\r\n".encode()
-            yield b"\r\n"
             for k, l in self.headers.items():
                 # TODO: What about the rest?
                 yield b"{k}: l[0]\r\n".encode()
+        yield b"\r\n"
         current: Optional[ResponseControl] = None
         for type, content, contentType in self.bodies:
             yield content
