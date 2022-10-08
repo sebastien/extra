@@ -6,13 +6,7 @@ from typing import Callable, Union
 from ..model import Application, Service
 from ..bridge import mount
 from ..logging import error
-from ..protocol.http import HTTPRequest, HTTPParser
-
-BAD_REQUEST = b"""\
-HTTP1/1 400 Bad Request\r
-Content-Length: 0\r
-\r
-"""
+from ..protocol.http import HTTPRequest, HTTPParser, BAD_REQUEST
 
 
 class AIOBridge:
@@ -56,7 +50,8 @@ class AIOBridge:
         if http_parser.rest:
             read += len(http_parser.rest)
             request.feed(http_parser.rest)
-        if request.isInitialized:
+        if not request.isInitialized:
+            # This is likely an issue with the transport, or maybe the request is bad
             writer.write(BAD_REQUEST)
         else:
 

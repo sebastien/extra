@@ -177,15 +177,15 @@ class Request(Flyweight):
         pass
 
 
-class BodyType(Enum):
+class ResponseBodyType(Enum):
     Empty = b"empty"
     Value = b"value"
     Iterator = b"iterator"
     AsyncIterator = b"asyncIterator"
 
 
-class Body(NamedTuple):
-    type: BodyType
+class ResponseBody(NamedTuple):
+    type: ResponseBodyType
     content: Union[bytes, Iterator[bytes], AsyncIterator[bytes]]
     contentType: bytes
 
@@ -210,7 +210,7 @@ class Response(Flyweight):
     def __init__(self):
         Flyweight.__init__(self)
         self.step: ResponseStep = ResponseStep.Initialized
-        self.bodies: list[Body] = []
+        self.bodies: list[ResponseBody] = []
         self.headers: Optional[Headers] = None
         self.status: int = 0
 
@@ -218,7 +218,7 @@ class Response(Flyweight):
         self,
         *,
         step: ResponseStep = ResponseStep.Initialized,
-        bodies: Optional[list[Body]] = None,
+        bodies: Optional[list[ResponseBody]] = None,
         headers: Optional[Headers] = None,
         status: int = 0,
     ):
@@ -252,12 +252,16 @@ class Response(Flyweight):
             content, str
         ):  # SEE: https://www.w3.org/International/articles/http-charset/index
             self.bodies.append(
-                Body(BodyType.Value, asBytes(content), b"text/plain; charset=utf-8")
+                ResponseBody(
+                    ResponseBodyType.Value,
+                    asBytes(content),
+                    b"text/plain; charset=utf-8",
+                )
             )
         elif isinstance(content, bytes):
             self.bodies.append(
-                Body(
-                    BodyType.Value,
+                ResponseBody(
+                    ResponseBodyType.Value,
                     content,
                     asBytes(contentType or b"application/binary"),
                 )
@@ -267,7 +271,9 @@ class Response(Flyweight):
                 raise ValueError(
                     "contentType must be specified when type is not bytes or str"
                 )
-            self.bodies.append(Body(BodyType.Value, content, asBytes(contentType)))
+            self.bodies.append(
+                ResponseBody(ResponseBodyType.Value, content, asBytes(contentType))
+            )
         return self
 
     def stream(self) -> Iterator[Union[ResponseControl, bytes]]:

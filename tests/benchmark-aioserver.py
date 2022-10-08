@@ -4,7 +4,7 @@ import sys
 
 RESPONSE = b"""HTTP/1.1 200 OK\r
 Content-Type: text/plain\r
-Content-Length: 14\r
+Content-Length: 13\r
 \r
 Hello, World!"""
 

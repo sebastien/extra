@@ -4,6 +4,8 @@ import os
 import sys
 import time
 
+# TODO: Update with proper typing
+
 try:
     import colorama
     from colorama import Fore, Back, Style

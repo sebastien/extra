@@ -2,6 +2,8 @@ from ..protocol import (
     Request,
     Response,
     ResponseStep,
+    ResponseBody,
+    ResponseBodyType,
     Headers,
     ResponseControl,
     asBytes,
@@ -10,6 +12,7 @@ from typing import (
     Any,
     Optional,
     Union,
+    ClassVar,
     BinaryIO,
     Iterable,
     Iterator,
@@ -53,6 +56,12 @@ ContentLength = b"Content-Length"
 ContentDisposition = b"Content-Disposition"
 ContentDescription = b"Content-Description"
 Location = b"Location"
+
+BAD_REQUEST: bytes = b"""\
+HTTP/1.1 400 Bad Request\r
+Content-Length: 0\r
+\r
+"""
 
 
 def asJSON(value):
@@ -658,25 +667,57 @@ class HTTPResponse(Response, WithHeaders):
 
     def write(self) -> Iterator[bytes]:
         # FIXME: Is it faster to format? This would be interesting to try out
-        yield f"HTTP/1.1 {self.status} {(self.reason if self.reason else HTTPStatus.get(self.status, b'Unknown status')).decode('ascii')}\r\n".encode()
-        if not (self.headers and self.headers.has(ContentType)):
-            # FIXME:We should deal with multiple bodies
-            yield f"{ContentType}: {self.bodies[0][1]}\r\n".encode()
-        if not (self.headers and self.headers.has(ContentLength)):
-            # FIXME: We should support streaming content and all
-            yield f"{ContentLength}: {len(self.bodies[0].content)}\r\n".encode()
+        # TODO: Should probably limit the number of yields
+        reason: bytes = (
+            self.reason
+            if self.reason
+            else HTTPStatus.get(self.status, b"Unknown status")
+        )
+        first_body: Optional[ResponseBody] = self.bodies[0] if self.bodies else None
+        yield b"HTTP/1.1 %d %s\r\n" % (self.status, reason)
+        if not (self.headers and self.headers.has(ContentType)) and self.bodies:
+            for body in self.bodies:
+                if content_type := body.contentType:
+                    yield b"Content-Type: %s\r\n" % (content_type)
+                    break
+        if not (self.headers and self.headers.has(ContentLength)) and self.bodies:
+            content_length: int = 0
+            has_content_length: bool = True
+            for body in self.bodies:
+                if body.type == ResponseBodyType.Empty:
+                    pass
+                elif body.type == ResponseBodyType.Value and isinstance(
+                    body.content, bytes
+                ):
+                    content_length += len(body.content)
+                else:
+                    has_content_length = False
+                    break
+            if has_content_length:
+                yield b"Content-Length: %d\r\n" % (content_length)
         if self.headers:
             for k, l in self.headers.items():
                 # TODO: What about the rest?
-                yield b"{k}: l[0]\r\n".encode()
+                yield b"%s: %s\r\n" % (k, l[0])
         yield b"\r\n"
         current: Optional[ResponseControl] = None
-        for type, content, contentType in self.bodies:
-            yield content
-            #     current = atom
-            # elif current == ResponseControl.Chunk:
-            #     assert isinstance(bytes, atom)
-            #     yield atom
+        if self.bodies:
+            for body in self.bodies:
+                if body.type == ResponseBodyType.Empty:
+                    pass
+                elif body.type == ResponseBodyType.Value:
+                    yield body.content
+                elif body.type == ResponseBodyType.Iterator:
+                    yield from body.content
+                else:
+                    # TODO: That's the Async Iterator
+                    raise NotImplementedError(
+                        f"Body type not supported yet: {body.type}"
+                    )
+                #     current = atom
+                # elif current == ResponseControl.Chunk:
+                #     assert isinstance(bytes, atom)
+                #     yield atom
 
     def __iter__(self) -> Iterator[bytes]:
         return self.write()
@@ -684,22 +725,22 @@ class HTTPResponse(Response, WithHeaders):
 
 # -----------------------------------------------------------------------------
 #
-# BODY
+# REQUEST BODY
 #
 # -----------------------------------------------------------------------------
 
 # @note We need to keep this separate
 
 
-class Body(Flyweight):
+class RequestBody(Flyweight):
 
-    POOL: list["Body"] = []
-    UNDEFINED = "undefined"
-    RAW = "raw"
-    MULTIPART = "multipart"
-    JSON = "json"
+    POOL: ClassVar[list["RequestBody"]] = []
+    UNDEFINED: ClassVar[str] = "undefined"
+    RAW: ClassVar[str] = "raw"
+    MULTIPART: ClassVar[str] = "multipart"
+    JSON: ClassVar[str] = "json"
 
-    def __init__(self, isShort=False):
+    def __init__(self, isShort: bool = False):
         self.spool: Optional[Union[BytesIO, tempfile.SpooledTemporaryFile]] = None
         self.isShort = isShort
         self.isLoaded = False
@@ -714,8 +755,14 @@ class Body(Flyweight):
     def raw(self) -> bytes:
         # We don't need the body to be fully loaded
         if self._raw == None:
-            self.spool.seek(0)
-            self._raw = self.spool.read()
+            if not self.spool:
+                pass
+            elif isinstance(self.spool, BytesIO):
+                raise NotImplemented
+            else:
+                # TODO: should check that this indeed reads everything
+                self.spool.seek(0)
+                self._raw = self.spool.read()
         return self._raw
 
     @property
@@ -767,7 +814,6 @@ class Body(Flyweight):
     def process(self):
         parsed_content = HTTPParser.HeaderValue(self.contentType)
         content_type = parsed_content.get(b"")
-        print("PARSE CONTENT", parsed_content)
         if content_type == b"multipart/form-data":
             self.spool.seek(0)
             for headers, data_file in Decode.Multipart(
