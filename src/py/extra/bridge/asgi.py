@@ -2,6 +2,7 @@ from ..protocol import Request, Response
 from ..protocol.http import HTTPRequest, HTTPResponse, asBytes
 from ..model import Service, Application
 from ..logging import logger
+from ..bridge import mount
 from typing import (
     Callable,
     Any,
@@ -226,7 +227,7 @@ class ASGIBridge:
         else:
             bodies_left = len(response.bodies)
             count = 0
-            for value, contentType in response.bodies:
+            for value, content, contentType in response.bodies:
                 if isinstance(value, types.AsyncGeneratorType):
                     try:
                         await streamBodyHelper(value, send)
@@ -247,20 +248,13 @@ class ASGIBridge:
         response.recycle()
 
 
-def server(
-    *services: Union[Application, Service, Type[Application], Type[Service]]
+def run(
+    *components: Union[Application, Service, Type[Application], Type[Service]]
 ) -> Callable:
     """Creates an ASGI bridge, mounts the services into an application
     and returns the ASGI application handler."""
     bridge = ASGIBridge()
-    components = Components.Make(services)
-    # This extracts and instanciates the services and applications that
-    # are given here.
-    app: Application = components.app or Application()
-    # Now we mount all the services on the application
-    for srv in components.services:
-        logging.info(f"Mounting service: {srv}")
-        app.mount(srv)
+    app: Application = mount(*components)
     # Ands we're ready for the main loop
 
     async def application(scope: TScope, receive, send):

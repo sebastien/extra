@@ -18,6 +18,7 @@ from typing import (
     Iterator,
     AsyncIterator,
     Union,
+    cast,
 )
 from tempfile import SpooledTemporaryFile
 from extra.util import unquote, Flyweight
@@ -488,9 +489,9 @@ class HTTPRequest(Request, WithHeaders):
         return self
 
     @property
-    def body(self) -> "Body":
+    def body(self) -> RequestBody:
         if not self._body:
-            body = Body.Create()
+            body = RequestBody.Create()
             self._body = body
             return body
         else:
@@ -513,13 +514,11 @@ class HTTPRequest(Request, WithHeaders):
         self.headers.set(ContentType, asBytes(value))
         return self
 
-    def setHeader(
-        self, name: Union[str, bytes], value: Union[str, bytes]
-    ) -> "HTTPRequest":
+    def setHeader(self, name: bytes, value: bytes) -> "HTTPRequest":
         self.headers.set(name, value)
         return self
 
-    def getHeader(self, name: Union[str, bytes]) -> Optional[bytes]:
+    def getHeader(self, name: bytes) -> Optional[bytes]:
         return self.headers.get(name)
 
     # @group(Responses)
@@ -553,9 +552,12 @@ class HTTPRequest(Request, WithHeaders):
         permanent=False,
     ) -> "HTTPResponse":
         """Responds to this request by a redirection to the following URL"""
-        return self.respond(
-            content, contentType, status=301 if permanent else 302
-        ).setHeader(Location, url)
+        return cast(
+            HTTPResponse,
+            self.respond(
+                content, contentType, status=301 if permanent else 302
+            ).setHeader(Location, url),
+        )
 
     def respondFile(self) -> "HTTPResponse":
         return HTTPResponse.Create().init(status=200).fromFile()
@@ -647,7 +649,7 @@ class HTTPResponse(Response, WithHeaders):
     def __init__(self):
         super().__init__()
         self.status: int = 0
-        self.bodies: Optional[list[Body]] = None
+        self.bodies: Optional[list[ResponseBody]] = None
         self.reason: Optional[bytes] = None
         WithHeaders.__init__(self)
 
@@ -656,7 +658,7 @@ class HTTPResponse(Response, WithHeaders):
         *,
         step: ResponseStep = ResponseStep.Initialized,
         headers: Optional[Headers] = None,
-        bodies: Optional[list["Body"]] = None,
+        bodies: Optional[list["ResponseBody"]] = None,
         status: int = 0,
         reason: Optional[bytes] = None,
     ) -> "HTTPResponse":
@@ -706,9 +708,12 @@ class HTTPResponse(Response, WithHeaders):
                 if body.type == ResponseBodyType.Empty:
                     pass
                 elif body.type == ResponseBodyType.Value:
+                    assert isinstance(body.content, bytes)
                     yield body.content
                 elif body.type == ResponseBodyType.Iterator:
-                    yield from body.content
+                    assert isinstance(body.content, Iterator)
+                    for chunk in body.content:
+                        yield chunk
                 else:
                     # TODO: That's the Async Iterator
                     raise NotImplementedError(
@@ -732,27 +737,30 @@ class HTTPResponse(Response, WithHeaders):
 # @note We need to keep this separate
 
 
+class RequestBodyType(Enum):
+    Undefined: ClassVar[str] = "undefined"
+    Raw: ClassVar[str] = "raw"
+    MultiPart: ClassVar[str] = "multipart"
+    JSON: ClassVar[str] = "json"
+
+
 class RequestBody(Flyweight):
 
     POOL: ClassVar[list["RequestBody"]] = []
-    UNDEFINED: ClassVar[str] = "undefined"
-    RAW: ClassVar[str] = "raw"
-    MULTIPART: ClassVar[str] = "multipart"
-    JSON: ClassVar[str] = "json"
 
     def __init__(self, isShort: bool = False):
         self.spool: Optional[Union[BytesIO, tempfile.SpooledTemporaryFile]] = None
         self.isShort = isShort
         self.isLoaded = False
         self.contentType: Optional[bytes] = None
-        self.contentLength: Optional[bytes] = None
+        self.contentLength: Optional[int] = None
         # self.next:Optional[Body] = None
-        self._type = Body.UNDEFINED
+        self._type: RequestBodyType = RequestBodyType.Undefined
         self._raw: Optional[bytes] = None
         self._value: Any = None
 
     @property
-    def raw(self) -> bytes:
+    def raw(self) -> Optional[bytes]:
         # We don't need the body to be fully loaded
         if self._raw == None:
             if not self.spool:
@@ -786,7 +794,7 @@ class RequestBody(Flyweight):
         self._value = None
         return self
 
-    def setLoaded(self, contentType: bytes, contentLength: Optional[int]):
+    def setLoaded(self, contentType: bytes, contentLength: Optional[int] = None):
         """Sets the body as loaded. It is then ready to be decoded and its
         value field will become accessible."""
         self.contentType = contentType
@@ -900,8 +908,8 @@ class Decode:
 
     @classmethod
     def Multipart(
-        cls, stream: BinaryIO, boundary: bytes, bufferSize=64000
-    ) -> Iterable[tuple[Headers, bytes]]:
+        cls, stream: BinaryIO, boundary: bytes, bufferSize=64_000
+    ) -> Iterable[tuple[Optional[Headers], Union[SpooledTemporaryFile, bytes]]]:
         """Decodes the given multipart data, yielding `(meta, data)`
         couples, where meta is a parsed dict of headers and data
         is a file-like object."""
@@ -980,7 +988,7 @@ class Decode:
     async def FormEncoded(
         self, stream: BinaryIO, charset: Optional[bytes] = None
     ) -> dict[str, list[str]]:
-        return parse_qs(stream.read())
+        return parse_qs(stream.read().decode("utf8"))
 
 
 # EOF

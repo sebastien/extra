@@ -22,6 +22,7 @@ class Channel(Generic[T]):
 
     def push(self, value: T) -> T:
         self._buffer.append(value)
+        return value
 
     def consume(self) -> T:
         if self._buffer:
@@ -40,7 +41,7 @@ class Channel(Generic[T]):
 
     async def join(self) -> T:
         """Waits for a value to come in."""
-        return None
+        raise NotImplemented
 
 
 async def consume(channel: Channel):

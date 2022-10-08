@@ -1,4 +1,4 @@
-from typing import Union, NamedTuple, Optional, cast
+from typing import Union, NamedTuple, Optional, Iterable, cast
 from io import BytesIO
 from ..model import Service, Application
 from ..protocol.http import HTTPRequest, HTTPResponse, HTTPParser
@@ -25,11 +25,11 @@ class Bridge:
         else:
             return self.requestFromStream(request)
 
-    def requestFromBytes(self, request: bytes) -> HTTPResponse:
+    def requestFromBytes(self, data: bytes) -> HTTPResponse:
         # FIXME: Port should be sourced from somewhere else
         http_parser = HTTPParser("0.0.0.0", 80, {})
-        read = http_parser.feed(request)
-        request = HTTPRequest.Create().init(
+        read = http_parser.feed(data)
+        request: HTTPRequest = HTTPRequest.Create().init(
             method=http_parser.method,
             path=http_parser.uri,
         )
@@ -47,7 +47,11 @@ class Components(NamedTuple):
     """Groups Application and Service objects together"""
 
     @staticmethod
-    def Make(components: Union[Application, Service, type[Application], type[Service]]):
+    def Make(
+        components: Iterable[
+            Union[Application, Service, type[Application], type[Service]]
+        ]
+    ):
         apps: list[Application] = []
         services: list[Service] = []
         for item in components:
@@ -86,7 +90,6 @@ def mount(
     # Now we mount all the services on the application
     for service in c.services:
         app.mount(service)
-    # app.start()
     return app
 
 

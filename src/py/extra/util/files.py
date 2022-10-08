@@ -15,7 +15,7 @@ COMPRESSION = {
 
 WRITERS = {
     ".json": ("wt", lambda v, f: json.dump(v, f)),
-    ".pickle": ("wb", lambda v, f: picke.dump(v, f)),
+    ".pickle": ("wb", lambda v, f: pickle.dump(v, f)),
 }
 
 READERS = {

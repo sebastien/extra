@@ -1,18 +1,18 @@
 from typing import Optional
-from .feature.pubsub import pub, sub
+from extra.feature.pubsub import pub, sub
 import os
 import sys
 import time
 
 # TODO: Update with proper typing
-
-try:
-    import colorama
-    from colorama import Fore, Back, Style
-
-    colorama.init()
-except ImportError as e:
-    colorama = None
+# try:
+#     import colorama
+#     from colorama import Fore, Back, Style
+#
+#     colorama.init()
+# except ImportError as e:
+#     colorama = None
+colorama = None
 
 __doc__ = """
 A logging infrastructure that uses an underlying pub/sub bus to dispatch
@@ -41,11 +41,11 @@ class Logger:
     INSTANCE = None
     FORMAT = (
         {
-            "default": f"[{{origin}}]   {{message}}{Style.RESET_ALL}",
-            "error": f"[{{origin}}]{Style.BRIGHT}{Fore.RED}[!]{{message}}{Style.RESET_ALL}",
-            "warning": f"[{{origin}}]{Style.DIM}{Fore.YELLOW} ! {{message}}{Style.RESET_ALL}",
-            "metric": f"[{{origin}}]{Style.DIM}{Fore.YELLOW} → {Fore.WHITE}{{name}} = {Style.BRIGHT}{Fore.YELLOW}{{value}}{Style.RESET_ALL}",
-            "info": f"[{{origin}}] » {{message}}{Style.RESET_ALL}",
+            #  "default": f"[{{origin}}]   {{message}}{Style.RESET_ALL}",
+            #  "error": f"[{{origin}}]{Style.BRIGHT}{Fore.RED}[!]{{message}}{Style.RESET_ALL}",
+            #  "warning": f"[{{origin}}]{Style.DIM}{Fore.YELLOW} ! {{message}}{Style.RESET_ALL}",
+            #  "metric": f"[{{origin}}]{Style.DIM}{Fore.YELLOW} → {Fore.WHITE}{{name}} = {Style.BRIGHT}{Fore.YELLOW}{{value}}{Style.RESET_ALL}",
+            #  "info": f"[{{origin}}] » {{message}}{Style.RESET_ALL}",
         }
         if colorama
         else {

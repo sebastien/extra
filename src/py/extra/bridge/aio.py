@@ -147,14 +147,14 @@ class AIOServer:
 
 
 def run(
-    *services: Union[Application, Service],
+    *components: Union[Application, Service, type[Application], type[Service]],
     host: str = "0.0.0.0",
     port: int = 8000,
     backlog: int = 10_000,
 ):
     """Runs the given services/application using the embedded AsyncIO HTTP server."""
     loop = asyncio.get_event_loop()
-    aio_server = AIOServer(mount(*services), host, port)
+    aio_server = AIOServer(mount(*components), host, port)
     # This the stock AIO processing
     coro = asyncio.start_server(aio_server.request, host, port, backlog=backlog)
     server = loop.run_until_complete(coro)

@@ -1,5 +1,5 @@
 from typing import Optional, Callable, Any
-from ..util.tree import NamedNode
+from extra.util.tree import NamedNode
 
 
 class Topics:

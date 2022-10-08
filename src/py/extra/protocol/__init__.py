@@ -237,11 +237,11 @@ class Response(Flyweight):
         self.bodies.clear()
         return self
 
-    def setCookie(self, name: str, value: Any):
-        pass
+    def setCookie(self, name: bytes, value: bytes) -> "Response":
+        return self
 
-    def setHeader(self, name: str, value: Any):
-        pass
+    def setHeader(self, name: bytes, value: bytes) -> "Response":
+        return self
 
     def setContent(
         self,

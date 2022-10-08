@@ -1,8 +1,12 @@
 from .routing import Handler, Dispatcher, Route
 from .protocol.http import HTTPRequest, HTTPResponse
+from .logging import Logger
 from typing import Optional, Iterable, Callable, Any
 import sys
 import importlib
+import asyncio
+
+logging: Logger = Logger.Instance()
 
 # -----------------------------------------------------------------------------
 #
@@ -76,8 +80,8 @@ class Application:
         self.dispatcher = Dispatcher()
         self.services: list[Service] = []
 
-    def reload(self) -> "Application":
-        self.stop()
+    async def reload(self) -> "Application":
+        await self.stop()
         # FIXME: We need to restore the service state/configuration
         services: list[Service] = []
         reloaded: list[Any] = []
@@ -98,18 +102,30 @@ class Application:
                     f"Class {parent_class_name} is not defined in module {parent_module_name} anymore."
                 )
         self.services = services
-        self.start()
+        await self.start()
         return self
 
     async def start(self) -> "Application":
         self.dispatcher.prepare()
-        for service in self.services:
-            await service.start()
+        for i, res in enumerate(
+            asyncio.gather(*(_.start() for _ in self.services), return_exceptions=True)
+        ):
+            if isinstance(res, Exception):
+                logging.error(
+                    "APPSTART",
+                    "Exception occurred when starting service {self.services[i]}: {res}",
+                )
         return self
 
     async def stop(self) -> "Application":
-        for service in self.services:
-            await service.stop()
+        for i, res in enumerate(
+            asyncio.gather(*(_.stop() for _ in self.services), return_exceptions=True)
+        ):
+            if isinstance(res, Exception):
+                logging.error(
+                    "APPSTOP",
+                    "Exception occurred when stopping service {self.services[i]}: {res}",
+                )
         return self
 
     def process(self, request: HTTPRequest) -> HTTPResponse:

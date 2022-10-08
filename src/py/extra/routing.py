@@ -48,56 +48,6 @@ class ParameterChunk(NamedTuple):
 TChunk = Union[TextChunk, ParameterChunk]
 
 
-class Routes:
-    """The routes can compile a set of path containing route template
-    expressions into a single"""
-
-    @classmethod
-    def Compile(cls, routes: list[str]) -> Iterator[str]:
-        """Compiles the list of routes into a single regex that can match
-        all of these routes, and extract the arguments. To avoid duplicates,
-        arguments are suffixed with a number, and each matching rule is assigned
-        a matching variable R0…Rn."""
-        tree = Prefix.Make([f"{r}(?P<R_{i}>$)" for i, r in enumerate(routes)])
-        j: int = 0
-        chunks: list[str] = []
-        for chunk in tree.iterRegExpr():
-            i: int = 0
-            n: int = len(chunk)
-            for pat in Route.RE_TEMPLATE.finditer(chunk):
-                if pat.start() != i:
-                    chunks.append(chunk[i : pat.start()])
-                p_name = pat.group("name")
-                p_type = pat.group("type") or p_name
-                chunks.append(f"(?P<{p_name}_{j}>{Route.PATTERNS[p_type].expr})")
-                j += 1
-                i = pat.end()
-            if i < n:
-                chunks.append(chunk[i:])
-        return re.compile("".join(chunks))
-
-    def __init__(self, *routes: str):
-        self.paths = routes
-        self.regexp = self.Compile(routes)
-
-    def match(self, path: str) -> Optional[tuple[int, dict[str, Any]]]:
-        if not (match := self.regexp.match(path)):
-            return None
-        else:
-            route: int = 0
-            params: dict[str, Any] = {}
-            for name, value in match.groupdict().items():
-                if value is None:
-                    continue
-                else:
-                    name, index = name.split("_", 1)
-                    if name == "R":
-                        route = int(index)
-                    else:
-                        params[name] = value
-            return (route, params)
-
-
 class Route:
     """Parses a route where template expressions are like `{name}` or
     `{name:type}`. Routes can have priorities and be assigned handlers,
@@ -130,7 +80,12 @@ class Route:
     }
 
     @classmethod
-    def AddPattern(cls, type: str, regexp: str, parser: Callable[[str], T] = str):
+    def AddPattern(
+        cls,
+        type: str,
+        regexp: str,
+        parser: Union[Type[str], Callable[[str], Any]] = str,
+    ):
         """Registers a new RoutePattern into `Route.PATTERNS`"""
         # We do a precompilation to make sure it's working
         try:
@@ -213,6 +168,80 @@ class Route:
 
 # -----------------------------------------------------------------------------
 #
+# ROUTES
+#
+# -----------------------------------------------------------------------------
+
+# --
+# Routes are smarter, more efficient way to manage the routing mechanism
+# than individual routes. Routes can compile a set of paths into a single
+# regexp that can be matched. From the matching information, the
+# route and its parameters can be extracted.
+
+
+class Routes:
+    """The routes can compile a set of path containing route template
+    expressions into a single"""
+
+    @staticmethod
+    def Compile(routes: Iterable[str]) -> Pattern:
+        """Compiles the list of routes into a single regex that can match
+        all of these routes, and extract the arguments."""
+        # --
+        # This first step is where a bit of magic happens. We suffix each route
+        # with a regexp match group that has a unique name like R_0_{0…n}.
+        # --
+        # We wrap that in a prefix tree so that we get a tree of strings
+        # based on their common prefix.
+        tree = Prefix.Make([f"{r}(?P<R_0_{i}>$)" for i, r in enumerate(routes)])
+        j: int = 0
+        chunks: list[str] = []
+        # Now we iterate on the regular expression version of the prefix
+        # tree, look for pattern templates and replace them.
+        for chunk in tree.iterRegExpr():
+            i: int = 0
+            n: int = len(chunk)
+            for pat in Route.RE_TEMPLATE.finditer(chunk):
+                if pat.start() != i:
+                    chunks.append(chunk[i : pat.start()])
+                p_name = pat.group("name")
+                p_type = pat.group("type") or p_name
+                # Here again to avoid duplicate groups, we add a numeric
+                # suffix to the group name, and also add the pattern type,
+                # which we can use later to apply the extractor.
+                chunks.append(
+                    f"(?P<{p_name}_{p_type}_{j}>{Route.PATTERNS[p_type].expr})"
+                )
+                j += 1
+                i = pat.end()
+            if i < n:
+                chunks.append(chunk[i:])
+        return re.compile("".join(chunks))
+
+    def __init__(self, *routes: str):
+        self.paths = routes
+        self.regexp: Pattern = Routes.Compile(routes)
+
+    def match(self, path: str) -> Optional[tuple[int, dict[str, Any]]]:
+        if not (match := self.regexp.match(path)):
+            return None
+        else:
+            route: int = 0
+            params: dict[str, Any] = {}
+            for name, value in match.groupdict().items():
+                if value is None:
+                    continue
+                else:
+                    name, ptype, index = name.split("_", 2)
+                    if name == "R":
+                        route = int(index)
+                    else:
+                        params[name] = Route.PATTERNS[ptype].extractor(value)
+            return (route, params)
+
+
+# -----------------------------------------------------------------------------
+#
 # PREFIX
 #
 # -----------------------------------------------------------------------------
@@ -238,7 +267,7 @@ class Prefix:
     def simplify(self) -> "Prefix":
         """Simplifies the prefix tree by joining together nodes that are similar"""
         simplified: dict[str, Prefix] = {}
-        children: dic[str, Prefix] = self.children
+        children: dict[str, Prefix] = self.children
         # Any consecutive chain like A―B―C gets simplified to ABC
         while len(children) == 1:
             for key, prefix in children.items():
@@ -251,12 +280,12 @@ class Prefix:
 
     def register(self, text: str):
         """Registers the given `text` in this prefix tree."""
-        c = text[0] if text else None
-        rest = text[1:] if len(text) > 1 else None
-        if c != None:
+        c: str = text[0] if text else ""
+        rest: str = text[1:] if len(text) > 1 else ""
+        if c:
             if c not in self.children:
                 self.children[c] = Prefix(c, self)
-            if rest is not None:
+            if rest:
                 self.children[c].register(rest)
 
     def iterLines(self, level=0) -> Iterable[str]:
@@ -398,13 +427,13 @@ class Dispatcher:
 
     def match(
         self, method: str, path: str
-    ) -> tuple[Optional[Route], Optional[Union[bool, Match]]]:
+    ) -> tuple[Optional[Route], Optional[Union[bool, dict[str, str]]]]:
         """Matches a given `method` and `path` with the registered route, returning
         the matching route and the match information."""
         if method not in self.routes:
             return (None, False)
         else:
-            matched_match: Optional[Match] = None
+            matched_match: Optional[dict[str, str]] = None
             matched_route: Optional[Route] = None
             matched_priority: int = -1
             # NOTE: The problem here is that we're going through
@@ -415,7 +444,7 @@ class Dispatcher:
             for route in self.routes[method]:
                 if route.priority < matched_priority:
                     continue
-                match: Match = route.match(path)
+                match: Optional[dict[str, str]] = route.match(path)
                 # FIXME: Maybe use a debug stream here
                 # print("ROUTE", method, path, ":", route, "=", match)
                 if match is None:
