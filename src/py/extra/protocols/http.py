@@ -1,4 +1,5 @@
-from ..protocol import (
+from ..utils import Flyweight
+from ..protocols import (
     Request,
     Response,
     ResponseStep,
@@ -16,17 +17,13 @@ from typing import (
     BinaryIO,
     Iterable,
     Iterator,
-    AsyncIterator,
-    Union,
     cast,
 )
 from tempfile import SpooledTemporaryFile
-from extra.util import unquote, Flyweight
 from urllib.parse import parse_qs
 from asyncio import StreamReader
 from io import BytesIO
 from enum import Enum
-from typing import Optional
 import time
 import json
 import tempfile
@@ -444,7 +441,7 @@ class HTTPRequest(Request):
 
     def reset(self):
         super().reset()
-        self.headers.reset(self)
+        self.headers.reset()
         self._body = self._body.reset() if self._body else None
         return self
 
@@ -477,9 +474,8 @@ class HTTPRequest(Request):
                 break
         try:
             content_length = int(self.contentLength) if self.contentLength else None
-        except ValueError as e:
-            # There might be a wrong encoding, in which case the request is
-            # probably malformed.
+        except ValueError:
+            # There might be a wrong encoding, in which case the request is probably malformed.
             content_length = None
         body.setLoaded(self.contentType, content_length)
         return self
@@ -558,8 +554,10 @@ class HTTPRequest(Request):
     def respondFile(self) -> "HTTPResponse":
         return HTTPResponse.Create().init(status=200).fromFile()
 
-    def respondStream(self) -> "HTTPResponse":
-        return HTTPResponse.Create().init(status=200).fromStream()
+    def respondStream(
+        self, stream: Iterator[bytes], contentType=bytes | str
+    ) -> "HTTPResponse":
+        return HTTPResponse.Create().init(status=200).addStream(stream, contentType)
 
     # @group(Errors)
 
@@ -713,7 +711,9 @@ class HTTPResponse(Response):
                     assert isinstance(body.content, bytes)
                     yield body.content
                 elif body.type == ResponseBodyType.Iterator:
-                    assert isinstance(body.content, Iterator)
+                    assert isinstance(
+                        body.content, Iterator
+                    ), f"Body content should be iterator, got: {body.content}"
                     for chunk in body.content:
                         yield chunk
                 else:

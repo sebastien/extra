@@ -1,12 +1,12 @@
 import asyncio
-import types
 import time
 from asyncio import StreamReader, StreamWriter
-from typing import Callable, Union
+from typing import Union
 from ..model import Application, Service
-from ..bridge import mount
+from ..bridges import mount
 from ..logging import error
-from ..protocol.http import HTTPRequest, HTTPParser, BAD_REQUEST
+from ..protocols.http import HTTPRequest, HTTPParser, BAD_REQUEST
+from ..utils.hooks import onException
 
 
 class AIOBridge:
@@ -144,6 +144,13 @@ class AIOServer:
             )
         except ConnectionResetError as e:
             print("Connection error")
+        except Exception as e:
+            onException(e)
+            raise e
+
+
+def onLoopException(loop, context):
+    onException(context.get("exception", context["message"]))
 
 
 def run(
@@ -154,28 +161,36 @@ def run(
 ):
     """Runs the given services/application using the embedded AsyncIO HTTP server."""
     loop = asyncio.get_event_loop()
+    # TODO: This does not seem to work
+    loop.set_exception_handler(onLoopException)
     aio_server = AIOServer(mount(*components), host, port)
     # This the stock AIO processing
     coro = asyncio.start_server(aio_server.request, host, port, backlog=backlog)
-    server = loop.run_until_complete(coro)
-    socket = server.sockets[0].getsockname()
-    print(
-        "Extra {font_server}AIO{reset} server listening on {font_url}http://{host}:{port}{reset}".format(
-            host=socket[0],
-            port=socket[1],
-            font_server="",
-            font_url="",
-            reset="",
-        )
-    )
+    server = None
     try:
+        server = loop.run_until_complete(coro)
+        socket = server.sockets[0].getsockname()
+        print(
+            "Extra {font_server}AIO{reset} server listening on {font_url}http://{host}:{port}{reset}".format(
+                host=socket[0],
+                port=socket[1],
+                font_server="",
+                font_url="",
+                reset="",
+            )
+        )
         loop.run_forever()
     except KeyboardInterrupt:
         pass
-    # Close the server
-    server.close()
-    loop.run_until_complete(server.wait_closed())
-    loop.close()
+    print("CLOSING SERVER", server)
+    if server:
+        server.close()
+        try:
+            loop.run_until_complete(server.wait_closed())
+        except KeyboardInterrupt:
+            pass
+        finally:
+            loop.close()
 
 
 # EOF

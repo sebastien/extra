@@ -1,7 +1,7 @@
 from .routing import Handler, Dispatcher, Route
-from .protocol.http import HTTPRequest, HTTPResponse
+from .protocols.http import HTTPRequest, HTTPResponse
 from .logging import Logger
-from typing import Optional, Iterable, Callable, ClassVar, Any
+from typing import Optional, Iterable, ClassVar, Any
 import sys
 import importlib
 import asyncio

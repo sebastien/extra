@@ -3,6 +3,8 @@ import pickle
 import os
 import shutil
 import gzip
+import mimetypes
+from pathlib import Path
 
 __doc__ = """
 A set of generic functions to read and write data to the filesystem, supporting
@@ -12,6 +14,11 @@ different serialisation and compression formats.
 COMPRESSION = {
     ".gz": gzip.open,
 }
+
+MIME_TYPES = dict(
+    bz2="application/x-bzip",
+    gz="application/x-gzip",
+)
 
 WRITERS = {
     ".json": ("wt", lambda v, f: json.dump(v, f)),
@@ -42,6 +49,16 @@ READERS = {
 #         os.close(fd)
 #         raise e
 #     return self
+
+
+def contentType(path: Path | str) -> str:
+    """Guesses the content type from the given path"""
+    name = str(path)
+    return (
+        res
+        if (res := MIME_TYPES.get(name.rsplit(".", 1)[-1].lower()))
+        else mimetypes.guess_type(path)[0] or "text/plain"
+    )
 
 
 def ensure(path):

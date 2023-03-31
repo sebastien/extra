@@ -8,14 +8,11 @@ from typing import (
     Any,
     Union,
     TypeVar,
-    Generic,
     NamedTuple,
-    AsyncGenerator,
     AsyncIterator,
 )
-from extra.util import Flyweight
+from ..utils import Flyweight
 from enum import Enum
-import types
 
 T = TypeVar("T")
 
@@ -275,6 +272,16 @@ class Response(Flyweight):
             self.bodies.append(
                 ResponseBody(ResponseBodyType.Value, content, asBytes(contentType))
             )
+        return self
+
+    def addStream(self, stream: Iterator[bytes], contentType: str | bytes):
+        if not contentType:
+            raise ValueError(
+                "contentType must be specified when type is not bytes or str"
+            )
+        self.bodies.append(
+            ResponseBody(ResponseBodyType.Iterator, stream, asBytes(contentType))
+        )
         return self
 
     def stream(self) -> Iterator[Union[ResponseControl, bytes]]:

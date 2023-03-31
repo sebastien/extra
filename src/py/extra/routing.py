@@ -5,15 +5,13 @@ from typing import (
     Iterable,
     Iterator,
     Pattern,
-    Match,
     Type,
     Union,
-    Generic,
     NamedTuple,
     ClassVar,
     TypeVar,
 )
-from .protocol.http import HTTPRequest, HTTPResponse
+from .protocols.http import HTTPRequest, HTTPResponse
 from .decorators import EXTRA
 from .logging import logger
 
