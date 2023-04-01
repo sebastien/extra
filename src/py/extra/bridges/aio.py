@@ -1,6 +1,5 @@
-import asyncio
 import time
-from asyncio import StreamReader, StreamWriter
+from asyncio import StreamReader, StreamWriter, sleep, start_server, get_event_loop
 from typing import Union
 from inspect import iscoroutine
 from ..model import Application, Service
@@ -27,6 +26,9 @@ class AIOBridge:
         # once we reach the body. This means that we won't be reading
         # huge requests right away, but let the client decide how to
         # process them.
+        #
+        # NOTE: We may have read the whole request in the buffer,
+        # `http_parser.rest` will contain the rest, which my be all.
         while not (ends or http_parser.hasReachedBody):
             data: bytes = await reader.read(bufsize)
             n: int = len(data)
@@ -46,6 +48,7 @@ class AIOBridge:
             reader,
             method=http_parser.method,
             path=http_parser.uri,
+            headers=http_parser.headers,
         )
         if http_parser.rest:
             read += len(http_parser.rest)
@@ -110,7 +113,7 @@ class AIOBridge:
         # We need to let some time for the schedule to do other stuff, this
         # should prevent the `socket.send() raised exception` errors.
         # SEE: https://github.com/aaugustin/websockets/issues/84
-        await asyncio.sleep(0)
+        await sleep(0)
 
         # TODO: The tricky part here is how to interface with WSGI so that
         # we iterate over the different steps (using await so that we have
@@ -137,7 +140,7 @@ class AIOServer:
         self.port: int = port
         self.app: Application = application
 
-    async def request(self, reader, writer):
+    async def request(self, reader: StreamReader, writer: StreamWriter):
         bridge: AIOBridge = AIOBridge()
         try:
             await bridge.process(
@@ -163,14 +166,14 @@ def run(
     backlog: int = 10_000,
 ):
     """Runs the given services/application using the embedded AsyncIO HTTP server."""
-    loop = asyncio.get_event_loop()
+    loop = get_event_loop()
     # TODO: This does not seem to work
     loop.set_exception_handler(onLoopException)
     app = mount(*components)
     loop.run_until_complete(app.start())
     aio_server = AIOServer(app, host, port)
     # This the stock AIO processing
-    coro = asyncio.start_server(aio_server.request, host, port, backlog=backlog)
+    coro = start_server(aio_server.request, host, port, backlog=backlog)
     server = None
     try:
         server = loop.run_until_complete(coro)

@@ -21,7 +21,7 @@ from typing import (
 )
 from tempfile import SpooledTemporaryFile
 from urllib.parse import parse_qs
-from asyncio import StreamReader,wait_for
+from asyncio import StreamReader, wait_for
 from io import BytesIO
 from enum import Enum
 import time
@@ -399,7 +399,8 @@ class HTTPRequest(Request):
 
     def __init__(self):
         super().__init__()
-        self.headers = Headers()
+        # NOTE: We use the same type as the HTTP parser
+        self.headers: dict[str, str] = {}
         self.protocol: Optional[str] = None
         self.protocolVersion: Optional[str] = None
         self.method: Optional[str] = None
@@ -429,9 +430,11 @@ class HTTPRequest(Request):
         query: Optional[str] = None,
         ip: Optional[str] = None,
         port: Optional[int] = None,
+        headers: Optional[dict[str, str]] = None,
     ):
         super().init()
         self._reader = reader
+        self.headers = headers if headers else {}
         self.protocol = protocol
         self.protocolVersion = protocolVersion
         self.method = method
@@ -446,7 +449,7 @@ class HTTPRequest(Request):
 
     def reset(self):
         super().reset()
-        self.headers.reset()
+        # NOTE: We don't clear the headers, we'll re-assign on init
         self._body = self._body.reset() if self._body else None
         return self
 
@@ -456,9 +459,7 @@ class HTTPRequest(Request):
     async def read(self, count: int = 65_000) -> Optional[bytes]:
         """Only use read if you want to access the raw data in chunks."""
         if self._hasMore and self._reader:
-            print("READ REQUEST", count)
             data: bytes = await self._reader.read()
-            print("DATA", data)
             read: int = len(data)
             self._hasMore = read == count
             self._readCount += read
@@ -470,25 +471,29 @@ class HTTPRequest(Request):
         """Feeds some (input) data into that request"""
         return self.body.feed(data)
 
-    async def load(self, timeout=5.0) -> "HTTPRequest":
+    # TODO: Should adjust timeout
+    async def load(self, timeout: float = 20.0) -> "HTTPRequest":
         """Loads all the data and returns a list of bodies."""
         body = self.body
-        print("LOADING BODY")
-        while True:
-            print("READING")
-            chunk = await wait_for(self.read(), timeout=timeout)
-            print("chunk", chunk)
-            if chunk is not None:
-                body.feed(chunk)
-            else:
-                break
-        body.setLoaded(self.contentType)
+        if not body.isLoaded:
+            while True:
+                chunk = await wait_for(self.read(), timeout=timeout)
+                if chunk is not None:
+                    body.feed(chunk)
+                else:
+                    break
+            body.setLoaded(self.contentType)
         return self
 
     @property
     def body(self) -> "RequestBody":
         if not self._body:
             body = RequestBody.Create()
+            try:
+                body.contentLength = int(self.headers.get("Content-Length", ""))
+            except ValueError:
+                pass
+            body.contentType = self.headers.get("Content-Type")
             self._body = body
             return body
         else:
@@ -759,7 +764,7 @@ class RequestBody(Flyweight):
         self.spool: Optional[Union[BytesIO, tempfile.SpooledTemporaryFile]] = None
         self.isShort = isShort
         self.isLoaded = False
-        self.contentType: Optional[bytes] = None
+        self.contentType: Optional[str] = None
         self.contentLength: Optional[int] = None
         # self.next:Optional[Body] = None
         self._type: RequestBodyType = RequestBodyType.Undefined
@@ -773,12 +778,10 @@ class RequestBody(Flyweight):
         if self._raw == None:
             if not self.spool:
                 pass
-            elif isinstance(self.spool, BytesIO):
-                raise NotImplementedError
             else:
                 # TODO: should check that this indeed reads everything
                 self.spool.seek(0)
-                self._raw = self.spool.read()
+                self._raw = self.spool.read(self._written)
         return self._raw
 
     @property
@@ -827,6 +830,9 @@ class RequestBody(Flyweight):
                 else tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_SIZE)
             )
         self._written += len(data)
+        # If we're reached the content length, then the body is loaded
+        if self.contentLength != None and self._written >= self.contentLength:
+            self.isLoaded = True
         self.spool.write(data)
         # We invalidate the cache
         self._raw = None
@@ -834,14 +840,18 @@ class RequestBody(Flyweight):
         return self
 
     def process(self):
-        parsed_content = HTTPParser.HeaderValue(self.contentType)
-        content_type = parsed_content.get(b"")
-        if content_type == b"multipart/form-data":
-            self.spool.seek(0)
-            for headers, data_file in Decode.Multipart(
-                self.spool, parsed_content[b"boundary"]
-            ):
-                print(headers, data_file)
+        if not self.contentType:
+            pass
+        elif self.contentType.startswith("multipart/form-data"):
+            if self.spool:
+                self.spool.seek(0)
+                for headers, data_file in Decode.Multipart(
+                    self.spool, parsed_content[b"boundary"]
+                ):
+                    print(headers, data_file)
+                raise NotImplementedError
+            else:
+                raise NotImplementedError
         else:
             return None
 
