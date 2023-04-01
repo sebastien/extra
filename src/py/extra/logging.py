@@ -1,7 +1,7 @@
 from typing import Optional, Callable, Optional, ClassVar, Any
 
 # from extra.feature.pubsub import pub, sub
-import os
+from contextlib import contextmanager
 import sys
 import time
 
@@ -130,22 +130,22 @@ class Logger:
         #         )
 
     def __init__(self, path: str):
-        self.path = path
-        self.errors = 0
-        self.warnings = 0
-        self.metrics = 0
-        self.exceptions = 0
+        self.path: str = path
+        self.errors: int = 0
+        self.warnings: int = 0
+        self.metrics: int = 0
+        self.exceptions: int = 0
 
-    def info(self, message, **kwargs):
+    def info(self, message: str, **kwargs):
         return self.raw(message, type="info", **kwargs)
 
-    def log(self, message, **kwargs):
+    def log(self, message: str, **kwargs):
         return self.raw(message, type="log", **kwargs)
 
-    def trace(self, message, **kwargs):
+    def trace(self, message: str, **kwargs):
         return self.raw(message, type="trace", **kwargs)
 
-    def warning(self, message, **kwargs):
+    def warning(self, message: str, **kwargs):
         self.warnings += 1
         return self.raw(message, type="warning", **kwargs)
 
@@ -231,6 +231,14 @@ def metric(name, value, **kwargs):
 
 def raw(message, type, **kwargs):
     return Logger.Instance().raw(message, type=type, **kwargs)
+
+
+@contextmanager
+def operation(message: str):
+    t = time.time()
+    log(f"{message}…")
+    yield None
+    log(f"… finished in {time.time() - t:0.2f}s")
 
 
 def timer(name):

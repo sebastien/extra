@@ -4,7 +4,7 @@ from asyncio import StreamReader, StreamWriter
 from typing import Union
 from ..model import Application, Service
 from ..bridges import mount
-from ..logging import error
+from ..logging import error, operation
 from ..protocols.http import HTTPRequest, HTTPParser, BAD_REQUEST
 from ..utils.hooks import onException
 
@@ -18,11 +18,10 @@ class AIOBridge:
         addr: str = writer.get_extra_info("peername")
         bufsize: int = 256_000
         ends: bool = False
-        started = time.time()
+        started: float = time.time()
         # FIXME: Port should be sourced elsewhere
-        http_parser = HTTPParser(addr, 8080, {})
+        http_parser: HTTPParser = HTTPParser(addr, 8080, {})
         read: int = 0
-        # --
         # We only parse the REQUEST line and the HEADERS. We'll stop
         # once we reach the body. This means that we won't be reading
         # huge requests right away, but let the client decide how to
@@ -163,7 +162,9 @@ def run(
     loop = asyncio.get_event_loop()
     # TODO: This does not seem to work
     loop.set_exception_handler(onLoopException)
-    aio_server = AIOServer(mount(*components), host, port)
+    app = mount(*components)
+    loop.run_until_complete(app.start())
+    aio_server = AIOServer(app, host, port)
     # This the stock AIO processing
     coro = asyncio.start_server(aio_server.request, host, port, backlog=backlog)
     server = None
@@ -182,15 +183,16 @@ def run(
         loop.run_forever()
     except KeyboardInterrupt:
         pass
-    print("CLOSING SERVER", server)
     if server:
-        server.close()
-        try:
-            loop.run_until_complete(server.wait_closed())
-        except KeyboardInterrupt:
-            pass
-        finally:
-            loop.close()
+        with operation("Closing server"):
+            server.close()
+            try:
+                loop.run_until_complete(server.wait_closed())
+            except KeyboardInterrupt:
+                pass
+            finally:
+                loop.close()
+    loop.run_until_complete(app.start())
 
 
 # EOF

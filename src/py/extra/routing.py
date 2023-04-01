@@ -450,7 +450,6 @@ class Dispatcher:
                     continue
                 match: Optional[dict[str, str]] = route.match(path)
                 # FIXME: Maybe use a debug stream here
-                # print("ROUTE", method, path, ":", route, "=", match)
                 if match is None:
                     continue
                 elif route.priority >= matched_priority:
