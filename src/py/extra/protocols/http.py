@@ -21,7 +21,7 @@ from typing import (
 )
 from tempfile import SpooledTemporaryFile
 from urllib.parse import parse_qs
-from asyncio import StreamReader
+from asyncio import StreamReader,wait_for
 from io import BytesIO
 from enum import Enum
 import time
@@ -334,16 +334,19 @@ class HTTPParser:
         # This method is a little bit contrived because e need to test
         # for all the cases. Also, this needs to be relatively fast as
         # it's going to be used often.
+        print("READING REQUEST", size)
         if rest is None:
             if self._stream:
                 if size is None:
                     res = await self._stream.read()
+                    print("CHUNK.A", res)
                     return res
                 else:
                     # FIXME: Somehow when returning directly there
                     # is an issue when receiving large uploaded files, it
                     # will block forever.
                     res = await self._stream.read(size)
+                    print("CHUNK.B", res)
                     return res
             else:
                 return b""
@@ -352,6 +355,7 @@ class HTTPParser:
             if size is None:
                 if self._stream:
                     chunk_a: bytes = await self._stream.read()
+                    print("CHUNK.C", chunk_a)
                     return chunk_a if rest is None else rest + chunk_a
                 else:
                     return rest
@@ -362,6 +366,7 @@ class HTTPParser:
                 chunk_b: bytes = await self._stream.read(
                     size - (0 if rest is None else len(rest))
                 )
+                print("CHUNK.D", chunk_b)
                 return chunk_b if not rest else rest + chunk_b
             else:
                 return rest or b""
@@ -403,7 +408,7 @@ class HTTPRequest(Request):
         self.ip: Optional[str] = None
         self.port: Optional[int] = None
         self.version: Optional[str] = None
-        self._body: Optional[Body] = None
+        self._body: Optional[RequestBody] = None
         self._reader: Optional[StreamReader] = None
         self._readCount: int = 0
         self._hasMore: bool = True
@@ -451,7 +456,9 @@ class HTTPRequest(Request):
     async def read(self, count: int = 65_000) -> Optional[bytes]:
         """Only use read if you want to access the raw data in chunks."""
         if self._hasMore and self._reader:
-            data: bytes = await self._reader.read(count)
+            print("READ REQUEST", count)
+            data: bytes = await self._reader.read()
+            print("DATA", data)
             read: int = len(data)
             self._hasMore = read == count
             self._readCount += read
@@ -463,21 +470,19 @@ class HTTPRequest(Request):
         """Feeds some (input) data into that request"""
         return self.body.feed(data)
 
-    async def load(self) -> "HTTPRequest":
+    async def load(self, timeout=5.0) -> "HTTPRequest":
         """Loads all the data and returns a list of bodies."""
         body = self.body
+        print("LOADING BODY")
         while True:
-            chunk = await self.read()
+            print("READING")
+            chunk = await wait_for(self.read(), timeout=timeout)
+            print("chunk", chunk)
             if chunk is not None:
                 body.feed(chunk)
             else:
                 break
-        try:
-            content_length = int(self.contentLength) if self.contentLength else None
-        except ValueError:
-            # There might be a wrong encoding, in which case the request is probably malformed.
-            content_length = None
-        body.setLoaded(self.contentType, content_length)
+        body.setLoaded(self.contentType)
         return self
 
     @property
@@ -760,6 +765,7 @@ class RequestBody(Flyweight):
         self._type: RequestBodyType = RequestBodyType.Undefined
         self._raw: Optional[bytes] = None
         self._value: Any = None
+        self._written: int = 0
 
     @property
     def raw(self) -> Optional[bytes]:
@@ -768,7 +774,7 @@ class RequestBody(Flyweight):
             if not self.spool:
                 pass
             elif isinstance(self.spool, BytesIO):
-                raise NotImplemented
+                raise NotImplementedError
             else:
                 # TODO: should check that this indeed reads everything
                 self.spool.seek(0)
@@ -792,6 +798,7 @@ class RequestBody(Flyweight):
         self.isLoaded = False
         self.contentType = None
         self.contentLength = None
+        self._written = 0
         self._raw = None
         self._value = None
         return self
@@ -800,13 +807,17 @@ class RequestBody(Flyweight):
         """Sets the body as loaded. It is then ready to be decoded and its
         value field will become accessible."""
         self.contentType = contentType
-        self.contentLength = contentLength
+        self.contentLength = (
+            contentLength if contentLength is not None else self._written
+        )
         self.isLoaded = True
         return self
 
     def feed(self, data: bytes):
         """Feeds data to the body's spool"""
         # We lazily create the spool
+        if self.isLoaded:
+            raise RuntimeError("Trying to write to a body marked as loaded")
         if not self.spool:
             content_length = self.contentLength
             is_short = content_length and content_length <= BUFFER_MAX_SIZE
@@ -815,6 +826,7 @@ class RequestBody(Flyweight):
                 if is_short
                 else tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_SIZE)
             )
+        self._written += len(data)
         self.spool.write(data)
         # We invalidate the cache
         self._raw = None

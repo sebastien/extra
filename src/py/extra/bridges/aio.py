@@ -2,6 +2,7 @@ import asyncio
 import time
 from asyncio import StreamReader, StreamWriter
 from typing import Union
+from inspect import iscoroutine
 from ..model import Application, Service
 from ..bridges import mount
 from ..logging import error, operation
@@ -54,8 +55,11 @@ class AIOBridge:
             writer.write(BAD_REQUEST)
         else:
 
-            # TODO: We'll need to process the request
-            response = application.process(request)
+            # TODO: We process the request, which may very well be a coroutine
+            if iscoroutine(r := application.process(request)):
+                response = await r
+            else:
+                response = r
 
             # TODO: Process the application
             # Here we don't write bodies of HEAD requests, as some browsers
