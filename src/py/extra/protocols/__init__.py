@@ -290,7 +290,7 @@ class Response(Flyweight):
                 "contentType must be specified when type is not bytes or str"
             )
         self.bodies.append(
-            ResponseBody(ResponseBodyType.Iterator, stream, asBytes(contentType))
+            ResponseBody(ResponseBodyType.Stream, stream, asBytes(contentType))
         )
         return self
 
