@@ -11,6 +11,8 @@ from typing import (
     NamedTuple,
     AsyncIterator,
 )
+from types import GeneratorType
+from collections.abc import Iterator as IteratorType
 from ..utils import Flyweight
 from enum import Enum
 
@@ -178,8 +180,8 @@ class Request(Flyweight):
 class ResponseBodyType(Enum):
     Empty = b"empty"
     Value = b"value"
-    Iterator = b"iterator"
-    AsyncIterator = b"asyncIterator"
+    Stream = b"iterator"
+    AsyncStream = b"asyncStream"
 
 
 class ResponseBody(NamedTuple):
@@ -260,6 +262,14 @@ class Response(Flyweight):
             self.bodies.append(
                 ResponseBody(
                     ResponseBodyType.Value,
+                    content,
+                    asBytes(contentType or b"application/binary"),
+                )
+            )
+        elif isinstance(content, IteratorType) or isinstance(content, GeneratorType):
+            self.bodies.append(
+                ResponseBody(
+                    ResponseBodyType.Stream,
                     content,
                     asBytes(contentType or b"application/binary"),
                 )

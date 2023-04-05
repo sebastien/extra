@@ -19,11 +19,14 @@ from typing import (
     Iterator,
     cast,
 )
+from ..utils.files import contentType
+from pathlib import Path
 from tempfile import SpooledTemporaryFile
 from urllib.parse import parse_qs
 from asyncio import StreamReader, wait_for
 from io import BytesIO
 from enum import Enum
+import os
 import time
 import json
 import tempfile
@@ -546,6 +549,31 @@ class HTTPRequest(Request):
     ) -> "HTTPResponse":
         return HTTPResponse.Create().init(status=status).setContent(value, contentType)
 
+    def respondHTML(
+        self,
+        value: Any,
+        status: int = 200,
+    ) -> "HTTPResponse":
+        return self.respond(
+            value=value, status=status, contentType=b"text/html; charset=utf-8"
+        )
+
+    def respondText(
+        self,
+        value: Any,
+        status: int = 200,
+    ) -> "HTTPResponse":
+        return self.respond(
+            value=value, status=status, contentType=b"text/plain; charset=utf-8"
+        )
+
+    def respondJSON(
+        self,
+        value: Any,
+        status: int = 200,
+    ) -> "HTTPResponse":
+        return self.respond(value=value, status=status, contentType="application/json")
+
     def redirect(
         self,
         url: bytes,
@@ -561,8 +589,20 @@ class HTTPRequest(Request):
             ).setHeader(Location, url),
         )
 
-    def respondFile(self) -> "HTTPResponse":
-        return HTTPResponse.Create().init(status=200).fromFile()
+    def respondFile(self, path: Path) -> "HTTPResponse":
+        # TODO: Should support Range requests
+        # TODO: Should support ETag/Caching
+        # TODO: Should support compression
+        # TODO: Should support return a stream reader
+        def reader():
+            fd: int = os.open(path, os.O_RDONLY)
+            try:
+                while chunk := os.read(fd, 128_000):
+                    yield chunk
+            finally:
+                os.close(fd)
+
+        return self.respondStream(reader(), contentType(path))
 
     def respondStream(
         self, stream: Iterator[bytes], contentType=bytes | str
@@ -718,14 +758,22 @@ class HTTPResponse(Response):
                 if body.type == ResponseBodyType.Empty:
                     pass
                 elif body.type == ResponseBodyType.Value:
-                    assert isinstance(body.content, bytes)
+                    if not isinstance(body.content, bytes):
+                        raise RuntimeError(
+                            f"Body content should be bytes, got '{type(body.content)}': {body.content}"
+                        )
+
                     yield body.content
-                elif body.type == ResponseBodyType.Iterator:
-                    assert isinstance(
-                        body.content, Iterator
-                    ), f"Body content should be iterator, got: {body.content}"
+                elif body.type == ResponseBodyType.Stream:
+                    if not isinstance(body.content, Iterator):
+                        raise RuntimeError(
+                            f"Body content should be iterator, got '{type(body.content)}': {body.content}"
+                        )
                     for chunk in body.content:
-                        yield chunk
+                        if isinstance(chunk, str):
+                            yield bytes(chunk, "utf-8")
+                        else:
+                            yield chunk
                 else:
                     # TODO: That's the Async Iterator
                     raise NotImplementedError(
