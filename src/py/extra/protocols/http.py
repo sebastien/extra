@@ -579,14 +579,14 @@ class HTTPRequest(Request):
         url: bytes,
         content: Optional[Union[str, bytes]] = None,
         contentType=b"text/plain",
-        permanent=False,
+        permanent=True,
     ) -> "HTTPResponse":
         """Responds to this request by a redirection to the following URL"""
         return cast(
             HTTPResponse,
             self.respond(
                 content, contentType, status=301 if permanent else 302
-            ).setHeader(Location, url),
+            ).setHeader(Location, asBytes(url)),
         )
 
     def respondFile(self, path: Path) -> "HTTPResponse":
@@ -758,12 +758,14 @@ class HTTPResponse(Response):
                 if body.type == ResponseBodyType.Empty:
                     pass
                 elif body.type == ResponseBodyType.Value:
-                    if not isinstance(body.content, bytes):
+                    if not body.content:
+                        pass
+                    elif not isinstance(body.content, bytes):
                         raise RuntimeError(
                             f"Body content should be bytes, got '{type(body.content)}': {body.content}"
                         )
-
-                    yield body.content
+                    else:
+                        yield body.content
                 elif body.type == ResponseBodyType.Stream:
                     if not isinstance(body.content, Iterator):
                         raise RuntimeError(
