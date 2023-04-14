@@ -1,13 +1,15 @@
+#!/usr/bin/env python
 import asyncio, socket, os
 
 # --
 # A low-level handler for HTTP requests
 
-RESPONSE = b"""\rHTTP/1.1 200 OK\r
+RESPONSE = b"""HTTP/1.1 200 OK\r
 Content-Type: text/plain\r
 Content-Length: 12\r
 \r
 Hello, World!"""
+
 
 BACKLOG: int = int(os.getenv("HTTP_BACKLOG", 1_000))
 BUFFER: int = int(os.getenv("HTTP_BUFFER", 64_000))

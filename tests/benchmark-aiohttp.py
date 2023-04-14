@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from aiohttp import web
 import os
 

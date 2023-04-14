@@ -7,6 +7,7 @@ from ..bridges import mount
 from ..logging import error, operation
 from ..protocols.http import HTTPRequest, HTTPParser, BAD_REQUEST
 from ..utils.hooks import onException
+from ..utils.config import HOST, PORT
 
 
 class AIOBridge:
@@ -20,7 +21,7 @@ class AIOBridge:
         ends: bool = False
         started: float = time.time()
         # FIXME: Port should be sourced elsewhere
-        http_parser: HTTPParser = HTTPParser(addr, 8080, {})
+        http_parser: HTTPParser = HTTPParser(addr, PORT, {})
         read: int = 0
         # We only parse the REQUEST line and the HEADERS. We'll stop
         # once we reach the body. This means that we won't be reading
@@ -135,7 +136,7 @@ class AIOBridge:
 class AIOServer:
     """A simple asyncio-based asynchronous server"""
 
-    def __init__(self, application: Application, host="0.0.0.0", port=8000):
+    def __init__(self, application: Application, host: str = HOST, port: int = PORT):
         self.host: str = host
         self.port: int = port
         self.app: Application = application
@@ -161,8 +162,8 @@ def onLoopException(loop, context):
 
 def run(
     *components: Union[Application, Service],
-    host: str = "0.0.0.0",
-    port: int = 8000,
+    host: str = HOST,
+    port: int = PORT,
     backlog: int = 10_000,
 ):
     """Runs the given services/application using the embedded AsyncIO HTTP server."""
