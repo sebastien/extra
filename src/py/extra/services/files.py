@@ -91,6 +91,7 @@ class FileService(Service):
                                     current,
                                 ),
                                 *nodes,
+                                H.div(H.small("Served by Extra")),
                             ),
                         ),
                     )

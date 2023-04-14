@@ -131,7 +131,7 @@ def markup(name: str, tags: list[str]):
     class HFactory(type):
         def __new__(mcls, name: str, bases: tuple, attrs: dict) -> Type:
             annotations = {}
-            attrs["__annotations__"] = {}
+            attrs["__annotations__"] = annotations
             for tag in tags:
                 annotations[tag] = ClassVar[Callable]
                 attrs[tag] = nodeFactory(tag)
