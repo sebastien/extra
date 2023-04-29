@@ -100,6 +100,9 @@ class FileService(Service):
         else:
             return request.respondFile(localPath)
 
+    # @on(GET_HEAD="/favicon.ico")
+    # def favicon(self, request: HTTPRequest, path: str):
+
     @on(INFO="/{path:any}")
     def info(self, request: HTTPRequest, path: str):
         local_path = self.resolvePath(path)

@@ -4,7 +4,7 @@ from typing import Union
 from inspect import iscoroutine
 from ..model import Application, Service
 from ..bridges import mount
-from ..logging import error, operation
+from ..logging import error, operation, trace
 from ..protocols.http import HTTPRequest, HTTPParser, BAD_REQUEST
 from ..utils.hooks import onException
 from ..utils.config import HOST, PORT
@@ -44,6 +44,7 @@ class AIOBridge:
         # --
         # FIXME: We may have read past the body, so we should feed the
         # first part
+        print(f"[{http_parser.method}] {http_parser.uri}")
         request = HTTPRequest.Create().init(
             # FIXME: We should parse the uri
             reader,
