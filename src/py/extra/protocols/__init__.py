@@ -56,7 +56,7 @@ class Headers:
         else:
             return None
 
-    def set(self, name: bytes, value: Any) -> Any:
+    def set(self, name: bytes, value: bytes) -> bytes:
         self._headers[name] = [value]
         return value
 

@@ -19,13 +19,14 @@ from typing import (
     Iterator,
     cast,
 )
-from ..utils.files import contentType
+from ..utils.files import contentType as guessContentType
 from pathlib import Path
 from tempfile import SpooledTemporaryFile
 from urllib.parse import parse_qs
 from asyncio import StreamReader, wait_for
 from io import BytesIO
 from enum import Enum
+import hashlib
 import os
 import time
 import json
@@ -396,9 +397,32 @@ class HTTPParser:
 # The HTTP request object is designed to work both with our custom
 # HTTP parser and with other ways (ASGI).
 
+DAYS: tuple[str, ...] = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+MONTHS: tuple[str, ...] = (
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+)
+
 
 class HTTPRequest(Request):
     POOL: ClassVar[list["HTTPRequest"]] = []
+
+    @staticmethod
+    def Timestamp(t: time.struct_time) -> str:
+        """Convenience function to present a time in HTTP cache format"""
+        # NOTE: We have to do it here as we don't want to force the locale
+        # FORMAT: If-Modified-Since: Sat, 29 Oct 1994 19:43:31 GMT
+        return f"{DAYS[t.tm_wday]}, {t.tm_mday:02d} {MONTHS[t.tm_mon - 1]} {t.tm_year} {t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d} GMT"
 
     def __init__(self):
         super().__init__()
@@ -589,20 +613,130 @@ class HTTPRequest(Request):
             ).setHeader(Location, asBytes(url)),
         )
 
-    def respondFile(self, path: Path) -> "HTTPResponse":
-        # TODO: Should support Range requests
-        # TODO: Should support ETag/Caching
-        # TODO: Should support compression
-        # TODO: Should support return a stream reader
-        def reader():
-            fd: int = os.open(path, os.O_RDONLY)
-            try:
-                while chunk := os.read(fd, 128_000):
-                    yield chunk
-            finally:
-                os.close(fd)
+    def respondFile(
+        self,
+        path: Path,
+        contentType: Optional[str] = None,
+        status: int = 200,
+        contentLength: bool = True,
+        etag: Union[bool, str] = True,
+        lastModified: bool = True,
+        buffer: int = 1024 * 256,
+    ) -> "HTTPResponse":
+        if not path.exists():
+            return self.notFound(asBytes(f"File not found: {path}"))
+        content_type: str = contentType or guessContentType(path)
+        # --
+        # We start by getting range information in case we want/need to do streaming
+        # - <http://benramsey.com/blog/2008/05/206-partial-content-and-range-requests/>
+        # - <http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html>
+        # - <http://tools.ietf.org/html/rfc2616#section-10.2.7>
+        content_range: Optional[str] = self.headers.get("range")
+        has_range: bool = bool(content_range)
+        range_start: int = 0
+        range_end: Optional[int] = None
+        headers: Headers = Headers()
+        if content_range:
+            if len(r := content_range.split("=")) > 1:
+                rng = r[1].split("-")
+                range_start = int(rng[0] or 0)
+                range_end = int(rng[1]) if len(rng) > 1 and rng[1] else None
+            else:
+                # Range is malformed, so we just skip it
+                # TODO: We should maybe throw a warning
+                pass
+        # --
+        # We start by looking at the file, if hasn't changed, we won't bother
+        # reading it from the filesystem
+        has_changed = True
+        last_modified: Optional[time.struct_time] = None
 
-        return self.respondStream(reader(), contentType(path))
+        if has_range or lastModified or etag:
+            last_modified = time.gmtime(path.stat().st_mtime)
+            headers.set(
+                b"Last-Modified", bytes(HTTPRequest.Timestamp(last_modified), "utf8")
+            )
+            try:
+                modified_since = time.strptime(
+                    self.headers.get("If-Modified-Since", ""),
+                    "%a, %d %b %Y %H:%M:%S GMT",
+                )
+                if modified_since > last_modified:
+                    has_changed = False
+            except ValueError:
+                pass
+
+        # --
+        # If the file has changed or if we request ranges or stream
+        # then we'll load it and do the whole she bang
+        content_length: Optional[int] = None
+        full_length: Optional[int] = None
+        etag_sig = None
+        # We open the file to get its size and adjust the read length and range end
+        # accordingly
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            full_length = f.tell()
+            if not has_range:
+                content_length = full_length
+            else:
+                if range_end is None:
+                    range_end = full_length - 1
+                    content_length = full_length - range_start
+                else:
+                    content_length = min(
+                        range_end - range_start, full_length - range_start
+                    )
+        if has_range or etag:
+            # We don't use the content-type for ETag as we don't want to
+            # have to read the whole file, that would be too slow.
+            # NOTE: ETag is indepdent on the range and affect the file is a whole
+            etag_data = asBytes(f"{path.absolute()}:{last_modified or ''}")
+            headers.set(b"ETag", asBytes(f'"{hashlib.sha256(etag_data).hexdigest()}"'))
+        if contentLength is True:
+            headers.set(b"Content-Length", asBytes(f"{content_length}"))
+        if has_range:
+            headers.set(b"Accept-Ranges", b"bytes")
+            # headers.append(("Connection",    "Keep-Alive"))
+            # headers.append(("Keep-Alive",    "timeout=5, max=100"))
+            headers.set(
+                b"Content-Range",
+                b"bytes %d-%d/%d"
+                % (range_start or 0, range_end or full_length, full_length),
+            )
+        # --
+        # We prepare the response
+        if (lastModified and not has_changed and not has_range) or (
+            etag is True and etag_sig and self.headers.get("If-None-Match") == etag_sig
+        ):
+            return self.notModified()
+        else:
+
+            # This is the generator that will stream the file's content
+            def reader(path=path, start=range_start, remaining=content_length):
+                fd: int = os.open(path, os.O_RDONLY)
+                try:
+                    os.lseek(fd, start or 0, os.SEEK_SET)
+                    while remaining and (chunk := os.read(fd, min(buffer, remaining))):
+                        read = len(chunk)
+                        remaining -= read
+                        if read:
+                            yield chunk
+                        else:
+                            break
+                finally:
+                    os.close(fd)
+
+            return (
+                HTTPResponse.Create()
+                .init(
+                    headers=headers,
+                    status=206 if has_range else status,
+                    # TODO: Support compression
+                    # compression=self.compression(),
+                )
+                .addStream(reader(), content_type)
+            )
 
     def respondStream(
         self, stream: Iterator[bytes], contentType=bytes | str
@@ -620,8 +754,12 @@ class HTTPRequest(Request):
             .setContent(message or b"Operation not authorized")
         )
 
-    def notFound(self) -> "HTTPResponse":
-        return HTTPResponse.Create().init(status=404).setContent(b"Resource not found")
+    def notFound(self, content: bytes = b"Resource not found") -> "HTTPResponse":
+        return HTTPResponse.Create().init(status=404).setContent(content)
+
+    def notModified(self, content: bytes = b"Resource not modified") -> "HTTPResponse":
+        """Returns an OK 304"""
+        return HTTPResponse.Create().init(status=304).setContent(content)
 
 
 # FROM: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
