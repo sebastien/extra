@@ -1,6 +1,4 @@
-import functools
-from typing import Callable, ClassVar
-from enum import Enum
+from typing import Callable, ClassVar, Union
 
 
 class EXTRA:
@@ -14,7 +12,7 @@ class EXTRA:
     WHEN: ClassVar[str] = "_extra_when"
 
 
-def on(priority=0, **methods):
+def on(priority=0, **methods: Union[str, list[str], tuple[str, ...]]):
     """The @on decorator is one of the main important things you will use within
     Retro. This decorator allows to wrap an existing method and indicate that
     it will be used to process an HTTP request.
@@ -42,6 +40,7 @@ def on(priority=0, **methods):
     The @Request class offers many methods to create and send responses."""
 
     def decorator(function):
+        # TODO: Should be using annotations
         v = function.__dict__.setdefault(EXTRA.ON, [])
         function.__dict__.setdefault(EXTRA.ON_PRIORITY, priority)
         for http_methods, url in list(methods.items()):

@@ -103,7 +103,7 @@ class FileService(Service):
     # @on(GET_HEAD="/favicon.ico")
     # def favicon(self, request: HTTPRequest, path: str):
 
-    @on(INFO="/{path:any}")
+    @on(INFO=("/", "/{path:any}"))
     def info(self, request: HTTPRequest, path: str):
         local_path = self.resolvePath(path)
         if not (local_path and self.canRead(request, local_path)):
@@ -112,8 +112,8 @@ class FileService(Service):
             return request.respond("OK")
 
     # TODO: Support head
-    @on(GET="/{path:any}")
-    def read(self, request: HTTPRequest, path: str):
+    @on(GET=("/", "/{path:any}"))
+    def read(self, request: HTTPRequest, path: str = "."):
         local_path = self.resolvePath(path)
         if not (local_path and self.canRead(request, local_path)):
             return request.notAuthorized(f"Not authorized to access path: {path}")
@@ -123,7 +123,7 @@ class FileService(Service):
             return self.renderPath(request, path, local_path)
 
     @on(PUT_PATCH="/{path:any}")
-    def write(self, request: HTTPRequest, path: str):
+    def write(self, request: HTTPRequest, path: str = "."):
         local_path = self.resolvePath(path)
         if not (local_path and self.canWrite(request, local_path)):
             return request.notAuthorized(f"Not authoried to write to path: {path}")

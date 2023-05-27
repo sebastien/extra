@@ -338,19 +338,16 @@ class HTTPParser:
         # This method is a little bit contrived because e need to test
         # for all the cases. Also, this needs to be relatively fast as
         # it's going to be used often.
-        print("READING REQUEST", size)
         if rest is None:
             if self._stream:
                 if size is None:
                     res = await self._stream.read()
-                    print("CHUNK.A", res)
                     return res
                 else:
                     # FIXME: Somehow when returning directly there
                     # is an issue when receiving large uploaded files, it
                     # will block forever.
                     res = await self._stream.read(size)
-                    print("CHUNK.B", res)
                     return res
             else:
                 return b""
@@ -359,7 +356,6 @@ class HTTPParser:
             if size is None:
                 if self._stream:
                     chunk_a: bytes = await self._stream.read()
-                    print("CHUNK.C", chunk_a)
                     return chunk_a if rest is None else rest + chunk_a
                 else:
                     return rest
@@ -370,7 +366,6 @@ class HTTPParser:
                 chunk_b: bytes = await self._stream.read(
                     size - (0 if rest is None else len(rest))
                 )
-                print("CHUNK.D", chunk_b)
                 return chunk_b if not rest else rest + chunk_b
             else:
                 return rest or b""
@@ -432,6 +427,7 @@ class HTTPRequest(Request):
         self.protocolVersion: Optional[str] = None
         self.method: Optional[str] = None
         self.path: Optional[str] = None
+        self.hash: Optional[str] = None
         self.query: Optional[str] = None
         self.ip: Optional[str] = None
         self.port: Optional[int] = None
@@ -455,6 +451,7 @@ class HTTPRequest(Request):
         method: Optional[str] = None,
         path: Optional[str] = None,
         query: Optional[str] = None,
+        hash: Optional[str] = None,
         ip: Optional[str] = None,
         port: Optional[int] = None,
         headers: Optional[dict[str, str]] = None,
@@ -499,7 +496,7 @@ class HTTPRequest(Request):
         return self.body.feed(data)
 
     # TODO: Should adjust timeout
-    async def load(self, timeout: float = 20.0) -> "HTTPRequest":
+    async def load(self, timeout: float = 20.0) -> Optional[bytes]:
         """Loads all the data and returns a list of bodies."""
         body = self.body
         if not body.isLoaded:
@@ -510,7 +507,7 @@ class HTTPRequest(Request):
                 else:
                     break
             body.setLoaded(self.contentType)
-        return self
+        return self.body.raw
 
     @property
     def body(self) -> "RequestBody":

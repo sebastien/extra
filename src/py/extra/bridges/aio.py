@@ -1,6 +1,6 @@
 import time
 from asyncio import StreamReader, StreamWriter, sleep, start_server, get_event_loop
-from typing import Union
+from typing import Union, Optional
 from inspect import iscoroutine
 from ..model import Application, Service
 from ..bridges import mount
@@ -45,11 +45,20 @@ class AIOBridge:
         # FIXME: We may have read past the body, so we should feed the
         # first part
         print(f"[{http_parser.method}] {http_parser.uri}")
+        t = http_parser.uri
+        la = t.rsplit("#", 1)
+        uri_hash: Optional[str] = la[1] if len(la) == 2 else None
+        lb = la[0].rsplit("?", 1)
+        uri_query: Optional[str] = lb[1] if len(lb) == 2 else None
+        uri_path: str = lb[0]
+        components = http_parser.uri.rsplit("?", 1)
         request = HTTPRequest.Create().init(
             # FIXME: We should parse the uri
             reader,
             method=http_parser.method,
-            path=http_parser.uri,
+            path=uri_path,
+            query=uri_query,
+            hash=uri_hash,
             headers=http_parser.headers,
         )
         if http_parser.rest:
