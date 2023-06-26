@@ -60,6 +60,11 @@ class Headers:
         self._headers[name] = [value]
         return value
 
+    def update(self, headers: dict[bytes, bytes]):
+        for k, v in headers.items():
+            self._headers[k] = [v]
+        return self
+
     def has(self, name: bytes) -> bool:
         return name in self._headers
 
@@ -211,7 +216,8 @@ class Response(Flyweight):
         Flyweight.__init__(self)
         self.step: ResponseStep = ResponseStep.Initialized
         self.bodies: list[ResponseBody] = []
-        self.headers: Optional[Headers] = None
+        # FIXME: I don't really like the headers like this
+        self.headers: Optional[Headers] = Headers()
         self.status: int = 0
 
     def init(
@@ -238,9 +244,16 @@ class Response(Flyweight):
         return self
 
     def setCookie(self, name: bytes, value: bytes) -> "Response":
-        return self
+        raise NotImplementedError
 
     def setHeader(self, name: bytes, value: bytes) -> "Response":
+        raise NotImplementedError
+
+    def setHeaders(self, headers: Optional[dict[bytes, bytes]]):
+        if headers:
+            if not self.headers:
+                self.headers = Headers()
+            self.headers.update(headers)
         return self
 
     def setContent(

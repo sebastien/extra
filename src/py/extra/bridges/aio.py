@@ -19,7 +19,6 @@ class AIOBridge:
         addr: str = writer.get_extra_info("peername")
         bufsize: int = 256_000
         ends: bool = False
-        started: float = time.time()
         # FIXME: Port should be sourced elsewhere
         http_parser: HTTPParser = HTTPParser(addr, PORT, {})
         read: int = 0
@@ -45,13 +44,12 @@ class AIOBridge:
         # FIXME: We may have read past the body, so we should feed the
         # first part
         print(f"[{http_parser.method}] {http_parser.uri}")
-        t = http_parser.uri
-        la = t.rsplit("#", 1)
+        t: str = http_parser.uri or ""
+        la: list[str] = t.rsplit("#", 1)
         uri_hash: Optional[str] = la[1] if len(la) == 2 else None
-        lb = la[0].rsplit("?", 1)
+        lb: list[str] = la[0].rsplit("?", 1)
         uri_query: Optional[str] = lb[1] if len(lb) == 2 else None
         uri_path: str = lb[0]
-        components = http_parser.uri.rsplit("?", 1)
         request = HTTPRequest.Create().init(
             # FIXME: We should parse the uri
             reader,
@@ -78,9 +76,8 @@ class AIOBridge:
             # TODO: Process the application
             # Here we don't write bodies of HEAD requests, as some browsers
             # simply won't read the body.
-            write_body: bool = not (http_parser.method == "HEAD")
-
-            bytes_written: int = 0
+            # write_body: bool = not (http_parser.method == "HEAD")
+            # bytes_written: int = 0
             for chunk in response.write():
                 if writer.is_closing():
                     break
@@ -160,7 +157,7 @@ class AIOServer:
                 writer,
             )
         except ConnectionResetError as e:
-            print("Connection error")
+            print(f"AIOServer.request: Connection error {e}")
         except Exception as e:
             onException(e)
             raise e

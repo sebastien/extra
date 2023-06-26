@@ -554,12 +554,14 @@ class HTTPRequest(Request):
         value: Any,
         contentType: Optional[Union[str, bytes]] = b"application/json",
         status: int = 200,
+        headers: Optional[dict[bytes, bytes]] = None,
     ) -> "HTTPResponse":
         # FIXME: This should be a stream writer
         return (
             HTTPResponse.Create()
             .init(status=status)
             .setContent(asJSON(value), contentType)
+            .setHeaders(headers)
         )
 
     def respond(
