@@ -20,6 +20,7 @@ from typing import (
     cast,
 )
 from ..utils.files import contentType as guessContentType
+from ..utils.values import asJSON
 from pathlib import Path
 from tempfile import SpooledTemporaryFile
 from urllib.parse import parse_qs
@@ -29,7 +30,6 @@ from enum import Enum
 import hashlib
 import os
 import time
-import json
 import tempfile
 
 # --
@@ -64,10 +64,6 @@ HTTP/1.1 400 Bad Request\r
 Content-Length: 0\r
 \r
 """
-
-
-def asJSON(value):
-    return bytes(json.dumps(value), "utf8")
 
 
 # @property

@@ -40,6 +40,10 @@ class Service:
         self.app: Optional[Application] = None
         self.prefix = self.PREFIX
         self._handlers: Optional[list[Handler]] = None
+        self.init()
+
+    def init(self):
+        pass
 
     async def start(self):
         pass

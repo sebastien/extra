@@ -120,9 +120,9 @@ class Route:
     def __init__(self, text: str, handler: Optional["Handler"] = None):
         self.text: str = text
         self.chunks: list[TChunk] = self.Parse(text)
-        self.params: list[str] = [
-            _.name for _ in self.chunks if isinstance(_, ParameterChunk)
-        ]
+        self.params: dict[str, ParameterChunk] = {
+            _.name: _ for _ in self.chunks if isinstance(_, ParameterChunk)
+        }
         self.handler: Optional[Handler] = handler
         self._pattern: Optional[str] = None
         self._regexp: Optional[Pattern] = None
@@ -162,9 +162,18 @@ class Route:
     def toRegExp(self) -> str:
         return "".join(self.toRegExpChunks())
 
-    def match(self, path: str) -> Optional[dict[str, str]]:
+    def match(self, path: str) -> Optional[dict[str, Union[str, int, bool, float]]]:
         matches = self.regexp.match(path)
-        return dict((_, matches.group(_)) for _ in self.params) if matches else None
+        return (
+            {
+                k: e(matches.group(k))
+                if (e := v.pattern.extractor)
+                else matches.group(k)
+                for k, v in self.params.items()
+            }
+            if matches
+            else None
+        )
 
     def __repr__(self) -> str:
         return f"(Route \"{self.toRegExp()}\" ({' '.join(_ for _ in self.params)}))"
@@ -400,6 +409,7 @@ class Handler:
 # -----------------------------------------------------------------------------
 
 
+# TODO: The dispatcher should use the Routes instead
 class Dispatcher:
     """A dispatcher registers handlers that respond to HTTP methhods
     on a given path/URI."""
@@ -437,9 +447,10 @@ class Dispatcher:
         if method not in self.routes:
             return (None, False)
         else:
-            matched_match: Optional[dict[str, str]] = None
+            matched_match: Optional[dict[str, Union[str, bool, int, float]]] = None
             matched_route: Optional[Route] = None
             matched_priority: int = -1
+            # TODO: Use Routes
             # NOTE: The problem here is that we're going through
             # *all* the registered routes for any URL. So the more routes,
             # the slower this is going to be.
@@ -448,7 +459,9 @@ class Dispatcher:
             for route in self.routes[method]:
                 if route.priority < matched_priority:
                     continue
-                match: Optional[dict[str, str]] = route.match(path)
+                match: Optional[dict[str, Union[str, bool, int, float]]] = route.match(
+                    path
+                )
                 # FIXME: Maybe use a debug stream here
                 if match is None:
                     continue

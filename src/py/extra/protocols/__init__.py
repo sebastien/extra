@@ -268,7 +268,7 @@ class Response(Flyweight):
                 ResponseBody(
                     ResponseBodyType.Value,
                     asBytes(content),
-                    b"text/plain; charset=utf-8",
+                    asBytes(contentType or b"text/plain; charset=utf-8"),
                 )
             )
         elif isinstance(content, bytes):
