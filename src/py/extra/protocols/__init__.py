@@ -5,7 +5,6 @@ from typing import (
     Iterable,
     Iterator,
     ItemsView,
-    Any,
     Union,
     TypeVar,
     NamedTuple,
@@ -122,7 +121,7 @@ class Request(Flyweight):
 
     @property
     def uri(self) -> str:
-        raise NotImplemented
+        raise NotImplementedError
 
     # @group Params
 

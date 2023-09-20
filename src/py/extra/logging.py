@@ -1,4 +1,4 @@
-from typing import Optional, Callable, Optional, ClassVar, Any
+from typing import Optional, Callable, ClassVar, Any
 
 # from extra.feature.pubsub import pub, sub
 from contextlib import contextmanager
@@ -81,10 +81,10 @@ class Logger:
     INSTANCE: ClassVar[Optional["Logger"]] = None
     FORMAT: ClassVar[dict[str, str]] = {
         "default": "[{{origin}}]   {message}",
-        "error": f"[{{origin}}] ✘ {{message}}",
-        "warning": f"[{{origin}}] ! {{message}}",
-        "metric": f"[{{origin}}] → {{name}} = {{value}}",
-        "info": f"[{{origin}}] » {{message}}",
+        "error": "[{{origin}}] ✘ {{message}}",
+        "warning": "[{{origin}}] ! {{message}}",
+        "metric": "[{{origin}}] → {{name}} = {{value}}",
+        "info": "[{{origin}}] » {{message}}",
     }
 
     @classmethod
@@ -104,7 +104,8 @@ class Logger:
         `metrics.tsv`.
         """
         event_type = event.data.get("type")
-        message = event.data.get("message")
+        # NOTE: Unused
+        # message = event.data.get("message")
         fmt = cls.FORMAT.get(event_type, cls.FORMAT["default"])
         # This is the user-friendly output.
         sys.stdout.write(fmt.format(**(event.data)))
@@ -236,7 +237,7 @@ def raw(message, type, **kwargs):
 @contextmanager
 def operation(message: str):
     t = time.time()
-    log(f"{message}…")
+    log("{message}…")
     yield None
     log(f"… finished in {time.time() - t:0.2f}s")
 

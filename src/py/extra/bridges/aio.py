@@ -1,10 +1,9 @@
-import time
 from asyncio import StreamReader, StreamWriter, sleep, start_server, get_event_loop
 from typing import Union, Optional
 from inspect import iscoroutine
 from ..model import Application, Service
 from ..bridges import mount
-from ..logging import error, operation, trace
+from ..logging import error, operation, log, info
 from ..protocols.http import HTTPRequest, HTTPParser, BAD_REQUEST
 from ..utils.hooks import onException
 from ..utils.config import HOST, PORT
@@ -43,7 +42,7 @@ class AIOBridge:
         # --
         # FIXME: We may have read past the body, so we should feed the
         # first part
-        print(f"[{http_parser.method}] {http_parser.uri}")
+        log(f"[{http_parser.method}] {http_parser.uri}")
         t: str = http_parser.uri or ""
         la: list[str] = t.rsplit("#", 1)
         uri_hash: Optional[str] = la[1] if len(la) == 2 else None
@@ -157,7 +156,7 @@ class AIOServer:
                 writer,
             )
         except ConnectionResetError as e:
-            print(f"AIOServer.request: Connection error {e}")
+            error("ECONN", f"AIOServer.request: Connection error {e}")
         except Exception as e:
             onException(e)
             raise e
@@ -165,6 +164,42 @@ class AIOServer:
 
 def onLoopException(loop, context):
     onException(context.get("exception", context["message"]))
+
+
+# TODO: start() should generate a corouting
+async def arun(
+    *components: Union[Application, Service],
+    host: str = HOST,
+    port: int = PORT,
+    backlog: int = 10_000,
+):
+    app = mount(*components)
+    aio_server = AIOServer(app, host, port)
+    # This the stock AIO processing
+    server = await start_server(aio_server.request, host, port, backlog=backlog)
+    socket = server.sockets[0].getsockname()
+    info(
+        "Extra {font_server}AIO{reset} server listening on {font_url}http://{host}:{port}{reset}".format(
+            host=socket[0],
+            port=socket[1],
+            font_server="",
+            font_url="",
+            reset="",
+        )
+    )
+    # if server:
+    #     with operation("Closing server"):
+    #         server.close()
+    #         try:
+    #             loop.run_until_complete(server.wait_closed())
+    #         except KeyboardInterrupt:
+    #             pass
+    #         finally:
+    #             loop.close()
+    # # Waits up until the app has finished
+    # loop.run_until_complete(app.stop())
+    await app.stop()
+    return app
 
 
 def run(
@@ -186,7 +221,7 @@ def run(
     try:
         server = loop.run_until_complete(coro)
         socket = server.sockets[0].getsockname()
-        print(
+        info(
             "Extra {font_server}AIO{reset} server listening on {font_url}http://{host}:{port}{reset}".format(
                 host=socket[0],
                 port=socket[1],
@@ -207,7 +242,8 @@ def run(
                 pass
             finally:
                 loop.close()
-    loop.run_until_complete(app.start())
+    # Waits up until the app has finished
+    loop.run_until_complete(app.stop())
 
 
 # EOF

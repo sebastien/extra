@@ -279,7 +279,6 @@ class Prefix:
 
     def simplify(self) -> "Prefix":
         """Simplifies the prefix tree by joining together nodes that are similar"""
-        simplified: dict[str, Prefix] = {}
         children: dict[str, Prefix] = self.children
         # Any consecutive chain like A―B―C gets simplified to ABC
         while len(children) == 1:
@@ -317,7 +316,7 @@ class Prefix:
             yield self.value
         if self.children:
             for i, _ in enumerate(self.children):
-                yield f"(" if i == 0 else f"|"
+                yield "(" if i == 0 else "|"
                 yield from self.children[_].iterRegExpr()
             yield ")"
 

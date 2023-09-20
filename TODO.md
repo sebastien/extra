@@ -14,3 +14,8 @@ Features:
 -   r\[equest\]=get,post,update: runs a route from the command line,
     without starting a server
 -   feature.cache
+-   Reading JSON from a stream
+
+Performance:
+
+- Througput: how many Mb/s can the server process while reading data?

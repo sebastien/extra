@@ -35,7 +35,7 @@ def asPrimitive(value: Any, *, currentDepth: int = 0) -> TPrimitive:
 
     elif isinstance(value, Enum):
         return asPrimitive(value.value)
-    elif type(value) == dict:
+    elif isinstance(value, dict):
         return {
             asPrimitive(k): asPrimitive(v, currentDepth=currentDepth + 1)
             for k, v in value.items()

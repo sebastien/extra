@@ -1,3 +1,8 @@
+SHELL := bash
+.SHELLFLAGS := -eu -o pipefail -c
+MAKEFLAGS += --warn-undefined-variables
+MAKEFLAGS += --no-builtin-rules
+
 PYTHON=python
 PATH_SOURCES_PY=src/py
 SOURCES_PY:=$(wildcard $(PATH_SOURCES_PY)/*.py $(PATH_SOURCES_PY)/*/*.py $(PATH_SOURCES_PY)/*/*/*.py $(PATH_SOURCES_PY)/*/*/*/*.py)
@@ -12,11 +17,14 @@ compile:
 	$(foreach M,$(MODULES_PY),mkdir -p build/$M;)
 	env -C build MYPYPATH=$(realpath .)/src/py mypyc -p extra
 
+check: lint
+	@
+
 lint:
-	pylint $(SOURCES_PY)
+	@flake8 --ignore=E1,E203,E302,E401,E501,E741,F821,W $(SOURCES_PY)
 
 format:
-	black $(SOURCES_PY)
+	@black $(SOURCES_PY)
 
 require-py-%:
 	@if [ -z "$$(which '$*' 2> /dev/null)" ]; then $(PYTHON) -mpip install --user --upgrade '$*'; fi

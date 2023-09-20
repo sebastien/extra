@@ -1,5 +1,5 @@
-from ..protocol import Request, Response
-from ..protocol.http import HTTPRequest, HTTPResponse, asBytes
+from ..protocol import Response
+from ..protocol.http import HTTPRequest
 from ..model import Service, Application
 from ..logging import logger
 from ..bridge import mount
@@ -9,8 +9,6 @@ from typing import (
     Coroutine,
     Union,
     Set,
-    Optional,
-    Type,
     AsyncIterable,
     Awaitable,
     cast,
@@ -37,7 +35,6 @@ async def streamBodyHelper(
 ):
     """A helper function that will take a response body and stream it through
     the `send` function."""
-    count = 0
     # FIXME: MyPyC does not support async generators
     # async for chunk in body:
     #     await send(
@@ -72,7 +69,7 @@ class ASGIBridge:
             # If we get a False from ASGI, this means that the connection
             # as shutdown so we shutdown everything.
             # SEE:SHUTDOWN
-            if await self.readFromASGI(app, request, scope, receive, send) == False:
+            if (await self.readFromASGI(app, request, scope, receive, send)) is False:
                 logging.log("Shutdown message received, canceling the request")
                 request.recycle()
                 return None
@@ -119,7 +116,8 @@ class ASGIBridge:
                 else:
                     logging.warning("Unsupported ASGI message", type=asgi_message_type)
             elif writer_task in done:
-                result = writer_task.result()
+                # TODO: Should do something with the result
+                _ = writer_task.result()
             is_running = bool(len(pending))
 
     async def readFromASGI(

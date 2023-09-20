@@ -4,7 +4,6 @@ from typing import Union, Optional, Callable
 from ..decorators import on
 from ..model import Service
 from ..protocols.http import HTTPRequest
-from ..utils.files import contentType
 from ..utils.htmpl import H, html
 import os
 

@@ -6,7 +6,6 @@ from ..protocols import (
     ResponseBody,
     ResponseBodyType,
     Headers,
-    ResponseControl,
     asBytes,
 )
 from typing import (
@@ -154,7 +153,6 @@ class HTTPParser:
         return `{b"":b"multipart/mixed", b"boundary":b"inner"}`
         """
         end_offset = len(data) if end is None else len(data) + end if end < 0 else end
-        result: dict[bytes, bytes] = {}
         offset: int = start
         while offset < end_offset:
             # The next semicolumn is the next separator
@@ -415,7 +413,7 @@ class HTTPRequest(Request):
         # FORMAT: If-Modified-Since: Sat, 29 Oct 1994 19:43:31 GMT
         return f"{DAYS[t.tm_wday]}, {t.tm_mday:02d} {MONTHS[t.tm_mon - 1]} {t.tm_year} {t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d} GMT"
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         # NOTE: We use the same type as the HTTP parser
         self.headers: dict[str, str] = {}
@@ -435,7 +433,7 @@ class HTTPRequest(Request):
 
     @property
     def isInitialized(self) -> bool:
-        return self.method != None and self.path != None
+        return self.method is not None and self.path is not None
 
     # @group(Flyweight)
 
@@ -476,13 +474,20 @@ class HTTPRequest(Request):
     # @group(Loading)
 
     # FIXME: Count should probably not be -1 if we want to stream
-    async def read(self, count: int = 65_000) -> Optional[bytes]:
+    async def read(
+        self, count: int = 128_000, timeout: float = 20.0
+    ) -> Optional[bytes]:
         """Only use read if you want to access the raw data in chunks."""
+        body = self.body
         if self._hasMore and self._reader:
-            data: bytes = await self._reader.read()
+            data: bytes = await wait_for(self._reader.read(count), timeout=timeout)
             read: int = len(data)
+            body.feed(data)
+            # TODO: We should check self._reader.at_eof()
             self._hasMore = read == count
             self._readCount += read
+            if not self._hasMore:
+                body.setLoaded(self.contentType)
             return data
         else:
             return None
@@ -492,17 +497,13 @@ class HTTPRequest(Request):
         return self.body.feed(data)
 
     # TODO: Should adjust timeout
-    async def load(self, timeout: float = 20.0) -> Optional[bytes]:
+    async def load(
+        self, timeout: float = 20.0, count: int = 128_0000
+    ) -> Optional[bytes]:
         """Loads all the data and returns a list of bodies."""
         body = self.body
-        if not body.isLoaded:
-            while True:
-                chunk = await wait_for(self.read(), timeout=timeout)
-                if chunk is not None:
-                    body.feed(chunk)
-                else:
-                    break
-            body.setLoaded(self.contentType)
+        while not body.isLoaded:
+            _ = await self.read(count=count, timeout=timeout)
         return self.body.raw
 
     @property
@@ -756,6 +757,14 @@ class HTTPRequest(Request):
         """Returns an OK 304"""
         return HTTPResponse.Create().init(status=304).setContent(content)
 
+    def __repr__(self) -> str:
+        return (
+            f"Request(method={self.method} path={self.path} query={self.query} headers={self.headers} "
+            f"protocol={self.protocol}/{self.protocolVersion} "
+            f"reader={self._reader.__class__.__qualname__ if self._reader else None} read={self._readCount} more={self._hasMore} "
+            f"body={bool(self._body)} ip={self.ip} port={self.port}"
+        )
+
 
 # FROM: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
 # JSON.stringify(Object.values(document.querySelectorAll("dt")).map(_ => _.innerText))
@@ -858,7 +867,6 @@ class HTTPResponse(Response):
             if self.reason
             else HTTPStatus.get(self.status, b"Unknown status")
         )
-        first_body: Optional[ResponseBody] = self.bodies[0] if self.bodies else None
         yield b"HTTP/1.1 %d %s\r\n" % (self.status, reason)
         if not (self.headers and self.headers.has(ContentType)) and self.bodies:
             for body in self.bodies:
@@ -885,7 +893,6 @@ class HTTPResponse(Response):
                 # TODO: What about the rest?
                 yield b"%s: %s\r\n" % (k, l[0])
         yield b"\r\n"
-        current: Optional[ResponseControl] = None
         if self.bodies:
             for body in self.bodies:
                 if body.type == ResponseBodyType.Empty:
@@ -943,7 +950,11 @@ class RequestBody(Flyweight):
 
     POOL: ClassVar[list["RequestBody"]] = []
 
-    def __init__(self, isShort: bool = False):
+    # TODO: It is not clear how the spool is managed from there
+    def __init__(
+        self,
+        isShort: bool = False,
+    ):
         self.spool: Optional[Union[BytesIO, tempfile.SpooledTemporaryFile]] = None
         self.isShort = isShort
         self.isLoaded = False
@@ -958,7 +969,7 @@ class RequestBody(Flyweight):
     @property
     def raw(self) -> Optional[bytes]:
         # We don't need the body to be fully loaded
-        if self._raw == None:
+        if self._raw is None:
             if not self.spool:
                 pass
             else:
@@ -1014,7 +1025,7 @@ class RequestBody(Flyweight):
             )
         self._written += len(data)
         # If we're reached the content length, then the body is loaded
-        if self.contentLength != None and self._written >= self.contentLength:
+        if self.contentLength is not None and self._written >= self.contentLength:
             self.isLoaded = True
         self.spool.write(data)
         # We invalidate the cache
@@ -1028,15 +1039,20 @@ class RequestBody(Flyweight):
         elif self.contentType.startswith("multipart/form-data"):
             if self.spool:
                 self.spool.seek(0)
-                for headers, data_file in Decode.Multipart(
-                    self.spool, parsed_content[b"boundary"]
-                ):
-                    print(headers, data_file)
+                # for headers, data_file in Decode.Multipart(
+                #     self.spool, parsed_content[b"boundary"]
+                # ):
                 raise NotImplementedError
             else:
                 raise NotImplementedError
         else:
             return None
+
+    def __repr__(self) -> str:
+        return (
+            f"RequestBody(type={self._type.name} contentType={self.contentType} contentLength={self.contentLength} "
+            f" written={self._written} loaded={self.isLoaded} short={self.isShort}"
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -1085,7 +1101,6 @@ class Decode:
             # the read stop somewhere within a boundary we'll stil be able
             # to find it at the next iteration.
             chunk = stream.read(read_size)
-            chunk_read_size = len(chunk)
             chunk = rest + chunk
             # If state=="b" it means we've found a boundary at the previous iteration
             # and we need to find the headers

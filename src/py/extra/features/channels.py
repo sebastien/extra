@@ -41,7 +41,7 @@ class Channel(Generic[T]):
 
     async def join(self) -> T:
         """Waits for a value to come in."""
-        raise NotImplemented
+        raise NotImplementedError
 
 
 # NOTE: MypyC does not support async gen

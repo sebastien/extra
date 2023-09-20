@@ -1,4 +1,4 @@
-from typing import Callable, ClassVar, Union
+from typing import ClassVar, Union
 
 
 class EXTRA:

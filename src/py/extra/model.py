@@ -53,7 +53,7 @@ class Service:
 
     @property
     def isMounted(self) -> bool:
-        return self.app != None
+        return self.app is not None
 
     @property
     def handlers(self) -> list[Handler]:

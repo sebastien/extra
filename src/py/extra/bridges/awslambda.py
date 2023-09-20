@@ -1,7 +1,5 @@
 from ..model import Application, Service
-from ..bridge import mount, components
-from ..logging import error
-from ..protocol.http import HTTPRequest, HTTPParser
+from ..bridge import mount
 from typing import Callable, Any, Union
 
 # TODO: Use aws-lambda-rie to test that
