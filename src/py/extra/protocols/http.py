@@ -475,19 +475,27 @@ class HTTPRequest(Request):
 
     # FIXME: Count should probably not be -1 if we want to stream
     async def read(
-        self, count: int = 128_000, timeout: float = 20.0
+        self, count: Optional[int] = None, timeout: Optional[float] = 0.0
     ) -> Optional[bytes]:
         """Only use read if you want to access the raw data in chunks."""
         body = self.body
         if self._hasMore and self._reader:
-            data: bytes = await wait_for(self._reader.read(count), timeout=timeout)
+            limit = count or self._reader._limit
+            try:
+                # NOTE: This is a bit or workaround, but if we set timeout to 0.0, then
+                # it will read whatever is in there
+                data: bytes = await wait_for(self._reader.read(limit), timeout=timeout)
+            except TimeoutError:
+                data = b""
             read: int = len(data)
-            body.feed(data)
             # TODO: We should check self._reader.at_eof()
-            self._hasMore = read == count
+            self._hasMore = self._reader.at_eof()
             self._readCount += read
-            if not self._hasMore:
-                body.setLoaded(self.contentType)
+            # We feed the data to the body
+            if not body.isLoaded:
+                body.feed(data)
+                if not self._hasMore:
+                    body.setLoaded(self.contentType)
             return data
         else:
             return None
@@ -498,12 +506,14 @@ class HTTPRequest(Request):
 
     # TODO: Should adjust timeout
     async def load(
-        self, timeout: float = 20.0, count: int = 128_0000
+        self,
+        timeout: float = 5.0,
     ) -> Optional[bytes]:
         """Loads all the data and returns a list of bodies."""
         body = self.body
         while not body.isLoaded:
-            _ = await self.read(count=count, timeout=timeout)
+            # NOTE: We don't specify a count, we just want to use the buffer size.
+            _ = await self.read(timeout=timeout)
         return self.body.raw
 
     @property

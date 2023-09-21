@@ -176,7 +176,9 @@ async def arun(
     app = mount(*components)
     aio_server = AIOServer(app, host, port)
     # This the stock AIO processing
-    server = await start_server(aio_server.request, host, port, backlog=backlog)
+    server = await start_server(
+        aio_server.request, host, port, backlog=backlog, limit=2**16
+    )
     socket = server.sockets[0].getsockname()
     info(
         "Extra {font_server}AIO{reset} server listening on {font_url}http://{host}:{port}{reset}".format(
