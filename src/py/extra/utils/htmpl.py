@@ -1,4 +1,4 @@
-from typing import Optional, Iterable, Iterator, Union, ClassVar, Callable, Type
+from typing import Optional, Iterable, Iterator, Union, ClassVar, Callable, Type, cast
 from mypy_extensions import KwArg, VarArg
 
 # --
@@ -112,7 +112,7 @@ def nodeFactory(name: str, ns: Optional[str] = None) -> NodeFactory:
         return node(name, ns, children, {k: v for k, v in attributes.items()})
 
     f.__name__ = name
-    return f
+    return cast(NodeFactory, f)
 
 
 HTML_TAGS = """\

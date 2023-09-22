@@ -10,6 +10,7 @@ from typing import (
     NamedTuple,
     ClassVar,
     TypeVar,
+    Self,
 )
 from .protocols.http import HTTPRequest, HTTPResponse
 from .decorators import EXTRA
@@ -413,11 +414,11 @@ class Dispatcher:
     """A dispatcher registers handlers that respond to HTTP methhods
     on a given path/URI."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.routes: dict[str, list[Route]] = {}
         self.isPrepared: bool = True
 
-    def register(self, handler: Handler, prefix: Optional[str] = None):
+    def register(self, handler: Handler, prefix: Optional[str] = None) -> Self:
         """Registers the handlers and their routes, adding the prefix if given."""
         for method, paths in handler.methods.items():
             for path in paths:
@@ -440,7 +441,9 @@ class Dispatcher:
 
     def match(
         self, method: str, path: str
-    ) -> tuple[Optional[Route], Optional[Union[bool, dict[str, str]]]]:
+    ) -> tuple[
+        Optional[Route], Optional[Union[bool, dict[str, Union[str, int, float, bool]]]]
+    ]:
         """Matches a given `method` and `path` with the registered route, returning
         the matching route and the match information."""
         if method not in self.routes:

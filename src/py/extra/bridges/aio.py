@@ -1,4 +1,12 @@
-from asyncio import StreamReader, StreamWriter, sleep, start_server, get_event_loop
+from asyncio import (
+    StreamReader,
+    StreamWriter,
+    sleep,
+    start_server,
+    get_event_loop,
+    all_tasks,
+    gather,
+)
 from typing import Union, Optional
 from inspect import iscoroutine
 from ..model import Application, Service
@@ -245,7 +253,16 @@ def run(
             finally:
                 loop.close()
     # Waits up until the app has finished
-    loop.run_until_complete(app.stop())
+    try:
+        loop.run_until_complete(app.stop())
+    except Exception:
+        # FIXME: This does not seem to  be working
+        for task in all_tasks(loop=loop):
+            task.cancel()
+        # Run the event loop until all tasks are cancelled
+        loop.run_until_complete(gather(*all_tasks(loop=loop), return_exceptions=True))
+        # Close the event loop
+        loop.close()
 
 
 # EOF

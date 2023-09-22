@@ -9,6 +9,7 @@ from typing import (
     TypeVar,
     NamedTuple,
     AsyncIterator,
+    Self,
 )
 from types import GeneratorType
 from collections.abc import Iterator as IteratorType
@@ -31,18 +32,18 @@ def asBytes(value: Union[str, bytes]) -> bytes:
 
 class Headers:
     @classmethod
-    def FromItems(self, items: Iterable[tuple[bytes, bytes]]):
+    def FromItems(self, items: Iterable[tuple[bytes, bytes]]) -> "Headers":
         headers = Headers()
         for k, v in items:
             headers._headers[k] = [v]
         return headers
 
-    def __init__(self):
+    def __init__(self) -> None:
         # FIXME: Not sure why there is a list of bytes for the headers
         # seems really overkill. That should probably be a tuple.
         self._headers: dict[bytes, list[bytes]] = {}
 
-    def reset(self):
+    def reset(self) -> None:
         self._headers.clear()
 
     def items(self) -> ItemsView[bytes, list[bytes]]:
@@ -85,14 +86,14 @@ class Request(Flyweight):
 
     # @group Request attributes
 
-    def __init__(self):
+    def __init__(self) -> None:
         Flyweight.__init__(self)
         self.step: RequestStep = RequestStep.Initialized
         self._onClose: Optional[Callable[[Request], None]] = None
 
-    def reset(self):
+    def reset(self) -> None:
         super().reset()
-        self.step: RequestStep = RequestStep.Initialized
+        self.step = RequestStep.Initialized
         self._onClose = None
 
     @property
@@ -211,7 +212,7 @@ class ResponseControl(Enum):
 
 
 class Response(Flyweight):
-    def __init__(self):
+    def __init__(self) -> None:
         Flyweight.__init__(self)
         self.step: ResponseStep = ResponseStep.Initialized
         self.bodies: list[ResponseBody] = []
@@ -226,7 +227,7 @@ class Response(Flyweight):
         bodies: Optional[list[ResponseBody]] = None,
         headers: Optional[Headers] = None,
         status: int = 0,
-    ):
+    ) -> Self:
         self.step = step
         self.bodies = [] if bodies is None else bodies
         self.headers = headers
@@ -296,7 +297,7 @@ class Response(Flyweight):
             )
         return self
 
-    def addStream(self, stream: Iterator[bytes], contentType: str | bytes):
+    def addStream(self, stream: Iterator[bytes], contentType: Union[str, bytes]):
         if not contentType:
             raise ValueError(
                 "contentType must be specified when type is not bytes or str"

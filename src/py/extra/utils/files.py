@@ -1,3 +1,4 @@
+from typing import Union
 import json
 import pickle
 import os
@@ -51,7 +52,7 @@ READERS = {
 #     return self
 
 
-def contentType(path: Path | str) -> str:
+def contentType(path: Union[Path, str]) -> str:
     """Guesses the content type from the given path"""
     name = str(path)
     return (

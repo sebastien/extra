@@ -67,7 +67,7 @@ class Service:
             if handler:
                 yield handler
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"(Service {self.name} {' :mounted' if self.isMounted else ''})"
 
 
@@ -79,9 +79,9 @@ class Service:
 
 
 class Application:
-    def __init__(self):
-        self.routes: list[Route] = None
-        self.dispatcher = Dispatcher()
+    def __init__(self) -> None:
+        self.routes: list[Route] = []
+        self.dispatcher: Dispatcher = Dispatcher()
         self.services: list[Service] = []
 
     async def reload(self) -> "Application":

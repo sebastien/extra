@@ -329,7 +329,7 @@ class HTTPParser:
         whatever data is left from the previous data feeding."""
         assert size != 0
         rest: Optional[bytes] = self.rest
-        # This method is a little bit contrived because e need to test
+        # This method is a little bit contrived because we need to test
         # for all the cases. Also, this needs to be relatively fast as
         # it's going to be used often.
         if rest is None:
@@ -484,7 +484,7 @@ class HTTPRequest(Request):
             try:
                 # NOTE: This is a bit or workaround, but if we set timeout to 0.0, then
                 # it will read whatever is in there
-                data: bytes = await wait_for(self._reader.read(limit), timeout=timeout)
+                data: bytes = await wait_for(self._reader.read(limit), timeout=0.0)
             except TimeoutError:
                 data = b""
             read: int = len(data)
@@ -511,10 +511,21 @@ class HTTPRequest(Request):
     ) -> Optional[bytes]:
         """Loads all the data and returns a list of bodies."""
         body = self.body
+        # OK, so here we need to explain a bit what's going on. Asyncio's
+        # StreamReader can block if there's no data or not enough data (circumstances
+        # are not clear to me), and what that means is that if there is a 5s timeout
+        # passed to the read, the read may block for up to 5s. So here instead we
+        # read with a timeout of 0 (ie. read as much as we can without blocking),
+        # and we loop up until we've reached the timeout
+        t = time.monotonic()
         while not body.isLoaded:
+            # TODO: This is hot loop, so we could maybe have a better way to avoid
+            # too many iterations.
             # NOTE: We don't specify a count, we just want to use the buffer size.
-            _ = await self.read(timeout=timeout)
-        return self.body.raw
+            _ = await self.read(timeout=0.0)
+            if (time.monotonic() - t) > timeout:
+                break
+        return self.body.raw if body.isLoaded else None
 
     @property
     def body(self) -> "RequestBody":
@@ -745,7 +756,7 @@ class HTTPRequest(Request):
             )
 
     def respondStream(
-        self, stream: Iterator[bytes], contentType=bytes | str
+        self, stream: Iterator[bytes], contentType=Union[bytes, str]
     ) -> "HTTPResponse":
         return HTTPResponse.Create().init(status=200).addStream(stream, contentType)
 
