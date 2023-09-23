@@ -10,7 +10,6 @@ from typing import (
     NamedTuple,
     ClassVar,
     TypeVar,
-    Self,
 )
 from .protocols.http import HTTPRequest, HTTPResponse
 from .decorators import EXTRA
@@ -418,7 +417,7 @@ class Dispatcher:
         self.routes: dict[str, list[Route]] = {}
         self.isPrepared: bool = True
 
-    def register(self, handler: Handler, prefix: Optional[str] = None) -> Self:
+    def register(self, handler: Handler, prefix: Optional[str] = None) -> "Dispatcher":
         """Registers the handlers and their routes, adding the prefix if given."""
         for method, paths in handler.methods.items():
             for path in paths:

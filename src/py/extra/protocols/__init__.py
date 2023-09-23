@@ -9,7 +9,6 @@ from typing import (
     TypeVar,
     NamedTuple,
     AsyncIterator,
-    Self,
 )
 from types import GeneratorType
 from collections.abc import Iterator as IteratorType
@@ -227,12 +226,11 @@ class Response(Flyweight):
         bodies: Optional[list[ResponseBody]] = None,
         headers: Optional[Headers] = None,
         status: int = 0,
-    ) -> Self:
+    ) -> None:
         self.step = step
         self.bodies = [] if bodies is None else bodies
         self.headers = headers
         self.status = status
-        return self
 
     @property
     def isEmpty(self) -> bool:

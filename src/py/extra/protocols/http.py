@@ -24,6 +24,7 @@ from pathlib import Path
 from tempfile import SpooledTemporaryFile
 from urllib.parse import parse_qs
 from asyncio import StreamReader, wait_for
+from asyncio.exceptions import TimeoutError
 from io import BytesIO
 from enum import Enum
 import hashlib
@@ -475,22 +476,39 @@ class HTTPRequest(Request):
 
     # FIXME: Count should probably not be -1 if we want to stream
     async def read(
-        self, count: Optional[int] = None, timeout: Optional[float] = 0.0
+        self,
+        count: Optional[int] = None,
+        until: Optional[bytes] = None,
+        timeout: Optional[float] = 0.0,
     ) -> Optional[bytes]:
         """Only use read if you want to access the raw data in chunks."""
         body = self.body
         if self._hasMore and self._reader:
             limit = count or self._reader._limit
-            try:
-                # NOTE: This is a bit or workaround, but if we set timeout to 0.0, then
-                # it will read whatever is in there
-                data: bytes = await wait_for(self._reader.read(limit), timeout=0.0)
-            except TimeoutError:
-                data = b""
+            transport = self._reader._transport
+            transport.resume_reading()
+            print("Reading up to", limit, transport)
+            data = await self._reader.read(limit)
+            # try:
+            #     # NOTE: This is a bit or workaround, but if we set timeout to 0.0, then
+            #     # it will read whatever is in there
+            #     data: bytes = await wait_for(
+            #         self._reader.read_until(until)
+            #         if until
+            #         else self._reader.read(limit),
+            #         timeout=0.5,
+            #     )
+            # except TimeoutError:
+            #     data = b""
+            # except Exception as e:
+            #     print("XXXFFFFFU", e, type(e))
+            #     data = b""
+            #     raise e
             read: int = len(data)
             # TODO: We should check self._reader.at_eof()
             self._hasMore = self._reader.at_eof()
             self._readCount += read
+            print("READ", self._readCount)
             # We feed the data to the body
             if not body.isLoaded:
                 body.feed(data)
