@@ -31,7 +31,7 @@ def asBytes(value: Union[str, bytes]) -> bytes:
 
 class Headers:
     @classmethod
-    def FromItems(self, items: Iterable[tuple[bytes, bytes]]) -> "Headers":
+    def FromItems(cls, items: Iterable[tuple[bytes, bytes]]) -> "Headers":
         headers = Headers()
         for k, v in items:
             headers._headers[k] = [v]

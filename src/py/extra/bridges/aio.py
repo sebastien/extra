@@ -93,40 +93,7 @@ class AIOBridge:
                     writer.write(chunk)
                 await writer.drain()
 
-        # for body, content_type in reponse.bodies:
-        #     writer.write(body)
-        # # NOTE: It's not clear why this returns different types
-        # if isinstance(body, types.GeneratorType):
-        #     for chunk in body:
-        #         data = self._ensureBytes(chunk)
-        #         bytes_written += len(data)
-        #         if write_body:
-        #             writer.write(data)
-        # else:
-        #     if asyncio.iscoroutine(body):
-        #         res = cast(bytes, await body)
-        #     # NOTE: I'm not sure why we need to to asWSGI here
-        #     # r = res.asWSGI(wrt)
-        #     for _ in r:
-        #         if isinstance(_, types.AsyncGeneratorType):
-        #             async for v in _:
-        #                 data = self._ensureBytes(v)
-        #                 written += len(data)
-        #                 if writer._transport.is_closing():
-        #                     break
-        #                 if write_body:
-        #                     writer.write(data)
-        #         else:
-        #             data = self._ensureBytes(_)
-        #             written += len(data)
-        #             if writer._transport.is_closing():
-        #                 break
-        #             if write_body:
-        #                 writer.write(data)
-        #         if writer._transport.is_closing():
-        #             break
-
-        # We need to let some time for the schedule to do other stuff, this
+        # We need to let some time for the scheduler to do other stuff, this
         # should prevent the `socket.send() raised exception` errors.
         # SEE: https://github.com/aaugustin/websockets/issues/84
         await sleep(0)
@@ -148,6 +115,20 @@ class AIOBridge:
                 writer.close()
 
 
+# TODO: We should build this abstraction
+# class AIOReader(Reader, Flyweight["AIOReader"]):
+#     def __init__(self):
+#         super().__init__()
+#         self.reader: Optional[StreamReader] = None
+#
+#     def init(self, reader: StreamReader) -> "Reader":
+#         self.reader = reader
+#         return self
+#
+#     def reset(self) -> "Reader":
+#         return self
+
+
 class AIOServer:
     """A simple asyncio-based asynchronous server"""
 
@@ -161,6 +142,7 @@ class AIOServer:
         try:
             await bridge.process(
                 self.app,
+                # TODO: Wrap reader/writer ther
                 reader,
                 writer,
             )

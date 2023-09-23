@@ -23,7 +23,7 @@ from ..utils.values import asJSON
 from pathlib import Path
 from tempfile import SpooledTemporaryFile
 from urllib.parse import parse_qs
-from asyncio import StreamReader, wait_for
+from asyncio import StreamReader, wait_for, sleep
 from asyncio.exceptions import TimeoutError
 from io import BytesIO
 from enum import Enum
@@ -478,40 +478,36 @@ class HTTPRequest(Request):
     async def read(
         self,
         count: Optional[int] = None,
-        until: Optional[bytes] = None,
-        timeout: Optional[float] = 0.0,
+        timeout: Optional[float] = None,
     ) -> Optional[bytes]:
         """Only use read if you want to access the raw data in chunks."""
         body = self.body
-        if self._hasMore and self._reader:
+        if self._reader:
             limit = count or self._reader._limit
-            transport = self._reader._transport
-            transport.resume_reading()
-            data = await self._reader.read(limit)
-            # try:
-            #     # NOTE: This is a bit or workaround, but if we set timeout to 0.0, then
-            #     # it will read whatever is in there
-            #     data: bytes = await wait_for(
-            #         self._reader.read_until(until)
-            #         if until
-            #         else self._reader.read(limit),
-            #         timeout=0.5,
-            #     )
-            # except TimeoutError:
-            #     data = b""
-            # except Exception as e:
-            #     print("XXXFFFFFU", e, type(e))
-            #     data = b""
-            #     raise e
-            read: int = len(data)
+            if timeout is None:
+                data = await self._reader.read(limit)
+            else:
+                # OK, so here we need to explain a bit what's going on. Asyncio's
+                # StreamReader can block if there's no data or not enough data (circumstances
+                # are not clear to me), and what that means is that if there is a 5s timeout
+                # passed to the read, the read may block for up to 5s. So here instead we
+                # read with a timeout of 0 (ie. read as much as we can without blocking),
+                # and we loop up until we've reached the timeout
+                try:
+                    data = await wait_for(self._reader.read(limit), timeout=timeout)
+                except TimeoutError:
+                    data = b""
+            read: int = len(data) if data else 0
             # TODO: We should check self._reader.at_eof()
-            self._hasMore = self._reader.at_eof()
             self._readCount += read
+            # If we didn't receive any data, then we ask to resume reading,
+            # and sleep to yield control.
+            if not data and not self._reader.at_eof():
+                self._reader._transport.resume_reading()
+                await sleep(0.0)
             # We feed the data to the body
             if not body.isLoaded:
                 body.feed(data)
-                if not self._hasMore:
-                    body.setLoaded(self.contentType)
             return data
         else:
             return None
@@ -526,22 +522,25 @@ class HTTPRequest(Request):
         timeout: float = 5.0,
     ) -> Optional[bytes]:
         """Loads all the data and returns a list of bodies."""
-        body = self.body
-        # OK, so here we need to explain a bit what's going on. Asyncio's
-        # StreamReader can block if there's no data or not enough data (circumstances
-        # are not clear to me), and what that means is that if there is a 5s timeout
-        # passed to the read, the read may block for up to 5s. So here instead we
-        # read with a timeout of 0 (ie. read as much as we can without blocking),
-        # and we loop up until we've reached the timeout
-        t = time.monotonic()
-        while not body.isLoaded:
-            # TODO: This is hot loop, so we could maybe have a better way to avoid
-            # too many iterations.
-            # NOTE: We don't specify a count, we just want to use the buffer size.
-            _ = await self.read(timeout=0.0)
-            if (time.monotonic() - t) > timeout:
-                break
-        return self.body.raw if body.isLoaded else None
+        headers = self.headers
+        content_length: int = int(headers.get("Content-Length", -1))
+        if content_length < 0:
+            # FIXME: This fails the complete-read on large payloads when
+            # forcing this mode.
+            while True:
+                chunk = await self.read(count=1024, timeout=0.1)
+                if not chunk:
+                    break
+        else:
+            bytes_read: int = 0
+            content_length -= self.body._written
+            while bytes_read < content_length:
+                chunk_size = min(1024, content_length - bytes_read)
+                chunk = await self.read(count=chunk_size)
+                if not chunk:
+                    break
+                bytes_read += len(chunk)
+        return self.body.raw if self.body.isLoaded else None
 
     @property
     def body(self) -> "RequestBody":
@@ -991,7 +990,7 @@ class RequestBody(Flyweight):
     def __init__(
         self,
         isShort: bool = False,
-    ):
+    ) -> None:
         self.spool: Optional[Union[BytesIO, tempfile.SpooledTemporaryFile]] = None
         self.isShort = isShort
         self.isLoaded = False
@@ -1002,6 +1001,22 @@ class RequestBody(Flyweight):
         self._raw: Optional[bytes] = None
         self._value: Any = None
         self._written: int = 0
+
+    def reset(self) -> "RequestBody":
+        # TODO: Maybe we should reuse the spool?
+        if isinstance(self.spool, BytesIO):
+            pass
+        elif isinstance(self.spool, tempfile.SpooledTemporaryFile):
+            pass
+        self.spool = None
+        self.isLoaded = False
+        self.contentType = None
+        self.contentLength = None
+        self._written = 0
+        self._type: RequestBodyType = RequestBodyType.Undefined
+        self._raw = None
+        self._value = None
+        return self
 
     @property
     def raw(self) -> Optional[bytes]:
@@ -1022,20 +1037,6 @@ class RequestBody(Flyweight):
         if not self._value:
             self.process()
         return self._value
-
-    def reset(self):
-        if isinstance(self.spool, BytesIO):
-            pass
-        elif isinstance(self.spool, tempfile.SpooledTemporaryFile):
-            pass
-        self.spool = None
-        self.isLoaded = False
-        self.contentType = None
-        self.contentLength = None
-        self._written = 0
-        self._raw = None
-        self._value = None
-        return self
 
     def setLoaded(self, contentType: bytes, contentLength: Optional[int] = None):
         """Sets the body as loaded. It is then ready to be decoded and its
@@ -1061,13 +1062,14 @@ class RequestBody(Flyweight):
                 else tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_SIZE)
             )
         self._written += len(data)
-        # If we're reached the content length, then the body is loaded
+        # If we've reached the content length, then the body is loaded
         if self.contentLength is not None and self._written >= self.contentLength:
             self.isLoaded = True
         self.spool.write(data)
-        # We invalidate the cache
-        self._raw = None
-        self._value = None
+        # We invalidate the cache only if we wrote something
+        if data:
+            self._raw = None
+            self._value = None
         return self
 
     def process(self):

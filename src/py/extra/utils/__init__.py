@@ -1,24 +1,33 @@
-# @group(Utility)
+from abc import ABC, abstractmethod
+from typing import Generic, TypeVar, ClassVar, cast
+
+T = TypeVar("T", bound="Flyweight")
 
 
-class Flyweight:
+class Flyweight(ABC, Generic[T]):
+    Pool: ClassVar[list["Flyweight"]] = []
+    Capacity: ClassVar[int] = 1_000
+
     @classmethod
-    def Recycle(cls, value):
-        cls.POOL.append(value)
+    def Recycle(cls, value: T) -> None:
+        if len(cls.Pool) >= cls.Capacity:
+            return None
+        cls.Pool.append(value)
 
     @classmethod
-    def Create(cls):
-        return cls.POOL.pop() if cls.POOL else cls()
+    def Create(cls) -> T:
+        return cast(T, cls.Pool.pop() if cls.Pool else cls())
 
-    def init(self):
-        return self
+    def init(self) -> T:
+        return self.reset()
 
-    def reset(self):
-        return self
+    @abstractmethod
+    def reset(self) -> T:
+        ...
 
-    def recycle(self):
+    def recycle(self) -> None:
         self.reset()
-        self.__class__.POOL.append(self)
+        self.__class__.Pool.append(cast(T, self))
 
 
 def unquote(text: bytes) -> bytes:

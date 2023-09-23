@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 BASE="$(dirname "$(dirname "$(readlink -f "$0")")")"
 
 function run-case() {
