@@ -1,11 +1,22 @@
 import asyncio
 import hashlib
+import time
+
+# --
+# A reference aysncio implementation which reads a complete request.
+
+CHUNK_SIZE = 1024
+
+
+def log(*message):
+    print(f"[async] ", *(str(_) for _ in message))
 
 
 async def handle_client(reader, writer):
     try:
         # Read the HTTP request headers
         headers = b""
+        t = time.monotonic()
         while True:
             line = await reader.readline()
             if not line.strip():
@@ -20,18 +31,23 @@ async def handle_client(reader, writer):
 
         # Read the request body in chunks
         sha256 = hashlib.sha256()
+        iterations: int = 0
         bytes_read = 0
         while bytes_read < content_length:
-            chunk_size = min(1024, content_length - bytes_read)
+            chunk_size = min(CHUNK_SIZE, content_length - bytes_read)
             chunk = await reader.read(chunk_size)
             if not chunk:
                 break
             sha256.update(chunk)
             bytes_read += len(chunk)
+            iterations += 1
 
         # Calculate the SHA-256 digest
         sha256_digest = sha256.hexdigest()
 
+        elapsed = time.monotonic() - t
+        log(f"--> Received: {sha256_digest} {bytes_read}")
+        log(f"... Duration: {elapsed:0.2f} iterations={iterations}")
         # Send the response
         res = f"Read:{sha256_digest} {bytes_read}"
         response = (
@@ -56,3 +72,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+# EOF

@@ -487,7 +487,6 @@ class HTTPRequest(Request):
             limit = count or self._reader._limit
             transport = self._reader._transport
             transport.resume_reading()
-            print("Reading up to", limit, transport)
             data = await self._reader.read(limit)
             # try:
             #     # NOTE: This is a bit or workaround, but if we set timeout to 0.0, then
@@ -508,7 +507,6 @@ class HTTPRequest(Request):
             # TODO: We should check self._reader.at_eof()
             self._hasMore = self._reader.at_eof()
             self._readCount += read
-            print("READ", self._readCount)
             # We feed the data to the body
             if not body.isLoaded:
                 body.feed(data)

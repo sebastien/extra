@@ -1,0 +1,3 @@
+[submodule "deps/multiplex"]
+	path = deps/multiplex
+	url = git@github.com:sebastien/multiplex.git
