@@ -581,6 +581,16 @@ class HTTPRequest(Request):
         return self.headers.get(name)
 
     # @group(Responses)
+    def fail(
+        self,
+        status: int = 400,
+        message: Optional[str] = None,
+    ) -> "HTTPResponse":
+        return self.respond(
+            value=message or b"",
+            status=status,
+            contentType=b"text/plain; charset=utf-8",
+        )
 
     def returns(
         self,
@@ -903,7 +913,7 @@ class HTTPResponse(Response):
             if self.reason
             else HTTPStatus.get(self.status, b"Unknown status")
         )
-        yield b"HTTP/1.1 %d %s\r\n" % (self.status, reason)
+        yield b"HTTP/1.1 %d %s\r\n" % (int(self.status or 500), reason)
         if not (self.headers and self.headers.has(ContentType)) and self.bodies:
             for body in self.bodies:
                 if content_type := body.contentType:
