@@ -583,8 +583,9 @@ class HTTPRequest(Request):
     # @group(Responses)
     def fail(
         self,
-        status: int = 400,
         message: Optional[str] = None,
+        *,
+        status: int = 400,
     ) -> "HTTPResponse":
         return self.respond(
             value=message or b"",
@@ -913,7 +914,7 @@ class HTTPResponse(Response):
             if self.reason
             else HTTPStatus.get(self.status, b"Unknown status")
         )
-        yield b"HTTP/1.1 %d %s\r\n" % (int(self.status or 500), reason)
+        yield b"HTTP/1.1 %d %s\r\n" % (self.status or 500, reason)
         if not (self.headers and self.headers.has(ContentType)) and self.bodies:
             for body in self.bodies:
                 if content_type := body.contentType:
