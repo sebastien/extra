@@ -27,6 +27,7 @@ from asyncio import StreamReader, wait_for, sleep
 from asyncio.exceptions import TimeoutError
 from io import BytesIO
 from enum import Enum
+import urllib.parse as urllib_parse
 import hashlib
 import os
 import time
@@ -404,6 +405,64 @@ MONTHS: tuple[str, ...] = (
 )
 
 
+class Parameters:
+    @staticmethod
+    def FromQuery(query: str) -> dict[str, str]:
+        """Returns a dictionary with the request parameters. Unless you specify
+        load as True, this will only return the parameters containes in the
+        request URI, not the parameters contained in the form data, in the
+        case of a POST."""
+        # We try to parse the query string
+        query_params = parse_qs(query)
+        if not query_params:
+            query = urllib_parse.unquote(query)
+            query_params = {query: "", "": query}
+        res: dict = {}
+        for k, v in query_params.items():
+            n = len(v)
+            if isinstance(v, list):
+                if n == 0:
+                    v = ""
+                elif n == 1:
+                    v = v[0]
+            res[k] = v
+        return res
+
+    @staticmethod
+    def FromHash(path: str) -> Union[list, dict, str]:
+        """Parses the parameters that might be defined in the URL's hash, and
+        returns a dictionary. Here is how this function works:
+
+        >>>	Parameters.FromHash("page")
+            {'__path__': 'page'}
+
+        >>>	Parameters.FromHash("page=1")
+            {'page': '1'}
+
+        >>> Parameters.FromHash("page/1&category=2")
+            {'category': '2', '__path__': 'page/1'}
+
+        >>> Parameters.FromHash("page/1&category=2&category=3")
+            {'category': ['2', '3'], '__path__': 'page/1'}
+
+        """
+        res: dict[str, Union[list, dict, str]] = {}
+        for element in path.split("&"):
+            name_value = element.split("=", 1)
+            if len(name_value) == 1:
+                name = "__path__"
+                value = name_value[0]
+            else:
+                name, value = name_value
+            if name in res:
+                if type(res[name]) not in (tuple, list):
+                    res[name] = [res[name]]
+                cast(list, res[name]).append(value)
+            else:
+                res[name] = value
+        return res
+
+
 class HTTPRequest(Request):
     POOL: ClassVar[list["HTTPRequest"]] = []
 
@@ -431,6 +490,7 @@ class HTTPRequest(Request):
         self._reader: Optional[StreamReader] = None
         self._readCount: int = 0
         self._hasMore: bool = True
+        self._params: Optional[dict[str, str]] = None
 
     @property
     def isInitialized(self) -> bool:
@@ -464,12 +524,23 @@ class HTTPRequest(Request):
         self._readCount = 0
         self._hasMore = True
         self._body = None
+        self._params = None
         return self
+
+    @property
+    def params(self):
+        if self._params is None:
+            self._params = Parameters.FromQuery(self.query or "")
+        return self._params
+
+    def param(self, name: str, default: Any = None) -> Any:
+        return self.params.get(name, default)
 
     def reset(self):
         super().reset()
         # NOTE: We don't clear the headers, we'll re-assign on init
         self._body = self._body.reset() if self._body else None
+        self._params = None
         return self
 
     # @group(Loading)
