@@ -111,7 +111,7 @@ class AIOBridge:
                 writer.write_eof()
                 await writer.drain()
             except OSError as e:
-                error("AIO/OSERROR", f"Transport draining failed: {e}", origin="aio")
+                error("AIO/OSERROR", f"Transport draining failed: {e}")
                 writer.close()
 
 
