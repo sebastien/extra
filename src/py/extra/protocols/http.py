@@ -1,3 +1,15 @@
+from typing import (
+    Any,
+    Optional,
+    Union,
+    ClassVar,
+    BinaryIO,
+    Iterable,
+    Iterator,
+    Generator,
+    AsyncGenerator,
+    cast,
+)
 from ..utils import Flyweight
 from ..protocols import (
     Request,
@@ -7,16 +19,6 @@ from ..protocols import (
     ResponseBodyType,
     Headers,
     asBytes,
-)
-from typing import (
-    Any,
-    Optional,
-    Union,
-    ClassVar,
-    BinaryIO,
-    Iterable,
-    Iterator,
-    cast,
 )
 from ..utils.files import contentType as guessContentType
 from ..utils.values import asJSON
@@ -614,6 +616,10 @@ class HTTPRequest(Request):
         return self.body.raw if self.body.isLoaded else None
 
     @property
+    def data(self) -> bytes:
+        return self.body.raw
+
+    @property
     def body(self) -> "RequestBody":
         if not self._body:
             body = RequestBody.Create()
@@ -825,7 +831,6 @@ class HTTPRequest(Request):
         ):
             return self.notModified()
         else:
-
             # This is the generator that will stream the file's content
             def reader(path=path, start=range_start, remaining=content_length):
                 fd: int = os.open(path, os.O_RDONLY)
@@ -853,19 +858,32 @@ class HTTPRequest(Request):
             )
 
     def respondStream(
-        self, stream: Iterator[bytes], contentType=Union[bytes, str]
+        self,
+        stream: Iterator[bytes]
+        | Generator[bytes, Any, Any]
+        | AsyncGenerator[bytes, Any],
+        contentType=Union[bytes, str],
+        headers: dict[bytes, bytes] | None = None,
     ) -> "HTTPResponse":
-        return HTTPResponse.Create().init(status=200).addStream(stream, contentType)
+        return (
+            HTTPResponse.Create()
+            .init(status=200)
+            .addStream(stream, contentType)
+            .setHeaders(headers)
+        )
 
     # @group(Errors)
 
     def notAuthorized(
-        self, message: Optional[Union[str, bytes]] = None
+        self,
+        message: Optional[Union[str, bytes]] = None,
+        headers: dict[bytes, bytes] | None = None,
     ) -> "HTTPResponse":
         return (
             HTTPResponse.Create()
             .init(status=401)
             .setContent(message or b"Operation not authorized")
+            .setHeaders(headers)
         )
 
     def notFound(self, content: bytes = b"Resource not found") -> "HTTPResponse":
@@ -1065,7 +1083,6 @@ class RequestBodyType(Enum):
 
 
 class RequestBody(Flyweight):
-
     POOL: ClassVar[list["RequestBody"]] = []
 
     # TODO: It is not clear how the spool is managed from there

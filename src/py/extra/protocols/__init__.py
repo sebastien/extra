@@ -29,6 +29,7 @@ def asBytes(value: Union[str, bytes]) -> bytes:
         raise ValueError(f"Expected bytes or str, got: {value}")
 
 
+# FIXME: Why isn't this just a dict?
 class Headers:
     @classmethod
     def FromItems(cls, items: Iterable[tuple[bytes, bytes]]) -> "Headers":
@@ -82,7 +83,6 @@ class RequestStep(Enum):
 
 
 class Request(Flyweight):
-
     # @group Request attributes
 
     def __init__(self) -> None:
@@ -247,7 +247,7 @@ class Response(Flyweight):
     def setHeader(self, name: bytes, value: bytes) -> "Response":
         raise NotImplementedError
 
-    def setHeaders(self, headers: Optional[dict[bytes, bytes]]):
+    def setHeaders(self, headers: Optional[dict[bytes, bytes]] = None):
         if headers:
             if not self.headers:
                 self.headers = Headers()
