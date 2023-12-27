@@ -1,3 +1,15 @@
+from typing import (
+    Any,
+    Optional,
+    Union,
+    ClassVar,
+    BinaryIO,
+    Iterable,
+    Iterator,
+    Generator,
+    AsyncGenerator,
+    cast,
+)
 from ..utils import Flyweight
 from ..protocols import (
     Request,
@@ -8,16 +20,6 @@ from ..protocols import (
     Headers,
     asBytes,
 )
-from typing import (
-    Any,
-    Optional,
-    Union,
-    ClassVar,
-    BinaryIO,
-    Iterable,
-    Iterator,
-    cast,
-)
 from ..utils.files import contentType as guessContentType
 from ..utils.values import asJSON
 from pathlib import Path
@@ -27,6 +29,7 @@ from asyncio import StreamReader, wait_for, sleep
 from asyncio.exceptions import TimeoutError
 from io import BytesIO
 from enum import Enum
+import urllib.parse as urllib_parse
 import hashlib
 import os
 import time
@@ -404,6 +407,64 @@ MONTHS: tuple[str, ...] = (
 )
 
 
+class Parameters:
+    @staticmethod
+    def FromQuery(query: str) -> dict[str, str]:
+        """Returns a dictionary with the request parameters. Unless you specify
+        load as True, this will only return the parameters containes in the
+        request URI, not the parameters contained in the form data, in the
+        case of a POST."""
+        # We try to parse the query string
+        query_params = parse_qs(query)
+        if not query_params:
+            query = urllib_parse.unquote(query)
+            query_params = {query: "", "": query}
+        res: dict = {}
+        for k, v in query_params.items():
+            n = len(v)
+            if isinstance(v, list):
+                if n == 0:
+                    v = ""
+                elif n == 1:
+                    v = v[0]
+            res[k] = v
+        return res
+
+    @staticmethod
+    def FromHash(path: str) -> Union[list, dict, str]:
+        """Parses the parameters that might be defined in the URL's hash, and
+        returns a dictionary. Here is how this function works:
+
+        >>>	Parameters.FromHash("page")
+            {'__path__': 'page'}
+
+        >>>	Parameters.FromHash("page=1")
+            {'page': '1'}
+
+        >>> Parameters.FromHash("page/1&category=2")
+            {'category': '2', '__path__': 'page/1'}
+
+        >>> Parameters.FromHash("page/1&category=2&category=3")
+            {'category': ['2', '3'], '__path__': 'page/1'}
+
+        """
+        res: dict[str, Union[list, dict, str]] = {}
+        for element in path.split("&"):
+            name_value = element.split("=", 1)
+            if len(name_value) == 1:
+                name = "__path__"
+                value = name_value[0]
+            else:
+                name, value = name_value
+            if name in res:
+                if type(res[name]) not in (tuple, list):
+                    res[name] = [res[name]]
+                cast(list, res[name]).append(value)
+            else:
+                res[name] = value
+        return res
+
+
 class HTTPRequest(Request):
     POOL: ClassVar[list["HTTPRequest"]] = []
 
@@ -431,6 +492,7 @@ class HTTPRequest(Request):
         self._reader: Optional[StreamReader] = None
         self._readCount: int = 0
         self._hasMore: bool = True
+        self._params: Optional[dict[str, str]] = None
 
     @property
     def isInitialized(self) -> bool:
@@ -464,12 +526,23 @@ class HTTPRequest(Request):
         self._readCount = 0
         self._hasMore = True
         self._body = None
+        self._params = None
         return self
+
+    @property
+    def params(self):
+        if self._params is None:
+            self._params = Parameters.FromQuery(self.query or "")
+        return self._params
+
+    def param(self, name: str, default: Any = None) -> Any:
+        return self.params.get(name, default)
 
     def reset(self):
         super().reset()
         # NOTE: We don't clear the headers, we'll re-assign on init
         self._body = self._body.reset() if self._body else None
+        self._params = None
         return self
 
     # @group(Loading)
@@ -546,6 +619,10 @@ class HTTPRequest(Request):
         return self.body.raw if self.body.isLoaded else None
 
     @property
+    def data(self) -> bytes:
+        return self.body.raw
+
+    @property
     def body(self) -> "RequestBody":
         if not self._body:
             body = RequestBody.Create()
@@ -583,6 +660,17 @@ class HTTPRequest(Request):
     #     return self.headers.get(name)
 
     # @group(Responses)
+    def fail(
+        self,
+        message: Optional[str] = None,
+        *,
+        status: int = 400,
+    ) -> "HTTPResponse":
+        return self.respond(
+            value=message or b"",
+            status=status,
+            contentType=b"text/plain; charset=utf-8",
+        )
 
     def returns(
         self,
@@ -745,7 +833,6 @@ class HTTPRequest(Request):
         ):
             return self.notModified()
         else:
-
             # This is the generator that will stream the file's content
             def reader(path=path, start=range_start, remaining=content_length):
                 fd: int = os.open(path, os.O_RDONLY)
@@ -773,19 +860,32 @@ class HTTPRequest(Request):
             )
 
     def respondStream(
-        self, stream: Iterator[bytes], contentType=Union[bytes, str]
+        self,
+        stream: Iterator[bytes]
+        | Generator[bytes, Any, Any]
+        | AsyncGenerator[bytes, Any],
+        contentType=Union[bytes, str],
+        headers: dict[bytes, bytes] | None = None,
     ) -> "HTTPResponse":
-        return HTTPResponse.Create().init(status=200).addStream(stream, contentType)
+        return (
+            HTTPResponse.Create()
+            .init(status=200)
+            .addStream(stream, contentType)
+            .setHeaders(headers)
+        )
 
     # @group(Errors)
 
     def notAuthorized(
-        self, message: Optional[Union[str, bytes]] = None
+        self,
+        message: Optional[Union[str, bytes]] = None,
+        headers: dict[bytes, bytes] | None = None,
     ) -> "HTTPResponse":
         return (
             HTTPResponse.Create()
             .init(status=401)
             .setContent(message or b"Operation not authorized")
+            .setHeaders(headers)
         )
 
     def notFound(self, content: bytes = b"Resource not found") -> "HTTPResponse":
@@ -905,7 +1005,7 @@ class HTTPResponse(Response):
             if self.reason
             else HTTPStatus.get(self.status, b"Unknown status")
         )
-        yield b"HTTP/1.1 %d %s\r\n" % (self.status, reason)
+        yield b"HTTP/1.1 %d %s\r\n" % (self.status or 500, reason)
         if not (self.headers and self.headers.has(ContentType)) and self.bodies:
             for body in self.bodies:
                 if content_type := body.contentType:
@@ -985,7 +1085,6 @@ class RequestBodyType(Enum):
 
 
 class RequestBody(Flyweight):
-
     POOL: ClassVar[list["RequestBody"]] = []
 
     # TODO: It is not clear how the spool is managed from there

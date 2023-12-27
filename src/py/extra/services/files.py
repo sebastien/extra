@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Union, Optional, Callable
 from ..decorators import on
 from ..model import Service
-from ..protocols.http import HTTPRequest
+from ..protocols.http import HTTPRequest, HTTPResponse
 from ..utils.htmpl import H, html
 import os
 
@@ -51,53 +51,57 @@ class FileService(Service):
     def renderPath(self, request: HTTPRequest, path: str, localPath: Path):
         path = path.strip("/")
         if localPath.is_dir():
-            files: list[str] = []
-            dirs: list[str] = []
+            return self.renderDir(request, path, localPath)
+        else:
+            return request.respondFile(localPath)
+
+    def renderDir(
+        self, request: HTTPRequest, path: str, localPath: Path
+    ) -> HTTPResponse:
+        files: list[str] = []
+        dirs: list[str] = []
+        if localPath.is_dir():
             for p in localPath.iterdir():
                 if p.is_dir():
                     dirs.append(H.li(H.a(f"{p.name}/", href=f"/{path}/{p.name}")))
                 else:
                     files.append(H.li(H.a(p.name, href=f"/{path}/{p.name}")))
-            nodes = []
-            if dirs:
-                nodes += [
-                    H.section(
-                        H.h2("Directories"),
-                        H.ul(*dirs, style='list-style-type: "\\1F4C1";'),
-                    )
-                ]
-            if files:
-                nodes += [
-                    H.section(
-                        H.h2("Files"), H.ul(*files, style='list-style-type: "\\1F4C4";')
-                    )
-                ]
-            parent = os.path.dirname(path)
-            current = os.path.basename(path)
-            return request.respondHTML(
-                html(
-                    H.html(
-                        H.head(
-                            H.meta(charset="utf-8"),
-                            H.title(path),
-                            H.style(FILE_CSS),
-                            H.body(
-                                H.h1(
-                                    "Listing for ",
-                                    H.a(f"{parent}/", href=f"/{parent}/")
-                                    if parent
-                                    else "",
-                                    current,
-                                ),
-                                *nodes,
-                                H.div(H.small("Served by Extra")),
+        nodes = []
+        if dirs:
+            nodes += [
+                H.section(
+                    H.h2("Directories"),
+                    H.ul(*dirs, style='list-style-type: "\\1F4C1";'),
+                )
+            ]
+        if files:
+            nodes += [
+                H.section(
+                    H.h2("Files"), H.ul(*files, style='list-style-type: "\\1F4C4";')
+                )
+            ]
+        parent = os.path.dirname(path)
+        current = os.path.basename(path)
+        return request.respondHTML(
+            html(
+                H.html(
+                    H.head(
+                        H.meta(charset="utf-8"),
+                        H.title(path),
+                        H.style(FILE_CSS),
+                        H.body(
+                            H.h1(
+                                "Listing for ",
+                                H.a(f"{parent}/", href=f"/{parent}/") if parent else "",
+                                current,
                             ),
+                            *nodes,
+                            H.div(H.small("Served by Extra")),
                         ),
-                    )
+                    ),
                 )
             )
-        else:
-            return request.respondFile(localPath)
+        )
 
     # @on(GET_HEAD="/favicon.ico")
     # def favicon(self, request: HTTPRequest, path: str):
