@@ -483,7 +483,9 @@ class HTTPRequest(Request):
         """Only use read if you want to access the raw data in chunks."""
         body = self.body
         if self._reader:
-            limit = count or self._reader._limit
+            # FIXME: Disabling for now
+            # limit = count or self._reader._limit
+            limit = count or 1024
             if timeout is None:
                 data = await self._reader.read(limit)
             else:
@@ -502,9 +504,10 @@ class HTTPRequest(Request):
             self._readCount += read
             # If we didn't receive any data, then we ask to resume reading,
             # and sleep to yield control.
-            if not data and not self._reader.at_eof():
-                self._reader._transport.resume_reading()
-                await sleep(0.0)
+            # FIXME: Disabling for now
+            # if not data and not self._reader.at_eof():
+            #     self._reader._transport.resume_reading()
+            #     await sleep(0.0)
             # We feed the data to the body
             if not body.isLoaded:
                 body.feed(data)
@@ -556,29 +559,28 @@ class HTTPRequest(Request):
         else:
             return self._body
 
-    # @group(Headers)
     @property
     def contentLength(self) -> int:
-        return int(self.headers.get(ContentType))
+        return int(self.headers.get("Content-Length", -1))
 
     def setContentLength(self, length: int) -> "HTTPRequest":
-        self.headers.set(ContentLength, b"%d" % (length))
+        self.headers["Content-Length"] = str(length)
         return self
 
-    @property
-    def contentType(self) -> bytes:
-        return self.headers.get(ContentType)
+    # @property
+    # def contentType(self) -> Optional[str]:
+    #     return self.headers.get("ContentType", None)
 
-    def setContentType(self, value: Union[str, bytes]) -> "HTTPRequest":
-        self.headers.set(ContentType, asBytes(value))
-        return self
+    # def setContentType(self, value: Union[str, bytes]) -> "HTTPRequest":
+    #     self.headers.set(ContentType, asBytes(value))
+    #     return self
 
-    def setHeader(self, name: bytes, value: bytes) -> "HTTPRequest":
-        self.headers.set(name, value)
-        return self
+    # def setHeader(self, name: bytes, value: bytes) -> "HTTPRequest":
+    #     self.headers.set(name, value)
+    #     return self
 
-    def getHeader(self, name: bytes) -> Optional[bytes]:
-        return self.headers.get(name)
+    # def getHeader(self, name: bytes) -> Optional[bytes]:
+    #     return self.headers.get(name)
 
     # @group(Responses)
 
@@ -1013,7 +1015,7 @@ class RequestBody(Flyweight):
         self.contentType = None
         self.contentLength = None
         self._written = 0
-        self._type: RequestBodyType = RequestBodyType.Undefined
+        self._type = RequestBodyType.Undefined
         self._raw = None
         self._value = None
         return self

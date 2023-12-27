@@ -39,7 +39,7 @@ TPubSubHandler = Callable[[str, TPubSubEvent], Optional[bool]]
 
 
 class PubSub:
-    def __init__(self):
+    def __init__(self) -> None:
         self.topics: dict[str, list[TPubSubHandler]] = {}
 
     def pub(self, topic: str, event: TPubSubEvent) -> TPubSubEvent:

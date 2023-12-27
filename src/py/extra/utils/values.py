@@ -41,9 +41,9 @@ def asPrimitive(value: Any, *, currentDepth: int = 0) -> TPrimitive:
             for k, v in value.items()
         }
     elif isinstance(value, datetime) or isinstance(value, date):
-        return tuple(value.timetuple())
+        return list(value.timetuple())
     elif isinstance(value, struct_time):
-        return tuple(value)
+        return list(value)
     elif isgenerator(value):
         return [asPrimitive(_, currentDepth=currentDepth + 1) for _ in value]
     else:

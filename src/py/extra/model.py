@@ -144,7 +144,7 @@ class Application:
         if route:
             handler = route.handler
             assert handler, f"Route has no handler defined: {route}"
-            return handler(request, params)
+            return handler(request, {} if params is True else params if params else {})
         else:
             return self.onRouteNotFound(request)
 

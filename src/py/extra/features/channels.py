@@ -1,11 +1,11 @@
-from typing import TypeVar, Generic, List
+from typing import TypeVar, Generic
 
 T = TypeVar("T")
 
 
 class Channel(Generic[T]):
-    def __init__(self):
-        self._buffer: List[T] = []
+    def __init__(self) -> None:
+        self._buffer: list[T] = []
         self._isOpen = False
 
     @property

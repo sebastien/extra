@@ -170,16 +170,16 @@ async def arun(
     server = await start_server(
         aio_server.request, host, port, backlog=backlog, limit=2**16
     )
-    if sock := server.get_extra_info("socket"):
-        # We'll likely be streaming, so we send keepalives
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-        # We're streaming so we want to reduce latency
-        # <<<Enabling TCP_NODELAY turns off this delay mechanism, which can be
-        # useful in situations where you need low latency and want to minimize
-        # the delay in sending small packets. Real-time applications like
-        # online gaming or video conferencing often benefit from this
-        # option.>>> (GPT4)
-        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, True)
+    # if sock := server.get_extra_info("socket"):
+    #     # We'll likely be streaming, so we send keepalives
+    #     sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    #     # We're streaming so we want to reduce latency
+    #     # <<<Enabling TCP_NODELAY turns off this delay mechanism, which can be
+    #     # useful in situations where you need low latency and want to minimize
+    #     # the delay in sending small packets. Real-time applications like
+    #     # online gaming or video conferencing often benefit from this
+    #     # option.>>> (GPT4)
+    #     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, True)
     socket_name = server.sockets[0].getsockname()
     info(
         "Extra {font_server}AIO{reset} server listening on {font_url}http://{host}:{port}{reset}".format(

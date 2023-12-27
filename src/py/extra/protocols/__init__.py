@@ -91,7 +91,6 @@ class Request(Flyweight):
         self._onClose: Optional[Callable[[Request], None]] = None
 
     def reset(self) -> None:
-        super().reset()
         self.step = RequestStep.Initialized
         self._onClose = None
 
