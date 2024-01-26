@@ -71,6 +71,7 @@ class Route:
         "float": RoutePattern(r"\-?\d*.?\d+", float),
         "file": RoutePattern(r"\w+(.\w+)", str),
         "chunk": RoutePattern(r"[^/^.]+", str),
+        "topics": RoutePattern(r"[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*", lambda _:_.split("/")),
         "path": RoutePattern(r"[^:@]+", str),
         "segment": RoutePattern(r"[^/]+", str),
         "any": RoutePattern(r".+", str),
