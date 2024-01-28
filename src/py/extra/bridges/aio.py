@@ -261,7 +261,7 @@ def run(
                     loop.close()
     try:
         loop.is_running() and loop.run_until_complete(app.stop())
-    except Exception as e:
+    except Exception:
         # FIXME: This does not seem to  be working
         for task in all_tasks(loop=loop):
             task.cancel()

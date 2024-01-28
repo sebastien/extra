@@ -153,7 +153,7 @@ class Logger:
     def error(self, code, detail, **kwargs):
         self.errors += 1
         return self.raw(
-            f"{code}: {detail.format(code=code, **kwargs) if kwargs.get('format') != False else detail}",
+            f"{code}: {detail.format(code=code, **kwargs) if kwargs.get('format') is not False else detail}",
             type="error",
             code=code,
             detail=detail,
