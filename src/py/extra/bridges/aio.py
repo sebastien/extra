@@ -1,3 +1,6 @@
+from typing import Union, Optional, Callable
+from inspect import iscoroutine
+import socket
 from asyncio import (
     StreamReader,
     StreamWriter,
@@ -7,9 +10,6 @@ from asyncio import (
     all_tasks,
     gather,
 )
-from typing import Union, Optional
-from inspect import iscoroutine
-import socket
 from ..model import Application, Service
 from ..bridges import mount
 from ..logging import error, operation, log, info
@@ -74,7 +74,6 @@ class AIOBridge:
             # This is likely an issue with the transport, or maybe the request is bad
             writer.write(BAD_REQUEST)
         else:
-
             # TODO: We process the request, which may very well be a coroutine
             if iscoroutine(r := application.process(request)):
                 response = await r
@@ -210,6 +209,8 @@ def run(
     host: str = HOST,
     port: int = PORT,
     backlog: int = 10_000,
+    condition: Callable | None = None,
+    timeout: float = 10.0,
 ):
     """Runs the given services/application using the embedded AsyncIO HTTP server."""
     loop = get_event_loop()
@@ -233,22 +234,34 @@ def run(
                 reset="",
             )
         )
-        loop.run_forever()
+        if condition:
+
+            async def wait():
+                while True:
+                    await sleep(timeout)
+                    if not condition():
+                        break
+                await app.stop()
+
+            loop.run_until_complete(wait())
+        else:
+            loop.run_until_complete(app.stop())
     except KeyboardInterrupt:
-        pass
+        with operation("Stopping application"):
+            loop.run_until_complete(app.stop())
     if server:
         with operation("Closing server"):
             server.close()
-            try:
-                loop.run_until_complete(server.wait_closed())
-            except KeyboardInterrupt:
-                pass
-            finally:
-                loop.close()
-    # Waits up until the app has finished
+            if loop.is_running():
+                try:
+                    loop.run_until_complete(server.wait_closed())
+                except KeyboardInterrupt:
+                    pass
+                finally:
+                    loop.close()
     try:
-        loop.run_until_complete(app.stop())
-    except Exception:
+        loop.is_running() and loop.run_until_complete(app.stop())
+    except Exception as e:
         # FIXME: This does not seem to  be working
         for task in all_tasks(loop=loop):
             task.cancel()
