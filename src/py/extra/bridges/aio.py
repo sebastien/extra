@@ -245,7 +245,7 @@ def run(
 
             loop.run_until_complete(wait())
         else:
-            loop.run_until_complete(app.stop())
+            loop.run_forever()
     except KeyboardInterrupt:
         with operation("Stopping application"):
             loop.run_until_complete(app.stop())
