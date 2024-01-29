@@ -111,10 +111,6 @@ class Application:
 
     async def start(self) -> "Application":
         self.dispatcher.prepare()
-        print("START Application")
-        for method, routes in self.dispatcher.routes.items():
-            for route in routes:
-                print(f"{method:10s} {route}")
         for i, res in enumerate(
             asyncio.gather(*(_.start() for _ in self.services), return_exceptions=True)
         ):
@@ -126,7 +122,6 @@ class Application:
         return self
 
     async def stop(self) -> "Application":
-        print("STOP Application")
         for i, res in enumerate(
             asyncio.gather(*(_.stop() for _ in self.services), return_exceptions=True)
         ):

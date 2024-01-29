@@ -43,9 +43,14 @@ class PubSub:
         self.topics: dict[str, list[TPubSubHandler]] = {}
 
     def pub(self, topic: str, event: TPubSubEvent) -> TPubSubEvent:
-        if topic in self.topics:
-            for h in self.topics[topic]:
-                h(topic, event)
+        while topic:
+            if topic in self.topics:
+                for h in self.topics[topic]:
+                    h(topic, event)
+            if (i := topic.rfind(".")) >= 0:
+                topic = topic[:i]
+            else:
+                break
         return event
 
     def sub(self, topic: str, handler: TPubSubHandler) -> "PubSub":
@@ -80,11 +85,12 @@ class Logger:
     EFFECTOR_REGISTERED: ClassVar[bool] = False
     INSTANCE: ClassVar[Optional["Logger"]] = None
     FORMAT: ClassVar[dict[str, str]] = {
-        "default": "[{{origin}}]   {message}",
-        "error": "[{{origin}}] ✘ {{message}}",
-        "warning": "[{{origin}}] ! {{message}}",
-        "metric": "[{{origin}}] → {{name}} = {{value}}",
-        "info": "[{{origin}}] » {{message}}",
+        "default": "[{origin}]   {message}",
+        "error": "[{origin}] ✘ {message}",
+        "warning": "[{origin}] ! {message}",
+        "metric": "[{origin}] → {name} = {value}",
+        "info": "[{origin}] » {message}",
+        "log": "[{origin}] ┄ {message}",
     }
 
     @classmethod
@@ -94,7 +100,12 @@ class Logger:
         return cls.INSTANCE
 
     @classmethod
-    def Effector(cls, event):
+    def Effector(cls, topic:str, event, *, default:dict[str,str]={
+            "origin":"∅",
+            "message":"∅",
+            "name":"∅",
+            "value":"∅",
+    }):
         """The effector is what actually outputs messages to the console.
         This can be monkey-patched but the better way to expand is to
         bind a handler to the pub/sub bus.
@@ -103,12 +114,12 @@ class Logger:
         `errors.tsv` and will log `metric` like `{name,value}` to
         `metrics.tsv`.
         """
-        event_type = event.data.get("type")
+        event_type = event.get("type", topic.split(".",1)[0] if "." in topic else topic)
         # NOTE: Unused
         # message = event.data.get("message")
         fmt = cls.FORMAT.get(event_type, cls.FORMAT["default"])
         # This is the user-friendly output.
-        sys.stdout.write(fmt.format(**(event.data)))
+        sys.stdout.write(fmt.format(**(default|event)))
         sys.stdout.write("\n")
         # FIXME: This should be done elsewhere
         # if event_type == "error" and "key" in event.data and "code" in event.data:
