@@ -35,10 +35,10 @@ class Service:
         # TODO: What about the prefix?
         return res
 
-    def __init__(self, name: Optional[str] = None):
+    def __init__(self, name: Optional[str] = None, *, prefix:str|None=None):
         self.name: str = name or self.__class__.__name__
         self.app: Optional[Application] = None
-        self.prefix = self.PREFIX
+        self.prefix = prefix or self.PREFIX
         self._handlers: Optional[list[Handler]] = None
         self.init()
 

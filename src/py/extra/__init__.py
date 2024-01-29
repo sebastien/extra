@@ -9,9 +9,9 @@ from .logging import logger  # NOQA: F401
 from typing import Union, Callable, Type  # NOQA: F401
 
 
-def run(*components: Union[Application, Service], **kwargs) -> Bridge:
+def run(*components: Union[Application, Service, None], **kwargs) -> Bridge:
     """Runs the given components"""
-    return aio_run(*components, **kwargs)
+    return aio_run(*(_ for _ in components if _ is not None), **kwargs)
 
 
 # EOF
