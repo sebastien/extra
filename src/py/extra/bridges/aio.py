@@ -12,7 +12,7 @@ from asyncio import (
 )
 from ..model import Application, Service
 from ..bridges import mount
-from ..logging import error, operation, log, info
+from ..logging import error, exception, operation, log, info
 from ..protocols.http import HTTPRequest, HTTPParser, BAD_REQUEST
 from ..utils.hooks import onException
 from ..utils.config import HOST, PORT
@@ -76,7 +76,12 @@ class AIOBridge:
         else:
             # TODO: We process the request, which may very well be a coroutine
             if iscoroutine(r := application.process(request)):
-                response = await r
+                try:
+                    response = await r
+                except Exception as e:
+                    exception(e)
+                    response = request.fail(str(e).encode("utf8"), status=500)
+
             else:
                 response = r
 

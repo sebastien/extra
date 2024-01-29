@@ -85,12 +85,13 @@ class Logger:
     EFFECTOR_REGISTERED: ClassVar[bool] = False
     INSTANCE: ClassVar[Optional["Logger"]] = None
     FORMAT: ClassVar[dict[str, str]] = {
-        "default": "[{origin}]   {message}",
-        "error": "[{origin}] ✘ {message}",
-        "warning": "[{origin}] ! {message}",
-        "metric": "[{origin}] → {name} = {value}",
-        "info": "[{origin}] » {message}",
-        "log": "[{origin}] ┄ {message}",
+        "default": "[{origin}]   --- {message}",
+        "error": "[{origin}] ✘ ERR {message}",
+        "exception": "[{origin}] ‼ EXC {message}",
+        "warning": "[{origin}] ! WRN {message}",
+        "metric": "[{origin}] → DAT {name} = {value}",
+        "info": "[{origin}] » ... {message}",
+        "log": "[{origin}] ┄ --- {message}",
     }
 
     @classmethod
@@ -120,6 +121,9 @@ class Logger:
         fmt = cls.FORMAT.get(event_type, cls.FORMAT["default"])
         # This is the user-friendly output.
         sys.stdout.write(fmt.format(**(default|event)))
+        if (ctx:=event.get("context")):
+            for l in ctx:
+                sys.stdout.write(f"… {l}\n")
         sys.stdout.write("\n")
         # FIXME: This should be done elsewhere
         # if event_type == "error" and "key" in event.data and "code" in event.data:
@@ -178,9 +182,21 @@ class Logger:
         )
 
     # TODO: This should definitely log and raise the exception
-    def exception(self, message, **kwargs):
+    def exception(self, exception, **kwargs):
         self.exceptions += 1
-        return self.raw(message, type="exception", **kwargs)
+        tb = exception.__traceback__
+        context:list[str] = []
+        while tb:
+            code = tb.tb_frame.f_code
+            context.append(
+                f"... in {code.co_name:15s} at {tb.tb_lineno:4d} in {code.co_filename}",
+            )
+            tb = tb.tb_next
+        data = {
+            "type":exception.__class__.__name__,
+            "context":context
+        }
+        return self.raw(str(exception),**( data | kwargs))
 
     def raw(self, message, **kwargs):
         # We make sure that there's an effector registered
@@ -217,6 +233,7 @@ def logger(path: str):
     return Logger(path)
 
 
+
 def info(message, **kwargs):
     return Logger.Instance().info(message, **kwargs)
 
@@ -236,6 +253,8 @@ def warning(message, **kwargs):
 def error(code: str, detail: str, **kwargs):
     return Logger.Instance().error(code, detail, **kwargs)
 
+def exception(exception, **kwargs):
+    return Logger.Instance().exception(exception, **kwargs)
 
 def metric(name, value, **kwargs):
     return Logger.Instance().metric(name, value)
