@@ -53,6 +53,8 @@ class Route:
     `{name:type}`. Routes can have priorities and be assigned handlers,
     they are then registered in the dispatcher to match requests."""
 
+    RE_PATTERN_NAME: ClassVar[Pattern] =re.compile("^[A-Za-z]+$")
+
     RE_TEMPLATE: ClassVar[Pattern] = re.compile(
         r"\{(?P<name>[\w][_\w\d]*)(:(?P<type>[^}]+))?\}"
     )
@@ -112,10 +114,17 @@ class Route:
             name: str = match.group(1)
             pattern: str = (match.group(3) or name).lower()
             if pattern not in cls.PATTERNS:
-                raise ValueError(
-                    f"Route pattern '{pattern}' is not registered, pick one of: {', '.join(sorted(cls.PATTERNS.keys()))}"
-                )
-            chunks.append(ParameterChunk(name, cls.PATTERNS[pattern]))
+                if cls.RE_PATTERN_NAME.match(pattern):
+                    raise ValueError(
+                        f"Route pattern '{pattern}' is not registered, pick one of: {', '.join(sorted(cls.PATTERNS.keys()))}"
+                    )
+                else:
+                    # This creates a pattern in case the pattern is not a named
+                    # pattern.
+                    pat = RoutePattern(pattern, str)
+            else:
+                pat = cls.PATTERNS[pattern]
+            chunks.append(ParameterChunk(name, pat))
             offset = match.end()
         chunks.append(TextChunk(expression[offset:]))
         return chunks
