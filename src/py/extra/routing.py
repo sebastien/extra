@@ -1,5 +1,6 @@
 from typing import (
     Optional,
+    Coroutine,
     Callable,
     Any,
     Iterable,
@@ -12,8 +13,9 @@ from typing import (
     TypeVar,
 )
 from .protocols.http import HTTPRequest, HTTPResponse
-from .decorators import EXTRA
+from .decorators import Transform, EXTRA
 from .logging import logger
+from inspect import iscoroutine
 
 # TODO: Support re2, orjson
 import re
@@ -344,6 +346,12 @@ class Handler:
     def Has(cls, value):
         return hasattr(value, EXTRA.ON)
 
+    @classmethod
+    def Attr(cls, value, key:str) -> Any:
+        return getattr(value, key) if hasattr(value, key) else None
+
+
+
     # FIXME: Handlers should compose transforms and predicate, right now it's
     # passed as attributes, but it should not really be a stack of transforms.
     @classmethod
@@ -351,14 +359,12 @@ class Handler:
         return (
             Handler(
                 functor=value,
-                methods=getattr(value, EXTRA.ON),
-                priority=getattr(value, EXTRA.ON_PRIORITY),
-                expose=getattr(value, EXTRA.EXPOSE)
-                if hasattr(value, EXTRA.EXPOSE)
-                else None,
-                contentType=getattr(value, EXTRA.EXPOSE_CONTENT_TYPE)
-                if hasattr(value, EXTRA.EXPOSE_CONTENT_TYPE)
-                else None,
+                methods=cls.Attr(value, EXTRA.ON),
+                priority=cls.Attr(value, EXTRA.ON_PRIORITY),
+                expose=cls.Attr(value, EXTRA.EXPOSE),
+                contentType=cls.Attr(value, EXTRA.EXPOSE_CONTENT_TYPE),
+                pre=cls.Attr(value, EXTRA.PRE),
+                post=cls.Attr(value, EXTRA.POST),
             )
             if cls.Has(value)
             else None
@@ -371,6 +377,8 @@ class Handler:
         priority: int = 0,
         expose: bool = False,
         contentType=None,
+        pre:list[Transform]|None=None,
+        post:list[Transform]|None=None,
     ):
         self.functor = functor
         # This extracts and noramlizes the methods
@@ -384,18 +392,37 @@ class Handler:
         self.contentType = (
             bytes(contentType, "utf8") if isinstance(contentType, str) else contentType
         )
+        self.pre:list[Transform]|None=pre
+        self.post:list[Transform]|None=post
 
     # NOTE: For now we only do HTTP Requests, we'll see if we can generalise.
-    def __call__(self, request: HTTPRequest, params: dict[str, Any]) -> HTTPResponse:
+    def __call__(self, request: HTTPRequest, params: dict[str, Any]) -> HTTPResponse|Coroutine[Any,HTTPResponse,Any]:
+        if self.pre:
+            # TODO
+            pass
         if self.expose:
             # NOTE: This pattern is hard to optimise, maybe we could do something
             # better, like code-generated dispatcher.
             value: Any = self.functor(**params)
             # The `respond` method will take care of handling the different
             # types of responses there.
-            return request.returns(value, self.contentType or b"application/json")
+            response = request.returns(value, self.contentType or b"application/json")
         else:
-            return self.functor(request, **params)
+            response = self.functor(request, **params)
+        if self.post:
+            if iscoroutine(response):
+                async def postprocess(request, response, transforms):
+                    r = await response
+                    for _ in transforms:
+                        _.transform(request, r, *_.args, **_.kwargs)
+                    return r
+                return postprocess(request, response, self.post)
+
+            else:
+                if self.post:
+                    for t in self.post:
+                        t.transform(request, response, *t.args, **t.kwargs)
+        return response
 
     def __repr__(self):
         methods = " ".join(f'({k} "{v}")' for k, v in self.methods)

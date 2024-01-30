@@ -245,7 +245,10 @@ class Response(Flyweight):
         raise NotImplementedError
 
     def setHeader(self, name: bytes, value: bytes) -> "Response":
-        raise NotImplementedError
+        if not self.headers:
+            self.headers = Headers()
+        self.headers.set(name, value)
+        return self
 
     def setHeaders(self, headers: Optional[dict[bytes, bytes]] = None):
         if headers:

@@ -1,7 +1,7 @@
-from .routing import Handler, Dispatcher, Route
+from .routing import Transform, Handler, Dispatcher, Route
 from .protocols.http import HTTPRequest, HTTPResponse
 from .logging import Logger
-from typing import Optional, Iterable, ClassVar, Any
+from typing import Optional, Iterable, ClassVar,   Callable, NamedTuple, Any
 import sys
 import importlib
 import asyncio
@@ -13,6 +13,7 @@ logging: Logger = Logger.Instance()
 # SERVICE
 #
 # -----------------------------------------------------------------------------
+
 
 
 class Service:
