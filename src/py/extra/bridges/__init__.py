@@ -2,6 +2,7 @@ from typing import Union, NamedTuple, Optional, Iterable
 from io import BytesIO
 from ..model import Service, Application
 from ..protocols.http import HTTPRequest, HTTPResponse, HTTPParser
+from ..config import HOST, PORT
 
 
 class Bridge:
@@ -25,9 +26,11 @@ class Bridge:
         else:
             return self.requestFromStream(request)
 
-    def requestFromBytes(self, data: bytes) -> HTTPResponse:
+    def requestFromBytes(
+        self, data: bytes, *, host: str = HOST, port: int = PORT
+    ) -> HTTPResponse:
         # FIXME: Port should be sourced from somewhere else
-        http_parser = HTTPParser("0.0.0.0", 80, {})
+        http_parser = HTTPParser(host, port, {})
         _ = http_parser.feed(data)
         request: HTTPRequest = HTTPRequest.Create().init(
             method=http_parser.method,

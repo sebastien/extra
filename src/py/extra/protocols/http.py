@@ -331,7 +331,8 @@ class HTTPParser:
     async def read(self, size: Optional[int] = None) -> Optional[bytes]:
         """Reads `size` bytes from the context's input stream, using
         whatever data is left from the previous data feeding."""
-        assert size != 0
+        if size == 0:
+            return None
         rest: Optional[bytes] = self.rest
         # This method is a little bit contrived because we need to test
         # for all the cases. Also, this needs to be relatively fast as
@@ -1297,14 +1298,16 @@ class Decode:
                 headers = None
             elif state == "h":
                 # The header comes next
-                assert is_new
+                if not is_new:
+                    raise RuntimeError("State should be is_new")
                 is_new = False
                 if data:
                     headers = Headers.FromItems(data.items())
                 else:
                     headers = None
             elif state == "d":
-                assert not is_new
+                if is_new:
+                    raise Runtimne("State should not be is_new")
                 if not spool:
                     spool = tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_SIZE)
                 spool.write(data)

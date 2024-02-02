@@ -1,6 +1,6 @@
 from typing import Union
 import json
-import pickle
+import pickle  # nosec: B403, B301
 import os
 import shutil
 import gzip
@@ -23,12 +23,12 @@ MIME_TYPES = dict(
 
 WRITERS = {
     ".json": ("wt", lambda v, f: json.dump(v, f)),
-    ".pickle": ("wb", lambda v, f: pickle.dump(v, f)),
+    ".pickle": ("wb", lambda v, f: pickle.dump(v, f)),  # nosec: B301
 }
 
 READERS = {
     ".json": ("rb", lambda f: json.load(f)),
-    ".pickle": ("rb", lambda f: pickle.load(f)),
+    ".pickle": ("rb", lambda f: pickle.load(f)),  # nosec: B301
     ".log": ("rb", lambda f: f.readlines()),
     ".txt": ("rb", lambda f: f.read()),
 }

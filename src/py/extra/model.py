@@ -139,26 +139,24 @@ class Application:
         )
         if route:
             handler = route.handler
-            assert handler, f"Route has no handler defined: {route}"
+            if not handler:
+                raise RuntimeError(f"Route has no handler defined: {route}")
             return handler(request, {} if params is True else params if params else {})
         else:
             return self.onRouteNotFound(request)
 
     def mount(self, service: Service, prefix: Optional[str] = None):
-        assert (
-            not service.isMounted
-        ), f"Cannot mount service, it is already mounted: {service}"
+        if  service.isMounted:
+            raise RuntimeError(f"Cannot mount service, it is already mounted: {service}")
         for handler in service.handlers:
             self.dispatcher.register(handler, prefix or service.prefix)
         return service
 
     def unmount(self, service: Service):
-        assert (
-            service.isMounted
-        ), f"Cannot unmount service, it is not already mounted: {service}"
-        assert (
-            service.app != self
-        ), f"Cannot unmount service, it is not mounted in this applicaition: {service}"
+        if not  service.isMounted:
+            raise RuntimeError(f"Cannot unmount service, it is not already mounted: {service}")
+        if service.app == self:
+            raise RuntimeError(f"Cannot unmount service, it is not mounted in this application: {service}")
         service.app = self
         return service
 
