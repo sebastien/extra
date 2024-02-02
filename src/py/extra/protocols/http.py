@@ -645,20 +645,20 @@ class HTTPRequest(Request):
         self.headers["Content-Length"] = str(length)
         return self
 
-    # @property
-    # def contentType(self) -> Optional[str]:
-    #     return self.headers.get("ContentType", None)
+    @property
+    def contentType(self) -> Optional[str]:
+        return self.headers.get("ContentType", None)
 
-    # def setContentType(self, value: Union[str, bytes]) -> "HTTPRequest":
-    #     self.headers.set(ContentType, asBytes(value))
-    #     return self
+    def setContentType(self, value: Union[str, bytes]) -> "HTTPRequest":
+        self.headers.set(ContentType, asBytes(value))
+        return self
 
-    # def setHeader(self, name: bytes, value: bytes) -> "HTTPRequest":
-    #     self.headers.set(name, value)
-    #     return self
+    def setHeader(self, name: bytes, value: bytes) -> "HTTPRequest":
+        self.headers.set(name, value)
+        return self
 
-    # def getHeader(self, name: bytes) -> Optional[bytes]:
-    #     return self.headers.get(name)
+    def getHeader(self, name: bytes) -> Optional[bytes]:
+        return self.headers.get(name)
 
     # @group(Responses)
     def fail(

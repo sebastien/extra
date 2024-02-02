@@ -4,6 +4,7 @@ from typing import Union, Optional, Callable
 from ..decorators import on
 from ..model import Service
 from ..protocols.http import HTTPRequest, HTTPResponse
+from ..features.cors import cors
 from ..utils.htmpl import H, html
 import os
 
@@ -114,7 +115,16 @@ class FileService(Service):
         else:
             return request.respond("OK")
 
-    # TODO: Support head
+    @cors
+    @on(HEAD=("/", "/{path:any}"))
+    def head(self, request: HTTPRequest, path: str):
+        local_path = self.resolvePath(path)
+        if not (local_path and self.canRead(request, local_path)):
+            return request.notAuthorized(f"Not authorized to access path: {path}")
+        else:
+            return request.respond("")
+
+    @cors
     @on(GET=("/", "/{path:any}"))
     def read(self, request: HTTPRequest, path: str = "."):
         local_path = self.resolvePath(path)

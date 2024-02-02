@@ -2,7 +2,7 @@ from typing import Union, NamedTuple, Optional, Iterable
 from io import BytesIO
 from ..model import Service, Application
 from ..protocols.http import HTTPRequest, HTTPResponse, HTTPParser
-from ..config import HOST, PORT
+from ..utils.config import HOST, PORT
 
 
 class Bridge:
