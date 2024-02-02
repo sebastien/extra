@@ -1,7 +1,7 @@
-from .routing import Handler, Dispatcher, Route
+from .routing import Transform, Handler, Dispatcher, Route
 from .protocols.http import HTTPRequest, HTTPResponse
 from .logging import Logger
-from typing import Optional, Iterable, ClassVar, Any
+from typing import Optional, Iterable, ClassVar,   Callable, NamedTuple, Any
 import sys
 import importlib
 import asyncio
@@ -13,6 +13,7 @@ logging: Logger = Logger.Instance()
 # SERVICE
 #
 # -----------------------------------------------------------------------------
+
 
 
 class Service:
@@ -35,10 +36,10 @@ class Service:
         # TODO: What about the prefix?
         return res
 
-    def __init__(self, name: Optional[str] = None):
+    def __init__(self, name: Optional[str] = None, *, prefix:str|None=None):
         self.name: str = name or self.__class__.__name__
         self.app: Optional[Application] = None
-        self.prefix = self.PREFIX
+        self.prefix = prefix or self.PREFIX
         self._handlers: Optional[list[Handler]] = None
         self.init()
 
@@ -111,10 +112,6 @@ class Application:
 
     async def start(self) -> "Application":
         self.dispatcher.prepare()
-        print("START Application")
-        for method, routes in self.dispatcher.routes.items():
-            for route in routes:
-                print(f"{method:10s} {route}")
         for i, res in enumerate(
             asyncio.gather(*(_.start() for _ in self.services), return_exceptions=True)
         ):
@@ -126,7 +123,6 @@ class Application:
         return self
 
     async def stop(self) -> "Application":
-        print("STOP Application")
         for i, res in enumerate(
             asyncio.gather(*(_.stop() for _ in self.services), return_exceptions=True)
         ):

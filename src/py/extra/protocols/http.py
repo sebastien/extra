@@ -1300,7 +1300,6 @@ class Decode:
                 assert is_new
                 is_new = False
                 if data:
-                    print("HEADERS", data)
                     headers = Headers.FromItems(data.items())
                 else:
                     headers = None

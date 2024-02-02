@@ -1,5 +1,9 @@
-from typing import ClassVar, Union
+from typing import ClassVar, Union, Callable, NamedTuple, Any
 
+class Transform(NamedTuple):
+    transform:Callable
+    args:tuple[Any,...]
+    kwargs:dict[str,Any]
 
 class EXTRA:
     ON: ClassVar[str] = "_extra_on"
@@ -9,6 +13,8 @@ class EXTRA:
     EXPOSE_RAW: ClassVar[str] = "_extra_expose_raw"
     EXPOSE_COMPRESS: ClassVar[str] = "_extra_expose_compress"
     EXPOSE_CONTENT_TYPE: ClassVar[str] = "_extra_expose_content_type"
+    POST: ClassVar[str] = "_extra_post"
+    PRE: ClassVar[str] = "_extra_pre"
     WHEN: ClassVar[str] = "_extra_when"
 
 
@@ -100,6 +106,25 @@ def when(*predicates):
     def decorator(function):
         v = function.__dict__.setdefault(EXTRA.WHEN, [])
         v.extend(predicates)
+        return function
+
+    return decorator
+
+
+def pre(transform):
+
+    def decorator(function, *args, **kwargs):
+        v = function.__dict__.setdefault(EXTRA.PRE, [])
+        v.append(Transform(transform, args, kwargs))
+        return function
+
+    return decorator
+
+def post(transform):
+
+    def decorator(function, *args, **kwargs):
+        v = function.__dict__.setdefault(EXTRA.POST, [])
+        v.append(Transform(transform, args, kwargs))
         return function
 
     return decorator
