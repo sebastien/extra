@@ -53,7 +53,7 @@ class Route:
     `{name:type}`. Routes can have priorities and be assigned handlers,
     they are then registered in the dispatcher to match requests."""
 
-    RE_PATTERN_NAME: ClassVar[Pattern] =re.compile("^[A-Za-z]+$")
+    RE_PATTERN_NAME: ClassVar[Pattern] = re.compile("^[A-Za-z]+$")
 
     RE_TEMPLATE: ClassVar[Pattern] = re.compile(
         r"\{(?P<name>[\w][_\w\d]*)(:(?P<type>[^}]+))?\}"
@@ -75,7 +75,9 @@ class Route:
         "float": RoutePattern(r"\-?\d*.?\d+", float),
         "file": RoutePattern(r"\w+(.\w+)", str),
         "chunk": RoutePattern(r"[^/^.]+", str),
-        "topics": RoutePattern(r"[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*", lambda _:_.split("/")),
+        "topics": RoutePattern(
+            r"[A-Za-z0-9_-\.]+(/[A-Za-z0-9_-\.]+)*", lambda _: _.split("/")
+        ),
         "path": RoutePattern(r"[^:@]+", str),
         "segment": RoutePattern(r"[^/]+", str),
         "any": RoutePattern(r".+", str),
@@ -178,9 +180,11 @@ class Route:
         matches = self.regexp.match(path)
         return (
             {
-                k: e(matches.group(k))
-                if (e := v.pattern.extractor)
-                else matches.group(k)
+                k: (
+                    e(matches.group(k))
+                    if (e := v.pattern.extractor)
+                    else matches.group(k)
+                )
                 for k, v in self.params.items()
             }
             if matches
@@ -356,10 +360,8 @@ class Handler:
         return hasattr(value, EXTRA.ON)
 
     @classmethod
-    def Attr(cls, value, key:str) -> Any:
+    def Attr(cls, value, key: str) -> Any:
         return getattr(value, key) if hasattr(value, key) else None
-
-
 
     # FIXME: Handlers should compose transforms and predicate, right now it's
     # passed as attributes, but it should not really be a stack of transforms.
@@ -386,11 +388,11 @@ class Handler:
         priority: int = 0,
         expose: bool = False,
         contentType=None,
-        pre:list[Transform]|None=None,
-        post:list[Transform]|None=None,
+        pre: list[Transform] | None = None,
+        post: list[Transform] | None = None,
     ):
         self.functor = functor
-        # This extracts and noramlizes the methods
+        # This extracts and normalizes the methods
         # NOTE: This may have been done at the decoartor level
         self.methods: dict[str, list[str]] = {}
         for method, path in methods:
@@ -401,11 +403,13 @@ class Handler:
         self.contentType = (
             bytes(contentType, "utf8") if isinstance(contentType, str) else contentType
         )
-        self.pre:list[Transform]|None=pre
-        self.post:list[Transform]|None=post
+        self.pre: list[Transform] | None = pre
+        self.post: list[Transform] | None = post
 
     # NOTE: For now we only do HTTP Requests, we'll see if we can generalise.
-    def __call__(self, request: HTTPRequest, params: dict[str, Any]) -> HTTPResponse|Coroutine[Any,HTTPResponse,Any]:
+    def __call__(
+        self, request: HTTPRequest, params: dict[str, Any]
+    ) -> HTTPResponse | Coroutine[Any, HTTPResponse, Any]:
         if self.pre:
             # TODO
             pass
@@ -420,11 +424,13 @@ class Handler:
             response = self.functor(request, **params)
         if self.post:
             if iscoroutine(response):
+
                 async def postprocess(request, response, transforms):
                     r = await response
                     for _ in transforms:
                         _.transform(request, r, *_.args, **_.kwargs)
                     return r
+
                 return postprocess(request, response, self.post)
 
             else:
@@ -447,7 +453,7 @@ class Handler:
 
 # TODO: The dispatcher should use the Routes instead
 class Dispatcher:
-    """A dispatcher registers handlers that respond to HTTP methhods
+    """A dispatcher registers handlers that respond to HTTP methods
     on a given path/URI."""
 
     def __init__(self) -> None:
@@ -461,7 +467,9 @@ class Dispatcher:
                 path = f"{prefix}{path}" if prefix else path
                 path = f"/{path}" if not path.startswith("/") else path
                 route: Route = Route(path, handler)
-                logging.info(f"Registered route {','.join(handler.methods.keys())}: {path}")
+                logging.info(
+                    f"Registered route {','.join(handler.methods.keys())}: {path}"
+                )
                 self.routes.setdefault(method, []).append(route)
                 self.isPrepared = False
         return self
