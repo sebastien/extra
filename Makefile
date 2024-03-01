@@ -38,7 +38,10 @@ install:
 		ln -sfr $$file "$(PATH_LOCAL_BIN)/$$(basename $$file)"
 		mkdir -p "$(PATH_LOCAL_BIN)"
 	done
-	if [ -s "$(PATH_LOCAL_PY)" ]; then
+	if [ ! -e "$(PATH_LOCAL_PY)" ]; then
+		mkdir -p "$(PATH_LOCAL_PY)"
+	fi
+	if [ -d "$(PATH_LOCAL_PY)" ]; then
 		for module in $(PYTHON_MODULES); do
 			echo "Instaling $(PATH_LOCAL_PY)/$$module"
 			ln -sfr src/py/$$module "$(PATH_LOCAL_PY)"/$$module
