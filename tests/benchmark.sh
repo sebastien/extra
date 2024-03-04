@@ -14,6 +14,10 @@ function requires() {
 # TODO: We should have the option of  running the benchmark in client or server mode maybe?
 echo "=== Extra benchmark"
 requires ab python readlink
+if [ -z "$PYTHON" ]; then
+	PYTHON=python
+fi
+echo "--- Using Python: $PYTHON"
 BASE=$(dirname $(readlink -f $0))
 LOG=$(mktemp --suffix .log benchmark-log-XXX)
 SUMMARY=
@@ -27,10 +31,12 @@ for TEST in $TESTS; do
 	EXT="$(echo -n $TEST | tail -c3)"
 	case $EXT in
 	.py)
-		python $TEST 2>$LOG &
+		echo ... $PYTHON $TEST
+		$PYTHON $TEST 2>$LOG &
 		CPID=$!
 		;;
 	.sh)
+		echo ... bash $TEST
 		bash $TEST 2>$LOG &
 		CPID=$!
 		;;

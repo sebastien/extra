@@ -1325,7 +1325,9 @@ class Decode:
             elif state == "h":
                 # The header comes next
                 if not is_new:
-                    raise RuntimeError("State should be is_new")
+                    raise RuntimeError(
+                        f"Multipart decode state should be is_new, got {state}"
+                    )
                 is_new = False
                 if data:
                     headers = Headers.FromItems(data.items())
@@ -1333,12 +1335,14 @@ class Decode:
                     headers = None
             elif state == "d":
                 if is_new:
-                    raise Runtimne("State should not be is_new")
+                    raise RuntimeError(
+                        f"Multipart decode state state should not be is_new, got: {state}"
+                    )
                 if not spool:
                     spool = tempfile.SpooledTemporaryFile(max_size=SPOOL_MAX_SIZE)
                 spool.write(data)
             else:
-                raise Exception("State not recognized: {0}".format(state))
+                raise ValueError("State not recognized: {0}".format(state))
         if spool:
             spool.seek(0)
             yield (headers, spool)
