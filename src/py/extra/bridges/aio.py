@@ -1,6 +1,5 @@
 from typing import Union, Optional, Callable
 from inspect import iscoroutine
-import socket
 from asyncio import (
     StreamReader,
     StreamWriter,

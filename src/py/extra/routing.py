@@ -13,7 +13,7 @@ from typing import (
     TypeVar,
 )
 from .protocols.http import HTTPRequest, HTTPResponse, HTTPRequestError
-from .decorators import Transform, EXTRA
+from .decorators import Transform, Extra
 from .logging import logger
 from inspect import iscoroutine
 
@@ -357,25 +357,43 @@ class Handler:
 
     @classmethod
     def Has(cls, value):
-        return hasattr(value, EXTRA.ON)
+        return hasattr(value, Extra.ON)
 
     @classmethod
-    def Attr(cls, value, key: str) -> Any:
-        return getattr(value, key) if hasattr(value, key) else None
+    def Attr(
+        cls, value, key: str, extra: dict | None = None, *, merge: bool = False
+    ) -> Any:
+        extra_value = extra[key] if extra and key in extra else None
+        if hasattr(value, key):
+            v = getattr(value, key)
+            # If we have a matching extra value, and we have that to
+            # merge, then we merge it.
+            if extra_value and merge:
+                if type(extra_value) is type(v):
+                    if isinstance(v, dict):
+                        v = {} | extra_value | v
+                    elif isinstance(v, list):
+                        v = extra_value + v
+                    else:
+                        # We don't change anything
+                        pass
+            return v
+        else:
+            return extra_value
 
     # FIXME: Handlers should compose transforms and predicate, right now it's
     # passed as attributes, but it should not really be a stack of transforms.
     @classmethod
-    def Get(cls, value):
+    def Get(cls, value, extra: dict | None = None):
         return (
             Handler(
                 functor=value,
-                methods=cls.Attr(value, EXTRA.ON),
-                priority=cls.Attr(value, EXTRA.ON_PRIORITY),
-                expose=cls.Attr(value, EXTRA.EXPOSE),
-                contentType=cls.Attr(value, EXTRA.EXPOSE_CONTENT_TYPE),
-                pre=cls.Attr(value, EXTRA.PRE),
-                post=cls.Attr(value, EXTRA.POST),
+                methods=cls.Attr(value, Extra.ON),
+                expose=cls.Attr(value, Extra.EXPOSE),
+                priority=cls.Attr(value, Extra.ON_PRIORITY, extra),
+                contentType=cls.Attr(value, Extra.EXPOSE_CONTENT_TYPE, extra),
+                pre=cls.Attr(value, Extra.PRE, extra, merge=True),
+                post=cls.Attr(value, Extra.POST, extra, merge=True),
             )
             if cls.Has(value)
             else None
@@ -411,8 +429,17 @@ class Handler:
         self, request: HTTPRequest, params: dict[str, Any]
     ) -> HTTPResponse | Coroutine[Any, HTTPResponse, Any]:
         if self.pre:
-            # TODO
-            pass
+            for i, t in enumerate(self.pre):
+                try:
+                    res = t.transform(request, params)
+                except HTTPRequestError as error:
+                    return request.respondError(error)
+                if isinstance(res, HTTPResponse):
+                    return res
+                elif isinstance(res, HTTPRequestError):
+                    return request.respondError(res)
+                elif res is False:
+                    return request.fail(f"Precondition {1} failed")
         try:
             if self.expose:
                 # NOTE: This pattern is hard to optimise, maybe we could do something
@@ -427,12 +454,7 @@ class Handler:
         except HTTPRequestError as error:
             # The `respond` method will take care of handling the different
             # types of responses there.
-            response = request.respond(
-                value=error.payload or error.message,
-                contentType=error.contentType or b"text/plain; chartset=UTF8",
-                status=error.status or 400,
-            )
-
+            response = request.respondError(error)
         if self.post:
             if iscoroutine(response):
 
@@ -451,8 +473,19 @@ class Handler:
         return response
 
     def __repr__(self):
-        methods = " ".join(f'({k} "{v}")' for k, v in self.methods)
-        return f"(Handler {self.priority} ({methods}) '{self.functor}' {' :expose' if self.expose else ''})"
+        methods = " ".join(
+            f'({k} {" ".join(repr(_) for _ in v)})' for k, v in self.methods.items()
+        )
+        attrs = []
+        if self.expose:
+            attrs.append(":expose")
+        if self.pre:
+            attrs.append(f":pre({len(self.pre)})")
+        if self.post:
+            attrs.append(f":post({len(self.post)})")
+        return (
+            f"(Handler {self.priority} ({methods}) '{self.functor}' {' '.join(attrs)})"
+        )
 
 
 # -----------------------------------------------------------------------------

@@ -1,7 +1,8 @@
-from .routing import Transform, Handler, Dispatcher, Route
+from .routing import Handler, Dispatcher, Route
 from .protocols.http import HTTPRequest, HTTPResponse
+from .decorators import Extra
 from .logging import Logger
-from typing import Optional, Iterable, ClassVar,   Callable, NamedTuple, Any
+from typing import Optional, Iterable, ClassVar, Any
 import sys
 import importlib
 import asyncio
@@ -13,7 +14,6 @@ logging: Logger = Logger.Instance()
 # SERVICE
 #
 # -----------------------------------------------------------------------------
-
 
 
 class Service:
@@ -36,7 +36,7 @@ class Service:
         # TODO: What about the prefix?
         return res
 
-    def __init__(self, name: Optional[str] = None, *, prefix:str|None=None):
+    def __init__(self, name: Optional[str] = None, *, prefix: str | None = None):
         self.name: str = name or self.__class__.__name__
         self.app: Optional[Application] = None
         self.prefix = prefix or self.PREFIX
@@ -64,7 +64,7 @@ class Service:
 
     def iterHandlers(self) -> Iterable[Handler]:
         for value in (getattr(self, _) for _ in dir(self) if _ not in self.NO_HANDLER):
-            handler = Handler.Get(value)
+            handler = Handler.Get(value, extra=Extra.Meta(self.__class__))
             if handler:
                 yield handler
 
@@ -146,17 +146,23 @@ class Application:
             return self.onRouteNotFound(request)
 
     def mount(self, service: Service, prefix: Optional[str] = None):
-        if  service.isMounted:
-            raise RuntimeError(f"Cannot mount service, it is already mounted: {service}")
+        if service.isMounted:
+            raise RuntimeError(
+                f"Cannot mount service, it is already mounted: {service}"
+            )
         for handler in service.handlers:
             self.dispatcher.register(handler, prefix or service.prefix)
         return service
 
     def unmount(self, service: Service):
-        if not  service.isMounted:
-            raise RuntimeError(f"Cannot unmount service, it is not already mounted: {service}")
+        if not service.isMounted:
+            raise RuntimeError(
+                f"Cannot unmount service, it is not already mounted: {service}"
+            )
         if service.app == self:
-            raise RuntimeError(f"Cannot unmount service, it is not mounted in this application: {service}")
+            raise RuntimeError(
+                f"Cannot unmount service, it is not mounted in this application: {service}"
+            )
         service.app = self
         return service
 

@@ -3,7 +3,6 @@ from typing import (
     Optional,
     Union,
     ClassVar,
-    NamedTuple,
     BinaryIO,
     Iterable,
     Iterator,
@@ -26,7 +25,7 @@ from ..utils.values import asJSON, TPrimitive
 from pathlib import Path
 from tempfile import SpooledTemporaryFile
 from urllib.parse import parse_qs
-from asyncio import StreamReader, wait_for, sleep
+from asyncio import StreamReader, wait_for
 from asyncio.exceptions import TimeoutError
 from io import BytesIO
 from enum import Enum
@@ -555,12 +554,12 @@ class HTTPRequest(Request):
     def param(self, name: str, default: Any = None) -> Any:
         return self.params.get(name, default)
 
-    def reset(self):
+    def reset(self) -> None:
         super().reset()
         # NOTE: We don't clear the headers, we'll re-assign on init
         self._body = self._body.reset() if self._body else None
         self._params = None
-        return self
+        return None
 
     # @group(Loading)
 
@@ -636,7 +635,7 @@ class HTTPRequest(Request):
         return self.body.raw if self.body.isLoaded else None
 
     @property
-    def data(self) -> bytes:
+    def data(self) -> bytes | None:
         return self.body.raw
 
     @property
@@ -720,6 +719,16 @@ class HTTPRequest(Request):
     ) -> "HTTPResponse":
         return self.respond(
             value=value, status=status, contentType=b"text/html; charset=utf-8"
+        )
+
+    def respondError(
+        self,
+        error: HTTPRequestError,
+    ) -> "HTTPResponse":
+        return self.respond(
+            value=error.payload or error.message,
+            contentType=error.contentType or b"text/plain; chartset=UTF8",
+            status=error.status or 400,
         )
 
     def respondText(
