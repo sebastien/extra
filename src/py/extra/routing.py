@@ -12,7 +12,7 @@ from typing import (
     ClassVar,
     TypeVar,
 )
-from .protocols.http import HTTPRequest, HTTPResponse
+from .protocols.http import HTTPRequest, HTTPResponse, HTTPRequestError
 from .decorators import Transform, EXTRA
 from .logging import logger
 from inspect import iscoroutine
@@ -413,15 +413,26 @@ class Handler:
         if self.pre:
             # TODO
             pass
-        if self.expose:
-            # NOTE: This pattern is hard to optimise, maybe we could do something
-            # better, like code-generated dispatcher.
-            value: Any = self.functor(**params)
+        try:
+            if self.expose:
+                # NOTE: This pattern is hard to optimise, maybe we could do something
+                # better, like code-generated dispatcher.
+                value: Any = self.functor(**params)
+                response = request.returns(
+                    value, self.contentType or b"application/json"
+                )
+            # TODO: Maybe we should handle the exception here and return an internal server error
+            else:
+                response = self.functor(request, **params)
+        except HTTPRequestError as error:
             # The `respond` method will take care of handling the different
             # types of responses there.
-            response = request.returns(value, self.contentType or b"application/json")
-        else:
-            response = self.functor(request, **params)
+            response = request.respond(
+                value=error.payload or error.message,
+                contentType=error.contentType or b"text/plain; chartset=UTF8",
+                status=error.status or 400,
+            )
+
         if self.post:
             if iscoroutine(response):
 

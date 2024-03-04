@@ -1,6 +1,6 @@
 from .routing import Route  # NOQA: F401
 from .protocols import Request, Response  # NOQA: F401
-from .protocols.http import HTTPRequest, HTTPResponse  # NOQA: F401
+from .protocols.http import HTTPRequest, HTTPRequestError, HTTPResponse  # NOQA: F401
 from .model import Service, Application
 from .decorators import on, expose  # NOQA: F401
 from .bridges import Bridge

@@ -3,6 +3,7 @@ from typing import (
     Optional,
     Union,
     ClassVar,
+    NamedTuple,
     BinaryIO,
     Iterable,
     Iterator,
@@ -21,7 +22,7 @@ from ..protocols import (
     asBytes,
 )
 from ..utils.files import contentType as guessContentType
-from ..utils.values import asJSON
+from ..utils.values import asJSON, TPrimitive
 from pathlib import Path
 from tempfile import SpooledTemporaryFile
 from urllib.parse import parse_qs
@@ -80,6 +81,21 @@ Content-Length: 0\r
 # @property
 # def compression( self ):
 #     pass
+
+
+class HTTPRequestError(Exception):
+    def __init__(
+        self,
+        message: str,
+        status: int | None = None,
+        contentType: bytes | None = None,
+        payload: TPrimitive | bytes | None = None,
+    ):
+        super().__init__(message)
+        self.message: str = message
+        self.status: int | None = status
+        self.contentType: bytes | None = contentType
+        self.payload: TPrimitive | bytes | None = payload
 
 
 class HTTPParserStep(Enum):
@@ -159,7 +175,7 @@ class HTTPParser:
         end_offset = len(data) if end is None else len(data) + end if end < 0 else end
         offset: int = start
         while offset < end_offset:
-            # The next semicolumn is the next separator
+            # The next semicolon is the next separator
             field_end: int = data.find(b";", offset)
             if field_end == -1:
                 field_end = end_offset
@@ -666,11 +682,12 @@ class HTTPRequest(Request):
         message: Optional[str] = None,
         *,
         status: int = 400,
+        contentType: bytes = b"text/plain; charset=utf-8",
     ) -> "HTTPResponse":
         return self.respond(
             value=message or b"",
             status=status,
-            contentType=b"text/plain; charset=utf-8",
+            contentType=contentType,
         )
 
     def returns(
@@ -813,7 +830,7 @@ class HTTPRequest(Request):
         if has_range or etag:
             # We don't use the content-type for ETag as we don't want to
             # have to read the whole file, that would be too slow.
-            # NOTE: ETag is indepdent on the range and affect the file is a whole
+            # NOTE: ETag is independent on the range and affect the file is a whole
             etag_data = asBytes(f"{path.absolute()}:{last_modified or ''}")
             headers.set(b"ETag", asBytes(f'"{hashlib.sha256(etag_data).hexdigest()}"'))
         if contentLength is True:
@@ -862,9 +879,9 @@ class HTTPRequest(Request):
 
     def respondStream(
         self,
-        stream: Iterator[bytes]
-        | Generator[bytes, Any, Any]
-        | AsyncGenerator[bytes, Any],
+        stream: (
+            Iterator[bytes] | Generator[bytes, Any, Any] | AsyncGenerator[bytes, Any]
+        ),
         contentType=Union[bytes, str],
         headers: dict[bytes, bytes] | None = None,
     ) -> "HTTPResponse":
@@ -1224,7 +1241,7 @@ class Decode:
         """
         # multipart/form-data
         # assert "multipart/form-data" in contentType or "multipart/mixed" in contentType, "Expected multipart/form-data or multipart/mixed in content type"
-        # The contentType is epxected to be
+        # The contentType is expected to be
         # >   Content-Type: multipart/form-data; boundary=<BOUNDARY>\r\n
         boundary_length = len(boundary)
         has_more = True
@@ -1239,7 +1256,7 @@ class Decode:
         while has_more:
             # Here we read bufferSize + boundary_length, and will return at
             # maximum bufferSize bytes per iteration. This ensure that if
-            # the read stop somewhere within a boundary we'll stil be able
+            # the read stop somewhere within a boundary we'll still be able
             # to find it at the next iteration.
             chunk = stream.read(read_size)
             chunk = rest + chunk
@@ -1282,7 +1299,7 @@ class Decode:
         for state, data in Decode.MultipartChunks(stream, boundary):
             if state == "b":
                 # We encounter the boundary at the very beginning, or
-                # inbetween elements. If we don't have a daa
+                # inbetween elements. If we don't have a data
                 if spool:
                     # There might be 2 bytes of data, which will result in
                     # meta being None
@@ -1323,7 +1340,7 @@ class Decode:
     #     # FIXME: This assumes headers are Camel-Case
     #     for meta, data in FormData.DecodeMultipart(dataFile, boundary):
     #         # There is sometimes leading and trailing data (not sure
-    #         # exaclty why, but try the UploadModule example) to see
+    #         # exactly why, but try the UploadModule example) to see
     #         # with sample payloads.
     #         if meta is None:
     #             continue
