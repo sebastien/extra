@@ -14,7 +14,7 @@ from typing import (
 )
 from .protocols.http import HTTPRequest, HTTPResponse, HTTPRequestError
 from .decorators import Transform, Extra
-from .logging import logger
+from .logging import logger, error
 from inspect import iscoroutine
 
 # TODO: Support re2, orjson
@@ -76,7 +76,7 @@ class Route:
         "file": RoutePattern(r"\w+(.\w+)", str),
         "chunk": RoutePattern(r"[^/^.]+", str),
         "topics": RoutePattern(
-            r"[A-Za-z0-9_-\.]+(/[A-Za-z0-9_-\.]+)*", lambda _: _.split("/")
+            r"[A-Za-z0-9_\-\.]+(/[A-Za-z0-9_\-\.]+)*", lambda _: _.split("/")
         ),
         "path": RoutePattern(r"[^:@]+", str),
         "segment": RoutePattern(r"[^/]+", str),
@@ -159,7 +159,15 @@ class Route:
         if not self._regexp:
             # NOTE: Not sure if it's a good thing to have the prefix/suffix
             # for an exact match.
-            self._regexp = re.compile(f"^{self.toRegExp()}$")
+
+            try:
+                self._regexp = re.compile(text := f"^{self.toRegExp()}$")
+            except Exception as e:
+                error(
+                    "BADROUTE",
+                    msg := f"Route syntax is malformed: {repr(self.toRegExp())}",
+                )
+                raise ValueError(msg)
         return self._regexp
 
     def toRegExpChunks(self) -> list[str]:
