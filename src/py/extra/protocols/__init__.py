@@ -243,6 +243,8 @@ class Response(Flyweight):
     def setCookie(self, name: bytes, value: bytes) -> "Response":
         raise NotImplementedError
 
+    # FIXME: This is not compatible with the HTTP request, where headers
+    # is just a dict of strings.
     def setHeader(self, name: bytes, value: bytes) -> "Response":
         if not self.headers:
             self.headers = Headers()
