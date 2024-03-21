@@ -73,7 +73,9 @@ class Components(NamedTuple):
                 services.append(item)
             else:
                 raise RuntimeError(f"Unsupported component type {type(item)}: {item}")
-        return Components(apps[0] if apps else Application(), apps, services)
+        return Components(
+            apps[0] if apps else Application(services=services), apps, services
+        )
 
     app: Optional[Application]
     apps: list[Application]

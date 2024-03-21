@@ -69,7 +69,7 @@ class Service:
                 yield handler
 
     def __repr__(self) -> str:
-        return f"(Service {self.name} {' :mounted' if self.isMounted else ''})"
+        return f"(Service {self.name}{' :mounted' if self.isMounted else ''})"
 
 
 # -----------------------------------------------------------------------------
@@ -80,10 +80,10 @@ class Service:
 
 
 class Application:
-    def __init__(self) -> None:
+    def __init__(self, services: list[Service] | None = None) -> None:
         self.routes: list[Route] = []
         self.dispatcher: Dispatcher = Dispatcher()
-        self.services: list[Service] = []
+        self.services: list[Service] = services if services else []
 
     async def reload(self) -> "Application":
         await self.stop()
@@ -112,25 +112,27 @@ class Application:
 
     async def start(self) -> "Application":
         self.dispatcher.prepare()
-        for i, res in enumerate(
-            asyncio.gather(*(_.start() for _ in self.services), return_exceptions=True)
-        ):
-            if isinstance(res, Exception):
+        for i, srv in enumerate(self.services):
+            try:
+                await srv.start()
+            except Exception as e:
                 logging.error(
                     "APPSTART",
-                    "Exception occurred when starting service {self.services[i]}: {res}",
+                    f"Exception occurred when starting service #{i} {srv}: {e}",
                 )
+                raise e from e
         return self
 
     async def stop(self) -> "Application":
-        for i, res in enumerate(
-            asyncio.gather(*(_.stop() for _ in self.services), return_exceptions=True)
-        ):
-            if isinstance(res, Exception):
+        for i, srv in enumerate(self.services):
+            try:
+                await srv.stop()
+            except Exception as e:
                 logging.error(
-                    "APPSTOP",
-                    "Exception occurred when stopping service {self.services[i]}: {res}",
+                    "APPSTART",
+                    f"Exception occurred when stopping service #{i} {srv}: {e}",
                 )
+                raise e from e
         return self
 
     def process(self, request: HTTPRequest) -> HTTPResponse:
