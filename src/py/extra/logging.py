@@ -112,7 +112,7 @@ class Logger:
             "name": "∅",
             "value": "∅",
         },
-        output=sys.stdout,
+        output=sys.stderr,
     ):
         """The effector is what actually outputs messages to the console.
         This can be monkey-patched but the better way to expand is to
