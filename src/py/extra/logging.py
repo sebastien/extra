@@ -112,6 +112,7 @@ class Logger:
             "name": "∅",
             "value": "∅",
         },
+        output=sys.stdout,
     ):
         """The effector is what actually outputs messages to the console.
         This can be monkey-patched but the better way to expand is to
@@ -128,11 +129,11 @@ class Logger:
         # message = event.data.get("message")
         fmt = cls.FORMAT.get(event_type, cls.FORMAT["default"])
         # This is the user-friendly output.
-        sys.stdout.write(fmt.format(**(default | event)))
+        output.write(fmt.format(**(default | event)))
         if ctx := event.get("context"):
             for l in ctx:
-                sys.stdout.write(f"… {l}\n")
-        sys.stdout.write("\n")
+                output.write(f"… {l}\n")
+        output.write("\n")
         # FIXME: This should be done elsewhere
         # if event_type == "error" and "key" in event.data and "code" in event.data:
         #     # We log errors in a file for later reference
