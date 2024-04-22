@@ -4,6 +4,7 @@ from typing import Optional, Callable, ClassVar, Any
 from contextlib import contextmanager
 import sys
 import time
+import os
 
 # TODO: Update with proper typing
 # try:
@@ -112,7 +113,7 @@ class Logger:
             "name": "∅",
             "value": "∅",
         },
-        output=sys.stderr,
+        output=sys.stderr if os.getenv("EXTRA_LOG_OUTPUT") == "stderr" else sys.stdout,
     ):
         """The effector is what actually outputs messages to the console.
         This can be monkey-patched but the better way to expand is to
