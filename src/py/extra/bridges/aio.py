@@ -1,20 +1,21 @@
-from typing import Union, Optional, Callable
-from inspect import iscoroutine
 from asyncio import (
     StreamReader,
     StreamWriter,
-    sleep,
-    start_server,
-    get_event_loop,
     all_tasks,
     gather,
+    get_event_loop,
+    sleep,
+    start_server,
 )
-from ..model import Application, Service
+from inspect import iscoroutine
+from typing import Callable, Optional, Union
+
 from ..bridges import mount
-from ..logging import error, exception, operation, log, info
-from ..protocols.http import HTTPRequest, HTTPParser, BAD_REQUEST
-from ..utils.hooks import onException
+from ..logging import debug, error, exception, info, operation
+from ..model import Application, Service
+from ..protocols.http import BAD_REQUEST, HTTPParser, HTTPRequest
 from ..utils.config import HOST, PORT
+from ..utils.hooks import onException
 
 
 class AIOBridge:
@@ -50,7 +51,10 @@ class AIOBridge:
         # --
         # FIXME: We may have read past the body, so we should feed the
         # first part
-        log(f"[{http_parser.method}] {http_parser.uri}")
+        # --
+        # FIXME: I'm hiding that, but that should really be optional. We
+        # need to improve the logging.
+        # debug(f"[{http_parser.method}] {http_parser.uri}")
         t: str = http_parser.uri or ""
         la: list[str] = t.rsplit("#", 1)
         uri_hash: Optional[str] = la[1] if len(la) == 2 else None

@@ -1,10 +1,10 @@
-from typing import Optional, Callable, ClassVar, Any
+import os
+import sys
+import time
 
 # from extra.feature.pubsub import pub, sub
 from contextlib import contextmanager
-import sys
-import time
-import os
+from typing import Any, Callable, ClassVar, Optional
 
 # TODO: Update with proper typing
 # try:
@@ -93,6 +93,7 @@ class Logger:
         "metric": "[{origin}] → DAT {name} = {value}",
         "info": "[{origin}] » ... {message}",
         "log": "[{origin}] ┄ --- {message}",
+        "debug": "[{origin}] ┄ --- {message}",
     }
 
     @classmethod
@@ -162,6 +163,7 @@ class Logger:
         self.metrics: int = 0
         self.exceptions: int = 0
 
+    # FIXME: Type should be numeric
     def info(self, message: str, **kwargs):
         return self.raw(message, type="info", **kwargs)
 
@@ -170,6 +172,9 @@ class Logger:
 
     def trace(self, message: str, **kwargs):
         return self.raw(message, type="trace", **kwargs)
+
+    def debug(self, message: str, **kwargs):
+        return self.raw(message, type="debug", **kwargs)
 
     def warning(self, message: str, **kwargs):
         self.warnings += 1
@@ -250,6 +255,10 @@ def log(message, **kwargs):
 
 def trace(message, **kwargs):
     return Logger.Instance().trace(message, **kwargs)
+
+
+def debug(message, **kwargs):
+    return Logger.Instance().debug(message, **kwargs)
 
 
 def warning(message, **kwargs):
