@@ -14,7 +14,8 @@ class CaptureService(Service):
         # 1 - Puts the request on a spool
         # 2 - Post proceses the raw data
         await request.load()
-        print("GOT RAW", request.body.raw)
+        print("Headers:", request.headers)
+        print("Body:", request.body.raw)
         return request.respond(b"OK", b"text/plain")
 
 
