@@ -706,11 +706,19 @@ class HTTPRequest(Request):
 
     def respond(
         self,
+        # FIXME: Should be content
         value: Any,
         contentType: Optional[Union[str, bytes]] = None,
         status: int = 200,
+        *,
+        headers: dict[bytes, bytes] | None = None,
     ) -> "HTTPResponse":
-        return HTTPResponse.Create().init(status=status).setContent(value, contentType)
+        return (
+            HTTPResponse.Create()
+            .init(status=status)
+            .setContent(value, contentType)
+            .setHeaders(headers)
+        )
 
     def respondHTML(
         self,
