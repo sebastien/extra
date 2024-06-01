@@ -1,11 +1,15 @@
-from typing import ClassVar, Union, Callable, NamedTuple, Any
+from typing import ClassVar, Union, Callable, NamedTuple, TypeVar, Any
+
+T = TypeVar("T")
+
 
 class Transform(NamedTuple):
-    transform:Callable
-    args:tuple[Any,...]
-    kwargs:dict[str,Any]
+    transform: Callable
+    args: tuple[Any, ...]
+    kwargs: dict[str, Any]
 
-class EXTRA:
+
+class Extra:
     ON: ClassVar[str] = "_extra_on"
     ON_PRIORITY: ClassVar[str] = "_extra_on_priority"
     EXPOSE: ClassVar[str] = "_extra_expose"
@@ -16,6 +20,15 @@ class EXTRA:
     POST: ClassVar[str] = "_extra_post"
     PRE: ClassVar[str] = "_extra_pre"
     WHEN: ClassVar[str] = "_extra_when"
+
+    @staticmethod
+    def Meta(scope: Any) -> dict:
+        if isinstance(scope, type):
+            if not hasattr(scope, "__extra__"):
+                setattr(scope, "__extra__", {})
+            return getattr(scope, "__extra__")
+        else:
+            return scope.__dict__
 
 
 def on(priority=0, **methods: Union[str, list[str], tuple[str, ...]]):
@@ -47,8 +60,9 @@ def on(priority=0, **methods: Union[str, list[str], tuple[str, ...]]):
 
     def decorator(function):
         # TODO: Should be using annotations
-        v = function.__dict__.setdefault(EXTRA.ON, [])
-        function.__dict__.setdefault(EXTRA.ON_PRIORITY, priority)
+        meta = Extra.Meta(function)
+        v = meta.setdefault(Extra.ON, [])
+        meta.setdefault(Extra.ON_PRIORITY, priority)
         for http_methods, url in list(methods.items()):
             if type(url) not in (list, tuple):
                 url = (url,)
@@ -60,7 +74,7 @@ def on(priority=0, **methods: Union[str, list[str], tuple[str, ...]]):
     return decorator
 
 
-# TODO: We could have an extractor method that would extract sepcific parameters from
+# TODO: We could have an extractor method that would extract specific parameters from
 # the request body. Ex:
 # @expose(POST="/api/ads", name=lambda _:_.get("name"), ....)
 
@@ -76,21 +90,22 @@ def expose(priority=0, compress=False, contentType=None, raw=False, **methods):
     to the web."""
 
     def decorator(function):
-        function.__dict__.setdefault(EXTRA.EXPOSE, True)
-        function.__dict__.setdefault(EXTRA.EXPOSE_JSON, None)
-        function.__dict__.setdefault(EXTRA.EXPOSE_RAW, raw)
-        function.__dict__.setdefault(EXTRA.EXPOSE_COMPRESS, compress)
-        function.__dict__.setdefault(EXTRA.EXPOSE_CONTENT_TYPE, contentType)
+        meta = Extra.Meta(function)
+        meta.setdefault(Extra.EXPOSE, True)
+        meta.setdefault(Extra.EXPOSE_JSON, None)
+        meta.setdefault(Extra.EXPOSE_RAW, raw)
+        meta.setdefault(Extra.EXPOSE_COMPRESS, compress)
+        meta.setdefault(Extra.EXPOSE_CONTENT_TYPE, contentType)
         # This is copy and paste of the @on body
-        v = function.__dict__.setdefault(EXTRA.ON, [])
-        function.__dict__.setdefault(EXTRA.ON_PRIORITY, int(priority))
+        v = meta.setdefault(Extra.ON, [])
+        meta.setdefault(Extra.ON_PRIORITY, int(priority))
         for http_method, url in list(methods.items()):
             if type(url) not in (list, tuple):
                 url = (url,)
             for method in http_method.upper().split("_"):
                 for _ in url:
                     if method == "JSON":
-                        function.__dict__[EXTRA.EXPOSE_JSON] = _
+                        function.__dict__[Extra.EXPOSE_JSON] = _
                     else:
                         v.append((method, _))
         return function
@@ -104,7 +119,7 @@ def when(*predicates):
     succeeds."""
 
     def decorator(function):
-        v = function.__dict__.setdefault(EXTRA.WHEN, [])
+        v = Extra.Meta(function).setdefault(Extra.WHEN, [])
         v.extend(predicates)
         return function
 
@@ -114,16 +129,17 @@ def when(*predicates):
 def pre(transform):
 
     def decorator(function, *args, **kwargs):
-        v = function.__dict__.setdefault(EXTRA.PRE, [])
+        v = Extra.Meta(function).setdefault(Extra.PRE, [])
         v.append(Transform(transform, args, kwargs))
         return function
 
     return decorator
 
+
 def post(transform):
 
     def decorator(function, *args, **kwargs):
-        v = function.__dict__.setdefault(EXTRA.POST, [])
+        v = Extra.Meta(function).setdefault(Extra.POST, [])
         v.append(Transform(transform, args, kwargs))
         return function
 

@@ -101,12 +101,18 @@ class Logger:
         return cls.INSTANCE
 
     @classmethod
-    def Effector(cls, topic:str, event, *, default:dict[str,str]={
-            "origin":"∅",
-            "message":"∅",
-            "name":"∅",
-            "value":"∅",
-    }):
+    def Effector(
+        cls,
+        topic: str,
+        event,
+        *,
+        default: dict[str, str] = {
+            "origin": "∅",
+            "message": "∅",
+            "name": "∅",
+            "value": "∅",
+        },
+    ):
         """The effector is what actually outputs messages to the console.
         This can be monkey-patched but the better way to expand is to
         bind a handler to the pub/sub bus.
@@ -115,13 +121,15 @@ class Logger:
         `errors.tsv` and will log `metric` like `{name,value}` to
         `metrics.tsv`.
         """
-        event_type = event.get("type", topic.split(".",1)[0] if "." in topic else topic)
+        event_type = event.get(
+            "type", topic.split(".", 1)[0] if "." in topic else topic
+        )
         # NOTE: Unused
         # message = event.data.get("message")
         fmt = cls.FORMAT.get(event_type, cls.FORMAT["default"])
         # This is the user-friendly output.
-        sys.stdout.write(fmt.format(**(default|event)))
-        if (ctx:=event.get("context")):
+        sys.stdout.write(fmt.format(**(default | event)))
+        if ctx := event.get("context"):
             for l in ctx:
                 sys.stdout.write(f"… {l}\n")
         sys.stdout.write("\n")
@@ -185,18 +193,15 @@ class Logger:
     def exception(self, exception, **kwargs):
         self.exceptions += 1
         tb = exception.__traceback__
-        context:list[str] = []
+        context: list[str] = []
         while tb:
             code = tb.tb_frame.f_code
             context.append(
                 f"... in {code.co_name:15s} at {tb.tb_lineno:4d} in {code.co_filename}",
             )
             tb = tb.tb_next
-        data = {
-            "type":exception.__class__.__name__,
-            "context":context
-        }
-        return self.raw(str(exception),**( data | kwargs))
+        data = {"type": exception.__class__.__name__, "context": context}
+        return self.raw(str(exception), **(data | kwargs))
 
     def raw(self, message, **kwargs):
         # We make sure that there's an effector registered
@@ -233,7 +238,6 @@ def logger(path: str):
     return Logger(path)
 
 
-
 def info(message, **kwargs):
     return Logger.Instance().info(message, **kwargs)
 
@@ -253,8 +257,10 @@ def warning(message, **kwargs):
 def error(code: str, detail: str, **kwargs):
     return Logger.Instance().error(code, detail, **kwargs)
 
+
 def exception(exception, **kwargs):
     return Logger.Instance().exception(exception, **kwargs)
+
 
 def metric(name, value, **kwargs):
     return Logger.Instance().metric(name, value)

@@ -43,9 +43,11 @@ install:
 	fi
 	if [ -d "$(PATH_LOCAL_PY)" ]; then
 		for module in $(PYTHON_MODULES); do
-			echo "Instaling $(PATH_LOCAL_PY)/$$module"
+			echo "Installing $(PATH_LOCAL_PY)/$$module"
 			ln -sfr src/py/$$module "$(PATH_LOCAL_PY)"/$$module
 		done
+	else
+		echo "No local Python module path found:  $(PATH_LOCAL_PY)"
 	fi
 
 

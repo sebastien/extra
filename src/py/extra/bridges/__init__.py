@@ -1,5 +1,6 @@
 from typing import Union, NamedTuple, Optional, Iterable
 from io import BytesIO
+from types import GeneratorType
 from ..model import Service, Application
 from ..protocols.http import HTTPRequest, HTTPResponse, HTTPParser
 from ..utils.config import HOST, PORT
@@ -46,6 +47,18 @@ class Bridge:
         raise NotImplementedError
 
 
+def flatten(value):
+    if (
+        isinstance(value, list)
+        or isinstance(value, tuple)
+        or isinstance(value, GeneratorType)
+    ):
+        for _ in value:
+            yield from flatten(_)
+    else:
+        yield value
+
+
 class Components(NamedTuple):
     """Groups Application and Service objects together"""
 
@@ -53,14 +66,16 @@ class Components(NamedTuple):
     def Make(components: Iterable[Union[Application, Service]]):
         apps: list[Application] = []
         services: list[Service] = []
-        for item in components:
+        for item in flatten(components):
             if isinstance(item, Application):
                 apps.append(item)
             elif isinstance(item, Service):
                 services.append(item)
             else:
                 raise RuntimeError(f"Unsupported component type {type(item)}: {item}")
-        return Components(apps[0] if apps else Application(), apps, services)
+        return Components(
+            apps[0] if apps else Application(services=services), apps, services
+        )
 
     app: Optional[Application]
     apps: list[Application]

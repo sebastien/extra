@@ -1,4 +1,3 @@
-import types
 from ..protocols.http import HTTPRequest, HTTPResponse
 from ..decorators import post
 
@@ -20,8 +19,8 @@ def setCORSHeaders(
     See <https://en.wikipedia.org/wiki/Cross-origin_resource_sharing>
     """
     if isinstance(request, HTTPRequest):
-        origin = origin or r.header("Origin")
-        response = r.respond()
+        origin = origin or request.getHeader(b"Origin")
+        response = HTTPResponse.Create().init(status=200)
     else:
         response = request
     # SEE: https://remysharp.com/2011/04/21/getting-cors-working
