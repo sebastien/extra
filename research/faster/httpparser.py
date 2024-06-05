@@ -16,6 +16,7 @@ class RequestLine(NamedTuple):
     protocol: str
 
 
+# NOTE:Parse at through=232.92Mb/s with PyPy vs 54.80Mb/s (Py312)
 class LineParser:
     __slots__ = ["data", "eol"]
 
@@ -43,6 +44,7 @@ class LineParser:
             return self.data, (end + 2) - start
 
 
+# NOTE:Parse at through=182.01Mb/s with PyPy vs 51.47Mb/s (Py312)
 class LineIOParser:
     __slots__ = ["data", "eol", "written"]
 
@@ -77,6 +79,31 @@ class LineIOParser:
             return self.data, w + 2
 
 
+# FIXME: Not working and slow: 28.11Mb/s (Py3.12) and 45.21 (PyPy3)
+class LineBufferParser:
+    __slots__ = ["buffer", "eol"]
+
+    def __init__(self) -> None:
+        self.buffer = bytearray()
+        self.eol: bytes = EOL
+
+    def reset(self, eol: bytes = EOL) -> "LineBufferParser":
+        self.eol = eol
+        return self
+
+    def feed(self, chunk: bytes, start: int = 0) -> tuple[bytes | None, int]:
+        line_end = chunk.find(self.eol, start)
+        if line_end == -1:
+            self.buffer += chunk[start:] if start else chunk
+            return None, len(chunk) - start
+        else:
+            self.buffer += chunk[start:line_end]
+            res = bytes(self.buffer[:])
+            del self.buffer[:]
+            self.buffer += chunk[line_end + 2 :]
+            return res, line_end - start + 2
+
+
 class RequestParser:
 
     __slots__ = ["line"]
@@ -95,6 +122,7 @@ class RequestParser:
             l = b"".join(chunks).decode("ascii")
             i = l.find(" ")
             j = l.rfind(" ")
+            # NOTE: There may be junk before the method name
             return RequestLine(l[0:i], l[i + 1 : j], l[j + 1 :]), end
         else:
             return None, end
@@ -131,9 +159,16 @@ class HeaderParser:
                 return False, end
             elif i != -1:
                 # TODO: We should probably normalize the header there
-                h = l[:i].strip()
+                h = l[:i].lower().strip()
                 v = l[i + 1 :].strip()
-                self.headers[h] = v.strip()
+                if h == "content-length":
+                    try:
+                        self.contentLength = int(v)
+                    except ValueError:
+                        self.contentLength = None
+                elif h == "content-type":
+                    self.contentType = v
+                self.headers[h] = v
                 return True, end
             else:
                 return None, end
@@ -199,33 +234,38 @@ from pathlib import Path
 
 # if __name__ == "__main__":
 if True:
-    BASE: Path = Path(__file__).absolute().parent.parent.parent.parent
+    BASE: Path = Path(__file__).absolute().parent.parent.parent
 
     # NOTE: requests are separated by a `\n`
-    with bz2.open(BASE / "data/csic_2010-normalTrafficTraining.txt.bz2") as f:
+    with open(BASE / "data/csic_2010-normalTrafficTraining.txt", "rb") as f:
         request_parser = RequestParser()
         header_parser = HeaderParser()
         body_length_parser = BodyLengthParser()
         body_eos_parser = BodyEOSParser()
-        parser: RequestParser | HeaderParser | BodyLengthParser | BodyEOSParser = (
-            request_parser
-        )
+        parser: (
+            LineIOParser
+            | RequestParser
+            | HeaderParser
+            | BodyLengthParser
+            | BodyEOSParser
+        ) = request_parser
         size = 2048
         i = 0
         print("\n\n==============")
         t = time.monotonic()
         count = 0
         total: int = 0
-        while True:
+        while count < 20:
             o: int = 0
             chunk: bytes = f.read(size)
             if not chunk:
                 break
             while o < size:
                 l, n = parser.feed(chunk, o)
-                # print(
-                #     f"Chunk {repr(chunk[o:o+n])}={l} from {parser.__class__.__name__}"
-                # )
+                print(
+                    f"Chunk {repr(chunk[o:o+n])}={l} from {parser.__class__.__name__}"
+                )
+                # FIXME: That doesn't quite work yet
                 if l is not None:
                     if parser is request_parser:
                         parser = header_parser.reset()
@@ -241,7 +281,6 @@ if True:
                         parser = request_parser.reset()
                     elif parser is body_length_parser:
                         parser = request_parser.reset()
-
                     count += 1
                 o += n
                 if not n:
