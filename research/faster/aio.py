@@ -83,6 +83,8 @@ class AIOServer:
             await writer.wait_closed()
 
 
+# NOTE: This is like aiosocketServer but uses a buffer. Does not really
+# make a difference, maybe a tiny bit faster?
 async def aiosocketBufServer(
     client: socket.socket,
     *,
@@ -163,7 +165,7 @@ async def mstrand(server, options):
 
     while True:
         client, _ = await loop.sock_accept(server)
-        loop.create_task(aiosocketServer(client, loop=loop, options=options))
+        loop.create_task(aiosocketBufServer(client, loop=loop, options=options))
 
 
 # NOTE: This gives me 9K RPS on Fedora 40 without uvloop. With uvloop this
@@ -234,9 +236,22 @@ def run(
     loop.run_forever()
 
 
+# --
+# Findings:
+# - AIO server is 4.5K RPS (expecteD)
+# - AIO socket is an astounding 9.4 RPS (and I got it to 14K)
+# - Multiprocessing really doesn't make a difference
+# - UV loop doesn't make a difference
+# - PyPy3 doesn't make a difference
+#
+# It's potentially still useful to switch backends, but I'd say using the
+# sockets directly is a win.
 if __name__ == "__main__":
-    run()
-    # asyncio.run(arun())
+    # AIO server
+    # run()
+    # AIO Socket
+    asyncio.run(arun())
+    # AIO Socket Multiprocessing
     # mrun()
 
 # EOF
