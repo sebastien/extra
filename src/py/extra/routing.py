@@ -1,51 +1,60 @@
 from typing import (
-    Optional,
     Coroutine,
     Callable,
+    Optional,
     Any,
     Iterable,
     Iterator,
     Pattern,
     Type,
-    Union,
     NamedTuple,
     ClassVar,
     TypeVar,
 )
-from .protocols.http import HTTPRequest, HTTPResponse, HTTPRequestError
+
 from .decorators import Transform, Extra
-from .logging import logger, error
+from .http.model import HTTPRequest, HTTPRequestError, HTTPResponse
+
+# from .logging import info, error
 from inspect import iscoroutine
 
 # TODO: Support re2, orjson
 import re
 
-logging = logger("extra.routing")
+
+T = TypeVar("T")
 
 # -----------------------------------------------------------------------------
 #
 # ROUTE
 #
 # -----------------------------------------------------------------------------
-
-T = TypeVar("T")
+#
+# Routes represent collections/sets of paths that can be matched. Typically
+# routes are made of chunks separated by a `/`.
 
 
 class RoutePattern(NamedTuple):
+    """Used in a parameter chunk to extract/match from the give path."""
+
     expr: str
-    extractor: Union[Type[Any], Callable[[str], Any]]
+    extractor: Type[Any] | Callable[[str], Any]
 
 
 class TextChunk(NamedTuple):
+    """A raw text chunk"""
+
     text: str
 
 
 class ParameterChunk(NamedTuple):
+    """A parameterizable chunk, where the chunk must match the given patttern."""
+
     name: str
     pattern: RoutePattern
 
 
-TChunk = Union[TextChunk, ParameterChunk]
+TChunk = TextChunk | ParameterChunk
 
 
 class Route:
@@ -53,12 +62,12 @@ class Route:
     `{name:type}`. Routes can have priorities and be assigned handlers,
     they are then registered in the dispatcher to match requests."""
 
-    RE_PATTERN_NAME: ClassVar[Pattern] = re.compile("^[A-Za-z]+$")
+    RE_PATTERN_NAME: ClassVar[Pattern[str]] = re.compile("^[A-Za-z]+$")
 
-    RE_TEMPLATE: ClassVar[Pattern] = re.compile(
+    RE_TEMPLATE: ClassVar[Pattern[str]] = re.compile(
         r"\{(?P<name>[\w][_\w\d]*)(:(?P<type>[^}]+))?\}"
     )
-    RE_SPECIAL: ClassVar[Pattern] = re.compile(r"/\+\*\-\:")
+    RE_SPECIAL: ClassVar[Pattern[str]] = re.compile(r"/\+\*\-\:")
 
     PATTERNS: ClassVar[dict[str, RoutePattern]] = {
         "id": RoutePattern(r"[a-zA-Z0-9\-_]+", str),
@@ -91,7 +100,7 @@ class Route:
         cls,
         type: str,
         regexp: str,
-        parser: Union[Type[str], Callable[[str], Any]] = str,
+        parser: Type[str] | Callable[[str], Any] = str,
     ) -> "RoutePattern":
         """Registers a new RoutePattern into `Route.PATTERNS`"""
         # We do a precompilation to make sure it's working
@@ -137,16 +146,19 @@ class Route:
         self.params: dict[str, ParameterChunk] = {
             _.name: _ for _ in self.chunks if isinstance(_, ParameterChunk)
         }
-        self.handler: Optional[Handler] = handler
-        self._pattern: Optional[str] = None
-        self._regexp: Optional[Pattern] = None
+        self.handler: Handler | None = handler
+        self._pattern: str | None = None
+        self._regexp: Pattern[str] | None = None
 
     @property
     def priority(self) -> int:
+        """Returns the priority of te route, defined by `handler.priority`
+        or defaulting to 0."""
         return self.handler.priority if self.handler else 0
 
     @property
     def pattern(self) -> str:
+        """Lazily returns the regexp pattern (as a string) for the route."""
         if not self._pattern:
             pat = self.toRegExp()
             self._pattern = pat
@@ -155,7 +167,7 @@ class Route:
             return self._pattern
 
     @property
-    def regexp(self) -> Pattern:
+    def regexp(self) -> Pattern[str]:
         if not self._regexp:
             # NOTE: Not sure if it's a good thing to have the prefix/suffix
             # for an exact match.
@@ -163,10 +175,11 @@ class Route:
             try:
                 self._regexp = re.compile(text := f"^{self.toRegExp()}$")
             except Exception as e:
-                error(
-                    "BADROUTE",
-                    msg := f"Route syntax is malformed: {repr(self.toRegExp())}",
-                )
+                msg: str = f"Route syntax is malformed: {repr(self.toRegExp())}"
+                # error(
+                #     "BADROUTE",
+                #     msg := f"Route syntax is malformed: {repr(self.toRegExp())}",
+                # )
                 raise ValueError(msg)
         return self._regexp
 
@@ -184,7 +197,7 @@ class Route:
     def toRegExp(self) -> str:
         return "".join(self.toRegExpChunks())
 
-    def match(self, path: str) -> Optional[dict[str, Union[str, int, bool, float]]]:
+    def match(self, path: str) -> dict[str, str | int | bool | float] | None:
         matches = self.regexp.match(path)
         return (
             {
@@ -221,7 +234,7 @@ class Routes:
     expressions into a single"""
 
     @staticmethod
-    def Compile(routes: Iterable[str]) -> Pattern:
+    def Compile(routes: Iterable[str]) -> Pattern[str]:
         """Compiles the list of routes into a single regex that can match
         all of these routes, and extract the arguments."""
         # --
@@ -257,9 +270,9 @@ class Routes:
 
     def __init__(self, *routes: str):
         self.paths = routes
-        self.regexp: Pattern = Routes.Compile(routes)
+        self.regexp: Pattern[str] = Routes.Compile(routes)
 
-    def match(self, path: str) -> Optional[tuple[int, dict[str, Any]]]:
+    def match(self, path: str) -> tuple[int, dict[str, Any]] | None:
         if not (match := self.regexp.match(path)):
             return None
         else:
@@ -296,8 +309,8 @@ class Prefix:
         root.simplify()
         return root
 
-    def __init__(self, value: Optional[str] = None, parent: Optional["Prefix"] = None):
-        self.value: Optional[str] = value
+    def __init__(self, value: str | None = None, parent: Optional["Prefix"] = None):
+        self.value: str | None = value
         self.parent = parent
         self.children: dict[str, Prefix] = {}
 
@@ -409,11 +422,12 @@ class Handler:
 
     def __init__(
         self,
+        # TODO: Refine type
         functor: Callable,
         methods: list[tuple[str, str]],
         priority: int = 0,
         expose: bool = False,
-        contentType=None,
+        contentType: str | None = None,
         pre: list[Transform] | None = None,
         post: list[Transform] | None = None,
     ):
@@ -426,12 +440,11 @@ class Handler:
 
         self.priority = priority
         self.expose = expose
-        self.contentType = (
-            bytes(contentType, "utf8") if isinstance(contentType, str) else contentType
-        )
+        self.contentType = contentType
         self.pre: list[Transform] | None = pre
         self.post: list[Transform] | None = post
 
+    # TODO: This is maybe more than routing, not sure if this really belongs here
     # NOTE: For now we only do HTTP Requests, we'll see if we can generalise.
     def __call__(
         self, request: HTTPRequest, params: dict[str, Any]
@@ -440,29 +453,35 @@ class Handler:
             for i, t in enumerate(self.pre):
                 try:
                     res = t.transform(request, params)
-                except HTTPRequestError as error:
-                    return request.respondError(error)
-                if isinstance(res, HTTPResponse):
-                    return res
-                elif isinstance(res, HTTPRequestError):
-                    return request.respondError(res)
-                elif res is False:
-                    return request.fail(f"Precondition {1} failed")
+                except Exception as e:
+                    raise e from e
+                # except HTTPRequestError as error:
+                #     return request.respondError(error)
+                # if isinstance(res, HTTPResponse):
+                #     return res
+                # elif isinstance(res, HTTPRequestError):
+                #     return request.respondError(res)
+                # elif res is False:
+                #     return request.fail(f"Precondition {1} failed")
         try:
             if self.expose:
                 # NOTE: This pattern is hard to optimise, maybe we could do something
                 # better, like code-generated dispatcher.
                 value: Any = self.functor(**params)
-                response = request.returns(
-                    value, self.contentType or b"application/json"
-                )
+                # TODO
+                raise NotImplementedError
+                # response = request.returns(
+                #     value, self.contentType or b"application/json"
+                # )
             # TODO: Maybe we should handle the exception here and return an internal server error
             else:
                 response = self.functor(request, **params)
         except HTTPRequestError as error:
             # The `respond` method will take care of handling the different
             # types of responses there.
-            response = request.respondError(error)
+            # TODO
+            raise NotImplementedError
+            # response = request.respondError(error)
         if self.post:
             if iscoroutine(response):
 
@@ -512,16 +531,14 @@ class Dispatcher:
         self.routes: dict[str, list[Route]] = {}
         self.isPrepared: bool = True
 
-    def register(self, handler: Handler, prefix: Optional[str] = None) -> "Dispatcher":
+    def register(self, handler: Handler, prefix: str | None = None) -> "Dispatcher":
         """Registers the handlers and their routes, adding the prefix if given."""
         for method, paths in handler.methods.items():
             for path in paths:
                 path = f"{prefix}{path}" if prefix else path
                 path = f"/{path}" if not path.startswith("/") else path
                 route: Route = Route(path, handler)
-                logging.info(
-                    f"Registered route {','.join(handler.methods.keys())}: {path}"
-                )
+                # info(f"Registered route {','.join(handler.methods.keys())}: {path}")
                 self.routes.setdefault(method, []).append(route)
                 self.isPrepared = False
         return self
@@ -537,16 +554,14 @@ class Dispatcher:
 
     def match(
         self, method: str, path: str
-    ) -> tuple[
-        Optional[Route], Optional[Union[bool, dict[str, Union[str, int, float, bool]]]]
-    ]:
+    ) -> tuple[Route | None, bool | dict[str, str | int | float | bool] | None]:
         """Matches a given `method` and `path` with the registered route, returning
         the matching route and the match information."""
         if method not in self.routes:
             return (None, False)
         else:
-            matched_match: Optional[dict[str, Union[str, bool, int, float]]] = None
-            matched_route: Optional[Route] = None
+            matched_match: dict[str, str | bool | int | float] | None = None
+            matched_route: Route | None = None
             matched_priority: int = -1
             # TODO: Use Routes
             # NOTE: The problem here is that we're going through
@@ -557,9 +572,7 @@ class Dispatcher:
             for route in self.routes[method]:
                 if route.priority < matched_priority:
                     continue
-                match: Optional[dict[str, Union[str, bool, int, float]]] = route.match(
-                    path
-                )
+                match: dict[str, str | bool | int | float] | None = route.match(path)
                 # FIXME: Maybe use a debug stream here
                 if match is None:
                     continue

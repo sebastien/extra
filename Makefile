@@ -19,7 +19,11 @@ audit: require-py-bandit
 
 # NOTE: The compilation seems to create many small modules instead of a big single one
 compile:
+	@
+	echo "Compiling $(MODULES_PY): $(SOURCES_PY)"
 	# NOTE: Output is going to be like 'extra/__init__.cpython-310-x86_64-linux-gnu.so'
+
+	mkdir -p "build"
 	$(foreach M,$(MODULES_PY),mkdir -p build/$M;)
 	env -C build MYPYPATH=$(realpath .)/src/py mypyc -p extra
 
