@@ -1,19 +1,14 @@
-from typing import Iterator, NamedTuple
+from typing import Iterator, NamedTuple, ClassVar
 
 # NOTE: Headers as strings, not bytes, it's all ASCII.
 
 # This is a simple HTTP parser based on mini composable parsers (request,
 # headers and specialized body). The all work so that they can be fed data.
 from io import BytesIO
+from enum import Enum
 
 
 EOL: bytes = b"\r\n"
-
-
-class RequestLine(NamedTuple):
-    method: str
-    path: str
-    protocol: str
 
 
 # NOTE:Parse at through=232.92Mb/s with PyPy vs 54.80Mb/s (Py312)
@@ -106,16 +101,22 @@ class LineBufferParser:
 
 class RequestParser:
 
-    __slots__ = ["line"]
+    __slots__ = ["line", "method", "path", "protocol"]
 
     def __init__(self) -> None:
         self.line: LineParser = LineParser()
+        self.method: str = ""
+        self.path: str = ""
+        self.protocol: str = ""
 
     def reset(self) -> "RequestParser":
         self.line.reset()
+        self.method = ""
+        self.path = ""
+        self.protocol = ""
         return self
 
-    def feed(self, chunk: bytes, start: int = 0) -> tuple[RequestLine | None, int]:
+    def feed(self, chunk: bytes, start: int = 0) -> tuple[bool | None, int]:
         chunks, end = self.line.feed(chunk, start)
         if chunks:
             # NOTE: This is safe
@@ -123,12 +124,18 @@ class RequestParser:
             i = l.find(" ")
             j = l.rfind(" ")
             # NOTE: There may be junk before the method name
-            return RequestLine(l[0:i], l[i + 1 : j], l[j + 1 :]), end
+            self.method = l[0:i]
+            self.path = l[i + 1 : j]
+            self.protocol = l[j + 1 :]
+            return True, end
         else:
             return None, end
 
+    def __str__(self) -> str:
+        return f"RequestParser({self.method} {self.path} {self.protocol})"
 
-class HeaderParser:
+
+class HeadersParser:
 
     __slots__ = ["previous", "headers", "contentType", "contentLength", "line"]
 
@@ -141,7 +148,7 @@ class HeaderParser:
         # TODO: Close header
         # self.close:bool = False
 
-    def reset(self) -> "HeaderParser":
+    def reset(self) -> "HeadersParser":
         self.line.reset()
         self.headers.clear()
         self.contentType = None
@@ -175,6 +182,9 @@ class HeaderParser:
         else:
             # An empty line denotes the end of headers
             return False, end
+
+    def __str__(self) -> str:
+        return f"HeadersParser({self.headers})"
 
 
 class BodyEOSParser:
@@ -228,24 +238,79 @@ class BodyLengthParser:
             return True, n
 
 
-import bz2, time
-from pathlib import Path
+class HTTPParserStatus(Enum):
+    Request = 0
+    Headers = 1
+    Body = 2
+    Complete = 2
 
 
-# if __name__ == "__main__":
-if True:
+class HTTPParser:
+
+    HAS_BODY: ClassVar[set[str]] = {"POST", "PUT", "PATCH"}
+
+    def __init__(self) -> None:
+        self.request: RequestParser = RequestParser()
+        self.headers: HeadersParser = HeadersParser()
+        self.bodyEOS: BodyEOSParser = BodyEOSParser()
+        self.bodyLength: BodyLengthParser = BodyLengthParser()
+        self.parser: (
+            RequestParser | HeadersParser | BodyEOSParser | BodyLengthParser
+        ) = self.request
+
+    def feed(self, chunk: bytes) -> Iterator[HTTPParserStatus]:
+        size: int = len(chunk)
+        o: int = 0
+        while o < size:
+            l, n = self.parser.feed(chunk, o)
+            if l is not None:
+                if self.parser is self.request:
+                    yield HTTPParserStatus.Request
+                    self.parser = self.headers.reset()
+                elif self.parser is self.headers:
+                    if l is False:
+                        yield HTTPParserStatus.Headers
+                        if self.request.method not in self.HAS_BODY:
+                            yield HTTPParserStatus.Complete
+                        else:
+                            match self.headers.contentLength:
+                                case None:
+                                    self.parser = self.bodyEOS.reset(b"\n")
+                                    yield HTTPParserStatus.Body
+                                case int(n):
+                                    self.parser = self.bodyLength.reset(n)
+                                    yield HTTPParserStatus.Body
+                elif self.parser is self.bodyEOS:
+                    yield HTTPParserStatus.Complete
+                    self.parser = self.headers.reset()
+                elif self.parser is self.bodyLength:
+                    yield HTTPParserStatus.Complete
+                    self.parser = self.request.reset()
+                else:
+                    raise RuntimeError(f"Unsupported parser: {self.parser}")
+            o += n
+            if not n:
+                print("Not sure this is good", o)
+                break
+
+
+if __name__ == "__main__":
+
+    import bz2, time
+    from pathlib import Path
+
     BASE: Path = Path(__file__).absolute().parent.parent.parent
 
     # NOTE: requests are separated by a `\n`
     with open(BASE / "data/csic_2010-normalTrafficTraining.txt", "rb") as f:
         request_parser = RequestParser()
-        header_parser = HeaderParser()
+        header_parser = HeadersParser()
         body_length_parser = BodyLengthParser()
         body_eos_parser = BodyEOSParser()
         parser: (
             LineIOParser
             | RequestParser
-            | HeaderParser
+            | HeadersParser
             | BodyLengthParser
             | BodyEOSParser
         ) = request_parser

@@ -2,7 +2,7 @@
 
 function requires() {
 	for CMD in $1; do
-		if [ -z "$(which $CMD 2>/dev/null)" ]; then
+		if [ -z "$(which "$CMD" 2>/dev/null)" ]; then
 			echo "!!! ERR Could not find tool: $CMD"
 			exit 1
 		else
@@ -18,7 +18,7 @@ if [ -z "$PYTHON" ]; then
 	PYTHON=python
 fi
 echo "--- Using Python: $PYTHON"
-BASE=$(dirname $(readlink -f $0))
+BASE=$(dirname $(readlink -f "$0"))
 LOG=$(mktemp --suffix .log benchmark-log-XXX)
 SUMMARY=
 TESTS=$@
@@ -28,16 +28,16 @@ fi
 for TEST in $TESTS; do
 	echo ""
 	echo "001 DO> Running server $TEST, logging to $LOG"
-	EXT="$(echo -n $TEST | tail -c3)"
+	EXT="$(echo -n "$TEST" | tail -c3)"
 	case $EXT in
 	.py)
-		echo ... $PYTHON $TEST
-		$PYTHON $TEST 2>$LOG &
+		echo ... "$PYTHON" "$TEST"
+		$PYTHON "$TEST" 2>"$LOG" &
 		CPID=$!
 		;;
 	.sh)
-		echo ... bash $TEST
-		bash $TEST 2>$LOG &
+		echo ... bash "$TEST"
+		bash "$TEST" 2>"$LOG" &
 		CPID=$!
 		;;
 	*)
@@ -59,23 +59,25 @@ for TEST in $TESTS; do
 	if [ "$RESULT" != "0" ]; then
 		echo "!!! ERR Benchmark failed: $OUTPUT"
 		echo ">>> START Server log"
-		cat $LOG
+		cat "$LOG"
 		echo "<<< END Server log"
-		SUMMARY="$SUMMARY\n$(basename $TEST)	N/A"
+		SUMMARY="$SUMMARY\n$(basename "$TEST")	N/A"
 	else
-		RPS="$(echo $OUTPUT | tr '^' '\n' | grep 'Requests per second' | cut -d: -f2 | cut -d'[' -f1)"
-		echo "=== OK! Benchmark '$(basename $TEST)' succeeded: $RPS requests/s)"
-		SUMMARY="$SUMMARY;$(basename $TEST)	$RPS"
+		RPS="$(echo "$OUTPUT" | tr '^' '\n' | grep 'Requests per second' | cut -d: -f2 | cut -d'[' -f1)"
+		echo "=== OK! Benchmark '$(basename "$TEST")' succeeded: $RPS requests/s)"
+		SUMMARY="$SUMMARY;$(basename "$TEST")	$RPS"
 	fi
-	if ps -p $CPID >/dev/null; then
-		pkill -P $CPID &>/dev/null
-	fi
+	echo "STILL RUNNING $CPID"
+	# if ps -p $CPID >/dev/null; then
+	# 	pkill --signal 9 -P $CPID &>/dev/null
+	# fi
+	# pkill --signal 9 -P $CPID &>/dev/null
 done
-if [ -e $LOG ]; then
-	unlink $LOG
+if [ -e "$LOG" ]; then
+	unlink "$LOG"
 fi
 echo "==="
-echo $SUMMARY | tr ';' '\n'
+echo "$SUMMARY" | tr ';' '\n'
 echo "EOS"
 
 # EOF
