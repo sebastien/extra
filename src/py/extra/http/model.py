@@ -14,15 +14,15 @@ class HTTPRequestError(Exception):
 
 class HTTPRequest:
 
-    __slots__ = ["method", "path", "params", "headers", "instream"]
+    __slots__ = ["method", "path", "params", "headers"]
 
     def __init__(self, method: str, path: str, headers: dict[str, str]):
         self.method: str = method
+        print("XXX PATH", path)
         p: list[str] = path.split("?", 1)
         self.path: str = p[0]
         self.params: str = p[1] if len(p) > 1 else ""
         self.headers: dict[str, str] = headers
-        self.instream: Generator[bytes, TControl, None] | None = None
 
     def reset(self, method: str, path: str, params: str) -> Self:
         self.method = method
@@ -44,7 +44,7 @@ class HTTPRequest:
     def respond(
         self,
         content: Any = None,
-        contentType: str = None,
+        contentType: str | None = None,
         status: int = 200,
         message: str | None = None,
     ) -> "HTTPResponse":
@@ -59,6 +59,8 @@ class HTTPRequest:
     #     self,
     # ) -> "HTTPResponse":
     #     pass
+    def __str__(self):
+        return f"Request({self.method} {self.path}{f'?{self.params}' if self.params else ''} {self.headers})"
 
 
 # We do separate the body, as typically the head of the request is there

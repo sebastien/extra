@@ -14,6 +14,7 @@ from typing import (
 
 from .decorators import Transform, Extra
 from .http.model import HTTPRequest, HTTPRequestError, HTTPResponse
+from .utils.logging import info
 
 # from .logging import info, error
 from inspect import iscoroutine
@@ -538,7 +539,7 @@ class Dispatcher:
                 path = f"{prefix}{path}" if prefix else path
                 path = f"/{path}" if not path.startswith("/") else path
                 route: Route = Route(path, handler)
-                # info(f"Registered route {','.join(handler.methods.keys())}: {path}")
+                info(f"Registered route {method} {path}")
                 self.routes.setdefault(method, []).append(route)
                 self.isPrepared = False
         return self
@@ -573,6 +574,7 @@ class Dispatcher:
                 if route.priority < matched_priority:
                     continue
                 match: dict[str, str | bool | int | float] | None = route.match(path)
+                print("ROUTE", method, route, "?", path, "=", match)
                 # FIXME: Maybe use a debug stream here
                 if match is None:
                     continue

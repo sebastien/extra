@@ -8,7 +8,8 @@ served with a live transformation phase.
 You can easily test it with something like:
 
 ```
-curl   -F "userid=1"   -F "filecomment=This is an image file"   -F "image=@/home/$(USER)/Pictures/1.jpg"   localhost:8000/upload
+curl 'https://cataas.com/cat/calico' > calico.jpg
+curl   -F "userid=1"   -F "filecomment=This is an image file"   -F "image=@calico.jpg"   localhost:8000/upload
 ```
 
 """
