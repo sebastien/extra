@@ -81,6 +81,11 @@ class HeadersParser:
         # TODO: Close header
         # self.close:bool = False
 
+    def flush(self) -> dict[str, str]:
+        res = self.headers
+        self.headers = {}
+        return res
+
     def reset(self) -> "HeadersParser":
         self.line.reset()
         self.headers.clear()
