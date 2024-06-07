@@ -1,8 +1,10 @@
 from typing import Any, NamedTuple, Iterator, Awaitable, TypeAlias, Union
+import os.path
 from enum import Enum
 from .status import HTTP_STATUS
 from ..config import DEFAULT_ENCODING
 from .api import ResponseFactory
+from pathlib import Path
 
 # NOTE: MyPyC doesn't support async generators. We're trying without.
 
@@ -95,7 +97,7 @@ class HTTPResponseBlob(NamedTuple):
 
 
 class HTTPResponseFile(NamedTuple):
-    path: str
+    path: Path
     fd: int | None = None
 
 
@@ -235,25 +237,31 @@ class HTTPResponse:
                 else updated_headers
             )
             updated_headers["content-type"] = contentType
+        # We process the body
+        body: HTTPResponseBlob | HTTPResponseFile | None = None
+        content_length: int | None = None
         if isinstance(content, str):
             payload = content.encode(DEFAULT_ENCODING)
         elif isinstance(content, bytes):
             payload = content
-        body: HTTPResponseBlob | None = None
+        elif isinstance(content, Path):
+            body = HTTPResponseFile(content.absolute())
+            content_length = os.path.getsize(body.path)
         if payload is not None:
             body = (
                 HTTPResponseBlob(payload, str(len(payload)))
                 if payload is not None
                 else None
             )
-        if body:
-            if updated_headers.get("content-length") != body.length:
+            content_length = body.length
+        if content_length:
+            if updated_headers.get("content-length") != content_length:
                 updated_headers = (
                     updated_headers.copy()
                     if updated_headers is headers
                     else updated_headers
                 )
-                updated_headers["content-length"] = body.length
+                updated_headers["content-length"] = content_length
         return HTTPResponse(
             status=status,
             message=message or HTTP_STATUS.get(status, "Unknown status"),
@@ -268,14 +276,14 @@ class HTTPResponse:
         self,
         protocol: str,
         status: int,
-        message: str,
+        message: str | None,
         headers: dict[str, str],
         body: HTTPResponseBlob | None = None,
     ):
         super().__init__()
         self.protocol: str = protocol
         self.status: int = status
-        self.message: str = message
+        self.message: str | None = message
         # NOTE: Content-Disposition headers may have a non-ascii value, but we
         # don't support that.
         self.headers: dict[str, str] = headers
@@ -298,12 +306,17 @@ class HTTPResponse:
 
     def head(self) -> bytes:
         """Serializes the head as a payload."""
+        status: int = 204 if self.body is None else self.status
+        message: str = self.message or HTTP_STATUS[status]
         lines: list[str] = [f"{headername(k)}: {v}" for k, v in self.headers.items()]
         # TODO: No Content support?
-        lines.insert(0, f"{self.protocol} {self.status} {self.message}")
+        lines.insert(0, f"{self.protocol} {status} {message}")
         lines.append("")
         lines.append("")
         return "\r\n".join(lines).encode("ascii")
+
+    def __str__(self):
+        return f"Response({self.protocol} {self.status} {self.message} {self.headers} {self.body})"
 
 
 # EOF

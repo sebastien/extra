@@ -6,7 +6,7 @@ import socket
 
 from .utils.logging import exception
 from .model import Application, Service, mount
-from .http.model import HTTPRequest, HTTPResponse, HTTPResponseBlob
+from .http.model import HTTPRequest, HTTPResponse, HTTPResponseBlob, HTTPResponseFile
 from .http.parser import HTTPParser, HTTPRequestStatus
 from .config import HOST, PORT
 
@@ -122,6 +122,9 @@ class AIOSocket:
                         # And send the request
                         if isinstance(res.body, HTTPResponseBlob):
                             await loop.sock_sendall(client, res.body.payload)
+                        elif isinstance(res.body, HTTPResponseFile):
+                            with open(res.body.path, "rb") as f:
+                                await loop.sock_sendfile(client, f)
                         else:
                             pass
                 if not sent:
