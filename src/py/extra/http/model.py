@@ -1,4 +1,4 @@
-from typing import Generator, Self, Any, NamedTuple, Iterator, Awaitable
+from typing import Generator, Any, NamedTuple, Iterator, Awaitable
 from enum import Enum
 from abc import ABC
 from .status import HTTP_STATUS
@@ -36,6 +36,11 @@ class HTTPRequestBlob(NamedTuple):
     def raw(self) -> bytes:
         return self.payload
 
+    async def load(
+        self,
+    ) -> bytes | None:
+        return self.payload
+
 
 class HTTPRequestBody:
     def __init__(
@@ -46,7 +51,6 @@ class HTTPRequestBody:
 
     async def load(
         self,
-        timeout: float = 5.0,
     ) -> bytes | None:
         """Loads all the data and returns a list of bodies."""
         data = bytearray()

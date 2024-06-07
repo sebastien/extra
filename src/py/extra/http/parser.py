@@ -246,7 +246,14 @@ class HTTPParser:
                         if headers is not None:
                             yield headers
                         if line and line.method not in self.HAS_BODY:
-                            yield HTTPRequestBlob(b"", 0)
+                            yield HTTPRequest(
+                                method=line.method,
+                                path=line.path,
+                                query=line.query,
+                                headers=headers,
+                                body=HTTPRequestBlob(b"", 0),
+                            )
+                            self.parser = self.request.reset()
                         elif headers is not None:
                             if headers.contentLength is None:
                                 self.parser = self.bodyEOS.reset(b"\n")
@@ -267,7 +274,7 @@ class HTTPParser:
                             headers=headers,
                             body=self.parser.flush(),
                         )
-                    self.parser = self.headers.reset()
+                    self.parser = self.request.reset()
                 else:
                     raise RuntimeError(f"Unsupported parser: {self.parser}")
             o += n

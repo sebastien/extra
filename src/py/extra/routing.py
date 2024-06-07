@@ -574,7 +574,6 @@ class Dispatcher:
                 if route.priority < matched_priority:
                     continue
                 match: dict[str, str | bool | int | float] | None = route.match(path)
-                print("ROUTE", method, route, "?", path, "=", match)
                 # FIXME: Maybe use a debug stream here
                 if match is None:
                     continue

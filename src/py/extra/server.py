@@ -20,6 +20,14 @@ class ServerOptions(NamedTuple):
     condition: Callable[[], bool] | None = None
 
 
+SERVER_OK: bytes = (
+    b"HTTP/1.1 200 OK\r\n"
+    b"Content-Type: text/plain\r\n"
+    b"Content-Length: 2\r\n"
+    b"Connection: close\r\n"
+    b"\r\n"
+    b"OK\r\n"
+)
 SERVER_ERROR: bytes = (
     b"HTTP/1.1 500 Internal Server Error\r\n"
     b"Content-Type: text/plain\r\n"
