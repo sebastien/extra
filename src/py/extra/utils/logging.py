@@ -34,22 +34,69 @@ class LogEntry(NamedTuple):
     message: str | None = None
     name: str | None = None
     value: TPrimitive | None = None
+    context: dict[str, TPrimitive] | None = None
+
+
+def formatData(value: Any) -> str:
+    if value is None or value == () or value == [] or value == {}:
+        return "◌"
+    elif isinstance(value, dict):
+        # TODO: We should make the key brighter/bolder
+        return " ".join(f"{k}={formatData(v)}" for k, v in value.items())
+    elif isinstance(value, list) or isinstance(value, tuple):
+        return ",".join(formatData(v) for v in value)
+    elif isinstance(value, str):
+        return repr(value) if " " in value else value
+    elif isinstance(value, bool):
+        return "✓" if value else "✗"
+    elif isinstance(value, float):
+        return f"{value:0.2f}"
+    else:
+        return str(value)
 
 
 def send(entry: LogEntry) -> LogEntry:
-    ERR.write(f"[{entry.origin}] {entry.message}\n")
+    ERR.write(f"[{entry.origin}] {entry.message} {formatData(entry.context)}\n")
     ERR.flush()
     return entry
 
 
+def entry(
+    *,
+    origin: str | None = None,
+    at: float | None = None,
+    type: LogType = LogType.Message,
+    level: LogLevel = LogLevel.Info,
+    message: str | None = None,
+    name: str | None = None,
+    value: TPrimitive | None = None,
+    context: dict[str, TPrimitive],
+) -> LogEntry:
+    return LogEntry(
+        origin=origin or LogOrigin.get(),
+        time=time.time() if at is None else at,
+        type=type,
+        level=level,
+        message=message,
+        name=name,
+        value=value,
+        context=context,
+    )
+
+
 def info(
-    message: str, *, origin: str | None = None, at: float | None = None
+    message: str,
+    *,
+    origin: str | None = None,
+    at: float | None = None,
+    **context: TPrimitive,
 ) -> LogEntry:
     return send(
-        LogEntry(
+        entry(
             message=message,
             origin=origin or LogOrigin.get(),
-            time=time.time() if at is None else at,
+            at=at,
+            context=context,
         )
     )
 
@@ -60,14 +107,16 @@ def error(
     *,
     origin: str | None = None,
     at: float | None = None,
+    **context: TPrimitive,
 ) -> LogEntry:
     return send(
-        LogEntry(
+        entry(
             message=message,
             value=code,
             level=LogLevel.Error,
             origin=origin or LogOrigin.get(),
-            time=time.time() if at is None else at,
+            at=at,
+            context=context,
         )
     )
 

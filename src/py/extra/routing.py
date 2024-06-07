@@ -539,7 +539,7 @@ class Dispatcher:
                 path = f"{prefix}{path}" if prefix else path
                 path = f"/{path}" if not path.startswith("/") else path
                 route: Route = Route(path, handler)
-                info(f"Registered route {method} {path}")
+                info(f"Registered route", Method=method, Path=path)
                 self.routes.setdefault(method, []).append(route)
                 self.isPrepared = False
         return self
