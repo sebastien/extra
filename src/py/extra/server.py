@@ -60,66 +60,85 @@ class AIOSocket:
         try:
             parser: HTTPParser = HTTPParser()
             size: int = options.readsize
-            status = HTTPRequestStatus.Processing
 
             # TODO: Support keep-alive
             # TODO: We should loop and leave the connection open if we're
             # in keep-alive mode.
             buffer = bytearray(size)
-            # --
-            # NOTE: With HTTP pipelining, multiple requests may be sent
-            # without waiting for the server response.
-            req: HTTPRequest | None = None
-            while req is None and status is HTTPRequestStatus.Processing:
-                try:
-                    n = await asyncio.wait_for(
-                        loop.sock_recv_into(client, buffer), timeout=options.timeout
+            # NOTE: Keepalive timeout should be relative to the time it takes
+            # to process a request, and to the backlog size as well.
+            keepalive_timeout: float = 2.0
+            iteration: int = 0
+            keepalive: bool = True
+            while keepalive:
+                status = HTTPRequestStatus.Processing
+                # --
+                # NOTE: With HTTP pipelining, multiple requests may be sent
+                # without waiting for the server response.
+                req: HTTPRequest | None = None
+                while req is None and status is HTTPRequestStatus.Processing:
+                    try:
+                        n = await asyncio.wait_for(
+                            loop.sock_recv_into(client, buffer),
+                            timeout=keepalive_timeout,
+                        )
+                    except TimeoutError:
+                        status = HTTPRequestStatus.Timeout
+                        keepalive_timeout = False
+                        break
+                    if not n:
+                        status = HTTPRequestStatus.NoData
+                        break
+                    for atom in parser.feed(buffer[:n] if n != size else buffer):
+                        if atom is HTTPRequestStatus.Complete:
+                            status = atom
+                        elif isinstance(atom, HTTPRequest):
+                            req = atom
+                # NOTE: We'll need to think about the loading of the body, which
+                # should really be based on content length. It may be in memory,
+                # it may be spooled, or it may be streamed. There should be some
+                # update system as well.
+                if req is not None:
+                    if (
+                        req.protocol == "HTTP/1.0"
+                        or req.headers.get("connection") == "close"
+                    ):
+                        keepalive = False
+                    r: HTTPResponse | Coroutine[Any, HTTPResponse, Any] = app.process(
+                        req
                     )
-                except TimeoutError:
-                    status = HTTPRequestStatus.Timeout
-                    break
-                if not n:
-                    status = HTTPRequestStatus.NoData
-                    break
-                for atom in parser.feed(buffer[:n] if n != size else buffer):
-                    if atom is HTTPRequestStatus.Complete:
-                        status = atom
-                    elif isinstance(atom, HTTPRequest):
-                        req = atom
-            # NOTE: We'll need to think about the loading of the body, which
-            # should really be based on content length. It may be in memory,
-            # it may be spooled, or it may be streamed. There should be some
-            # update system as well.
-            if not req:
-                # We did not get a full request
-                pass
-            else:
-                r: HTTPResponse | Coroutine[Any, HTTPResponse, Any] = app.process(req)
-                res: HTTPResponse | None = None
-                if isinstance(r, HTTPResponse):
-                    res = r
-                else:
-                    res = await r
-                if res is None:
-                    # TODO: Internal error
-                    pass
-                else:
-                    # We send the request head
-                    await loop.sock_sendall(client, res.head())
-                    sent = True
-                    # And send the request
-                    if isinstance(res.body, HTTPResponseBlob):
-                        await loop.sock_sendall(client, res.body.payload)
+                    res: HTTPResponse | None = None
+                    if isinstance(r, HTTPResponse):
+                        res = r
                     else:
+                        res = await r
+                    if res is None:
+                        # TODO: Internal error
                         pass
+                    else:
+                        # We send the request head
+                        await loop.sock_sendall(client, res.head())
+                        sent = True
+                        # And send the request
+                        if isinstance(res.body, HTTPResponseBlob):
+                            await loop.sock_sendall(client, res.body.payload)
+                        else:
+                            pass
+                if not sent:
+                    try:
+                        await loop.sock_sendall(client, SERVER_ERROR)
+                    except Exception as e:
+                        exception(e)
+                if (
+                    status is HTTPRequestStatus.Timeout
+                    or status is HTTPRequestStatus.NoData
+                ):
+                    break
+                iteration += 1
         except Exception as e:
             exception(e)
         finally:
-            if not sent:
-                try:
-                    await loop.sock_sendall(client, SERVER_ERROR)
-                except Exception as e:
-                    exception(e)
+
             # FIXME: We should support keep-alive, where we don't close the
             # connection right away. However the drawback is that each worker
             # is going to linger for longer, waiting for the reader to timeout.

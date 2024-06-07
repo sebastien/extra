@@ -90,7 +90,7 @@ class Route:
         ),
         "path": RoutePattern(r"[^:@]+", str),
         "segment": RoutePattern(r"[^/]+", str),
-        "any": RoutePattern(r".+", str),
+        "any": RoutePattern(r".*", str),
         "rest": RoutePattern(r".+", str),
         "range": RoutePattern(r"\-?\d*\:\-?\d*", lambda x: x.split(":")),
         "lang": RoutePattern(r"((\w\w)/)?", lambda x: x[:-1]),

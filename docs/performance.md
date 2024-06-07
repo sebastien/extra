@@ -8,6 +8,11 @@ Here are the things that we've done to maximise performance:
 -   Request body is lazily loaded and parsed and uses a spool if large.
 -   Use of streaming so that data is written directly to output
 
+## Keep-Alive
+
+HTTP/1.0 (used by tools like `ab`) closes connection at the end of each
+request, while
+
 ## Tips
 
 -   Use `bytes` on critical requests to skip the encoding
@@ -22,7 +27,6 @@ testing suite for both HTTP/1 and HTTP/2.
 Here's the one liner to test simple (raw) performance for HTTP/1:
 
 ```
-h2load  -n100000 -c100 -m10 --h1 http://localhost:8000/
 h2load  -n100000 -c100 -m10 --h1 http://localhost:8000/
 ```
 

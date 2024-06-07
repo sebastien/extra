@@ -1,13 +1,21 @@
-from typing import Generator, Any, NamedTuple, Iterator, Awaitable
+from typing import Any, NamedTuple, Iterator, Awaitable, TypeAlias, Union
 from enum import Enum
-from abc import ABC
 from .status import HTTP_STATUS
 from ..config import DEFAULT_ENCODING
+from .api import ResponseFactory
 
 # NOTE: MyPyC doesn't support async generators. We're trying without.
 
+
 TControl = bool | None
 DEFAULT_ENCODING = "UTF8"
+
+
+# -----------------------------------------------------------------------------
+#
+# DATA MODEL
+#
+# -----------------------------------------------------------------------------
 
 
 class HTTPRequestError(Exception):
@@ -28,8 +36,8 @@ class HTTPRequestHeaders(NamedTuple):
 
 
 class HTTPRequestBlob(NamedTuple):
-    payload: bytes
-    length: int
+    payload: bytes = b""
+    length: int = 0
     remaining: int = 0
 
     @property
@@ -71,13 +79,14 @@ class HTTPRequestStatus(Enum):
     BadFormat = 12
 
 
-HTTPRequestAtom = (
-    HTTPRequestLine
-    | HTTPRequestHeaders
-    | HTTPRequestBlob
-    | HTTPRequestBody
-    | HTTPRequestStatus
-)
+HTTPRequestAtom: TypeAlias = Union[
+    HTTPRequestLine,
+    HTTPRequestHeaders,
+    HTTPRequestBlob,
+    HTTPRequestBody,
+    HTTPRequestStatus,
+    "HTTPRequest",
+]
 
 
 class HTTPResponseBlob(NamedTuple):
@@ -111,6 +120,7 @@ class HTTPResponseAsyncStream(NamedTuple):
 
 def headername(name: str, *, headers: dict[str, str] = {}) -> str:
     """Normalizes the header name."""
+    name = name.lower()
     n: str | None = headers.get(name)
     if n:
         return n
@@ -122,56 +132,15 @@ def headername(name: str, *, headers: dict[str, str] = {}) -> str:
 
 # -----------------------------------------------------------------------------
 #
-# API
-#
-# -----------------------------------------------------------------------------
-
-# --
-# == HTTP Request Response API
-#
-# Defines the high level API functions (orthogonal to the underlying model)
-# to manipulate requests/responses.
-
-
-class ResponseAPI(ABC):
-    def notAuthorized(self):
-        pass
-
-    def notFound(self):
-        pass
-
-    def notModified(self):
-        pass
-
-    def fail(self):
-        pass
-
-    def redirect(self):
-        pass
-
-    def html(self):
-        pass
-
-    def text(self):
-        pass
-
-    def json(self):
-        pass
-
-    def returns(self):
-        pass
-
-
-# -----------------------------------------------------------------------------
-#
 # REQUESTS
 #
 # -----------------------------------------------------------------------------
 
 
-class HTTPRequest:
+class HTTPRequest(ResponseFactory["HTTPResponse"]):
 
     __slots__ = [
+        "protocol",
         "method",
         "path",
         "query",
@@ -185,18 +154,23 @@ class HTTPRequest:
         path: str,
         query: str | None,
         headers: HTTPRequestHeaders,
-        body: HTTPRequestBody | None = None,
+        body: HTTPRequestBody | HTTPRequestBlob | None = None,
+        protocol: str = "HTTP/1.1",
     ):
         super().__init__()
         self.method: str = method
         self.path: str = path
         self.query: str | None = query
+        self.protocol: str = protocol
         self._headers: HTTPRequestHeaders = headers
-        self.body: HTTPRequestBody | None = body
+        self.body: HTTPRequestBody | HTTPRequestBlob | None = body
 
     @property
     def headers(self) -> dict[str, str]:
         return self._headers.headers
+
+    def getHeader(self, name: str) -> str | None:
+        return self._headers.headers.get(name.lower())
 
     @property
     def contentType(self) -> str | None:
@@ -207,13 +181,13 @@ class HTTPRequest:
         return self._headers.contentLength
 
     async def load(self, timeout: float | None = None):
-        print("LOAD", self.body)
         return b""
 
     def respond(
         self,
         content: Any = None,
         contentType: str | None = None,
+        contentLength: int | None = None,
         status: int = 200,
         message: str | None = None,
     ) -> "HTTPResponse":
@@ -222,12 +196,13 @@ class HTTPRequest:
             message=message,
             content=content,
             contentType=contentType,
+            protocol=self.protocol,
         )
 
-    # def respond(
-    #     self,
-    # ) -> "HTTPResponse":
-    #     pass
+    # =========================================================================
+    # API
+    # =========================================================================
+
     def __str__(self):
         return f"Request({self.method} {self.path}{f'?{self.query}' if self.query else ''} {self.headers})"
 
@@ -261,7 +236,7 @@ class HTTPResponse:
             )
             updated_headers["content-type"] = contentType
         if isinstance(content, str):
-            payload = content.encode(content, DEFAULT_ENCODING)
+            payload = content.encode(DEFAULT_ENCODING)
         elif isinstance(content, bytes):
             payload = content
         body: HTTPResponseBlob | None = None
@@ -306,9 +281,25 @@ class HTTPResponse:
         self.headers: dict[str, str] = headers
         self.body: HTTPResponseBlob | None = body
 
+    def getHeader(self, name: str) -> str | None:
+        return self.headers.get(name.lower())
+
+    def setHeader(self, name: str, value: str | int | None) -> "HTTPResponse":
+        if value is None:
+            del self.headers[name.lower()]
+        else:
+            self.headers[name.lower()] = str(value)
+        return self
+
+    def setHeaders(self, headers: dict[str, str | int | None]) -> "HTTPResponse":
+        for k, v in headers.items():
+            self.setHeader(k, v)
+        return self
+
     def head(self) -> bytes:
         """Serializes the head as a payload."""
         lines: list[str] = [f"{headername(k)}: {v}" for k, v in self.headers.items()]
+        # TODO: No Content support?
         lines.insert(0, f"{self.protocol} {self.status} {self.message}")
         lines.append("")
         lines.append("")

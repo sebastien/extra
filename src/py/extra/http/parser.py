@@ -18,7 +18,7 @@ class LineParser:
 
     def __init__(self) -> None:
         self.buffer: bytearray = bytearray()
-        self.line: str | None = None
+        self.line: bytes | None = None
         self.offset: int = 0
         self.eol: bytes = EOL
         self.eolsize: int = len(EOL)
@@ -29,10 +29,10 @@ class LineParser:
         self.eolsize = len(eol)
         return self
 
-    def flush(self) -> str | None:
+    def flush(self) -> bytes | None:
         return self.line
 
-    def feed(self, chunk: bytes, start: int = 0) -> tuple[str | None, int]:
+    def feed(self, chunk: bytes, start: int = 0) -> tuple[bytes | None, int]:
         # We do need to append the whole chunk as we may have the previous chunk
         # be like `***\r`, and then the new one like `\n***`, and in that case we
         # wouldn't match the EOL.
@@ -45,7 +45,7 @@ class LineParser:
             return None, read
         else:
             # We get the resulting line
-            self.line = self.buffer[:end].decode("ascii")
+            self.line = self.buffer[:end]
             # We get the original position in the buffer, this will
             # tell us how much of the chunk we'll consume.
             pos: int = len(self.buffer) - read
@@ -77,12 +77,13 @@ class RequestParser:
         line, end = self.line.feed(chunk, start)
         if line:
             # NOTE: This is safe
-            i = line.find(" ")
-            j = line.rfind(" ")
-            p: list[str] = line[i + 1 : j].split("?", 1)
+            l = line.decode("ascii")
+            i = l.find(" ")
+            j = l.rfind(" ")
+            p: list[str] = l[i + 1 : j].split("?", 1)
             # NOTE: There may be junk before the method name
             self.value = HTTPRequestLine(
-                line[0:i], p[0], p[1] if len(p) > 1 else "", line[j + 1 :]
+                l[0:i], p[0], p[1] if len(p) > 1 else "", l[j + 1 :]
             )
             return True, end
         else:
@@ -122,9 +123,10 @@ class HeadersParser:
         if chunks is None:
             return None, end
         elif chunks:
-            l = self.line.flush()
-            if l is None:
+            line: bytes | None = self.line.flush()
+            if line is None:
                 return False, end
+            l: str = line.decode("ascii")
             i = l.find(":")
             if i != -1:
                 # TODO: We should probably normalize the header there
@@ -151,22 +153,37 @@ class HeadersParser:
 
 class BodyEOSParser:
 
-    __slots__ = ["line"]
+    __slots__ = ["line", "data"]
 
     def __init__(self) -> None:
         self.line = LineParser()
+        self.data: bytes | None = None
+
+    def flush(self) -> HTTPRequestBlob:
+        # TODO: We should check it's expected
+        res = (
+            HTTPRequestBlob(
+                self.data,
+                len(self.data),
+            )
+            if self.data is not None
+            else HTTPRequestBlob()
+        )
+        self.reset()
+        return res
 
     def reset(self, eos: bytes = EOL) -> "BodyEOSParser":
         self.line.reset(eos)
+        self.data = None
         return self
 
-    def feed(self, chunk: bytes, start: int = 0) -> tuple[str | None, int]:
+    def feed(self, chunk: bytes, start: int = 0) -> tuple[bytes | None, int]:
         line, end = self.line.feed(chunk, start)
         if line is None:
             return None, end
         else:
-            self.line.reset()
-            return line, end
+            data = self.line.flush()
+            return data, end
 
 
 class BodyLengthParser:
@@ -250,7 +267,8 @@ class HTTPParser:
                                 method=line.method,
                                 path=line.path,
                                 query=line.query,
-                                headers=headers,
+                                headers=headers or HTTPRequestHeaders({}),
+                                protocol=line.protocol,
                                 body=HTTPRequestBlob(b"", 0),
                             )
                             self.parser = self.request.reset()
@@ -269,10 +287,16 @@ class HTTPParser:
                     else:
                         yield HTTPRequest(
                             method=line.method,
+                            protocol=line.protocol,
                             path=line.path,
                             query=line.query,
-                            headers=headers,
-                            body=self.parser.flush(),
+                            headers=headers or HTTPRequestHeaders({}),
+                            # NOTE: This is an awkward dance around the type checker
+                            body=(
+                                self.bodyEOS.flush()
+                                if self.parser is self.bodyEOS
+                                else self.bodyLength.flush()
+                            ),
                         )
                     self.parser = self.request.reset()
                 else:

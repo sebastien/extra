@@ -18,7 +18,9 @@ class CaptureService(Service):
         await request.load()
         print("Headers:", request.headers)
         print("Body:", request.body.raw)
-        return request.respond(b"OK", b"text/plain")
+        return request.returns(
+            {"headers": request.headers, "body": request.body.raw.decode("ascii")}
+        )
 
 
 # NOTE: You can start this with `uvicorn helloworld:app`
