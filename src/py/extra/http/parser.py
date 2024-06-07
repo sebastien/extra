@@ -1,65 +1,58 @@
-from typing import Iterator, NamedTuple, ClassVar, Literal
-from enum import Enum
+from typing import Iterator, ClassVar
+from .model import (
+    HTTPRequest,
+    HTTPRequestLine,
+    HTTPRequestHeaders,
+    HTTPRequestBlob,
+    HTTPRequestAtom,
+    HTTPRequestStatus,
+)
 
 
 EOL: bytes = b"\r\n"
 END: int = 1
 
 
-class HTTPRequestLine(NamedTuple):
-    method: str
-    path: str
-    params: str
-    protocol: str
-
-
-class HTTPRequestHeaders(NamedTuple):
-    headers: dict[str, str]
-    contentType: str | None = None
-    contentLength: int | None = None
-
-
-class HTTPRequestBody(NamedTuple):
-    data: bytes
-    length: int
-    remaining: int = 0
-
-
-class HTTPRequestStatus(Enum):
-    Body = 1
-    Complete = 2
-
-
-HTTPRequestAtom = (
-    HTTPRequestLine | HTTPRequestHeaders | HTTPRequestBody | HTTPRequestStatus
-)
-
-
 class LineParser:
-    __slots__ = ["data", "eol"]
+    __slots__ = ["buffer", "line", "eol", "eolsize", "offset"]
 
     def __init__(self) -> None:
-        self.data: list[bytes] = []
+        self.buffer: bytearray = bytearray()
+        self.line: str | None = None
+        self.offset: int = 0
         self.eol: bytes = EOL
+        self.eolsize: int = len(EOL)
 
     def reset(self, eol: bytes = EOL) -> "LineParser":
-        self.data.clear()
+        self.buffer.clear()
         self.eol = eol
+        self.eolsize = len(eol)
         return self
 
-    def flushstr(self) -> str:
-        res: str = b"".join(self.data).decode("ascii")
-        self.data.clear()
-        return res
+    def flush(self) -> str | None:
+        return self.line
 
-    def feed(self, chunk: bytes, start: int = 0) -> tuple[list[bytes] | None, int]:
-        end = chunk.find(self.eol, start)
+    def feed(self, chunk: bytes, start: int = 0) -> tuple[str | None, int]:
+        # We do need to append the whole chunk as we may have the previous chunk
+        # be like `***\r`, and then the new one like `\n***`, and in that case we
+        # wouldn't match the EOL.
+        read: int = len(chunk) - start
+        self.buffer += chunk[start:] if start else chunk
+        end = self.buffer.find(self.eol, self.offset)
         if end == -1:
-            self.data.append(chunk[start:] if start else chunk)
-            return None, len(chunk) - start
+            # We haven't found the end pattern yet, so we we're reading the entire buffer
+            self.offset += read - (self.eolsize - 1)
+            return None, read
         else:
-            self.data.append(chunk[start:end])
-            return self.data, (end + 2) - start
+            # We get the resulting line
+            self.line = self.buffer[:end].decode("ascii")
+            # We get the original position in the buffer, this will
+            # tell us how much of the chunk we'll consume.
+            pos: int = len(self.buffer) - read
+            # We can clear the buffer, we've got a line
+            self.buffer.clear()
+            # We return the line and how much we've read
+            return self.line, (end + len(self.eol)) - pos
 
 
 class RequestParser:
@@ -81,16 +74,15 @@ class RequestParser:
         return self
 
     def feed(self, chunk: bytes, start: int = 0) -> tuple[bool | None, int]:
-        chunks, end = self.line.feed(chunk, start)
-        if chunks:
+        line, end = self.line.feed(chunk, start)
+        if line:
             # NOTE: This is safe
-            l = b"".join(chunks).decode("ascii")
-            i = l.find(" ")
-            j = l.rfind(" ")
-            p: list[str] = l[i + 1 : j].split("?", 1)
+            i = line.find(" ")
+            j = line.rfind(" ")
+            p: list[str] = line[i + 1 : j].split("?", 1)
             # NOTE: There may be junk before the method name
             self.value = HTTPRequestLine(
-                l[0:i], p[0], p[1] if len(p) > 1 else "", l[j + 1 :]
+                line[0:i], p[0], p[1] if len(p) > 1 else "", line[j + 1 :]
             )
             return True, end
         else:
@@ -130,11 +122,11 @@ class HeadersParser:
         if chunks is None:
             return None, end
         elif chunks:
-            l = self.line.flushstr()
-            i = l.find(":")
-            if not l:
+            l = self.line.flush()
+            if l is None:
                 return False, end
-            elif i != -1:
+            i = l.find(":")
+            if i != -1:
                 # TODO: We should probably normalize the header there
                 h = l[:i].lower().strip()
                 v = l[i + 1 :].strip()
@@ -168,14 +160,13 @@ class BodyEOSParser:
         self.line.reset(eos)
         return self
 
-    def feed(self, chunk: bytes, start: int = 0) -> tuple[list[bytes] | None, int]:
-        chunks, end = self.line.feed(chunk, start)
-        if chunks is None:
+    def feed(self, chunk: bytes, start: int = 0) -> tuple[str | None, int]:
+        line, end = self.line.feed(chunk, start)
+        if line is None:
             return None, end
         else:
-            res = chunks.copy()
             self.line.reset()
-            return res, end
+            return line, end
 
 
 class BodyLengthParser:
@@ -188,9 +179,9 @@ class BodyLengthParser:
         self.read: int = 0
         self.data: list[bytes] = []
 
-    def flush(self) -> HTTPRequestBody:
+    def flush(self) -> HTTPRequestBlob:
         # TODO: We should check it's expected
-        res = HTTPRequestBody(
+        res = HTTPRequestBlob(
             b"".join(self.data),
             self.read,
             0 if self.expected is None else self.expected - self.read,
@@ -199,28 +190,25 @@ class BodyLengthParser:
         return res
 
     def reset(self, length: int | None = None) -> "BodyLengthParser":
-        print("RESET BODY", length, self)
         self.expected = length
         self.read = 0
         self.data.clear()
         return self
 
     def feed(self, chunk: bytes, start: int = 0) -> tuple[bool, int]:
-        print("BODY FEED", chunk, "/", self.expected, self.read, "+", start)
         size: int = len(chunk)
         left: int = size - start
         to_read: int = min(
             left, left if self.expected is None else self.expected - self.read
         )
         if to_read < left:
-            print("BODY add.a", chunk, start, to_read)
             self.data.append(chunk[start : start + to_read])
+            self.read += to_read
             return False, to_read
         else:
-            print("BODY add.b", chunk, start)
             self.data.append(chunk[start:] if start else chunk)
-            print("===", self.data)
-            return True, left
+            self.read += to_read
+            return True, to_read
 
 
 class HTTPParser:
@@ -243,7 +231,6 @@ class HTTPParser:
         line: HTTPRequestLine | None = None
         headers: HTTPRequestHeaders | None = None
         while o < size:
-            print("PARSING AT", o, self.parser)
             l, n = self.parser.feed(chunk, o)
             if l is not None:
                 if self.parser is self.request:
@@ -259,21 +246,28 @@ class HTTPParser:
                         if headers is not None:
                             yield headers
                         if line and line.method not in self.HAS_BODY:
-                            yield HTTPRequestBody(b"", 0)
+                            yield HTTPRequestBlob(b"", 0)
                         elif headers is not None:
-                            match headers.contentLength:
-                                case None:
-                                    self.parser = self.bodyEOS.reset(b"\n")
-                                    yield HTTPRequestStatus.Body
-                                case int(n):
-                                    self.parser = self.bodyLength.reset(n)
-                                    yield HTTPRequestStatus.Body
-                elif self.parser is self.bodyEOS:
-                    yield self.parser.flush()
+                            if headers.contentLength is None:
+                                self.parser = self.bodyEOS.reset(b"\n")
+                                yield HTTPRequestStatus.Body
+                            else:
+                                self.parser = self.bodyLength.reset(
+                                    headers.contentLength
+                                )
+                                yield HTTPRequestStatus.Body
+                elif self.parser is self.bodyEOS or self.parser is self.bodyLength:
+                    if line is None or headers is None:
+                        yield HTTPRequestStatus.BadFormat
+                    else:
+                        yield HTTPRequest(
+                            method=line.method,
+                            path=line.path,
+                            query=line.query,
+                            headers=headers,
+                            body=self.parser.flush(),
+                        )
                     self.parser = self.headers.reset()
-                elif self.parser is self.bodyLength:
-                    yield self.parser.flush()
-                    self.parser = self.request.reset()
                 else:
                     raise RuntimeError(f"Unsupported parser: {self.parser}")
             o += n

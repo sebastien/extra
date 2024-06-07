@@ -20,13 +20,6 @@ class ServerOptions(NamedTuple):
     condition: Callable[[], bool] | None = None
 
 
-class RequestStatus(Enum):
-    Processing = 1
-    Complete = 2
-    Timeout = 3
-    NoData = 4
-
-
 SERVER_ERROR: bytes = (
     b"HTTP/1.1 500 Internal Server Error\r\n"
     b"Content-Type: text/plain\r\n"
@@ -59,7 +52,7 @@ class AIOSocket:
         try:
             parser: HTTPParser = HTTPParser()
             size: int = options.readsize
-            status = RequestStatus.Processing
+            status = HTTPRequestStatus.Processing
 
             # TODO: Support keep-alive
             # TODO: We should loop and leave the connection open if we're
@@ -68,50 +61,49 @@ class AIOSocket:
             # --
             # NOTE: With HTTP pipelining, multiple requests may be sent
             # without waiting for the server response.
-            while status is RequestStatus.Processing:
+            req: HTTPRequest | None = None
+            while req is None and status is HTTPRequestStatus.Processing:
                 try:
                     n = await asyncio.wait_for(
                         loop.sock_recv_into(client, buffer), timeout=options.timeout
                     )
                 except TimeoutError:
-                    status = RequestStatus.Timeout
+                    status = HTTPRequestStatus.Timeout
                     break
                 if not n:
-                    status = RequestStatus.NoData
+                    status = HTTPRequestStatus.NoData
                     break
                 for atom in parser.feed(buffer[:n] if n != size else buffer):
-                    print("ATOM", atom)
-                    # if atom is HTTPParserStatus.Complete:
-                    #     status = RequestStatus.Complete
-                print("STATUS", status)
+                    if atom is HTTPRequestStatus.Complete:
+                        status = atom
+                    elif isinstance(atom, HTTPRequest):
+                        req = atom
             # NOTE: We'll need to think about the loading of the body, which
             # should really be based on content length. It may be in memory,
             # it may be spooled, or it may be streamed. There should be some
             # update system as well.
-            print("PARSER", parser.request)
-            req: HTTPRequest = HTTPRequest(
-                parser.request.method, parser.request.path, parser.headers.flush()
-            )
-            print("REQ", req)
-            r: HTTPResponse | Coroutine[Any, HTTPResponse, Any] = app.process(req)
-            # We send the request head
-
-            res: HTTPResponse | None = None
-            if isinstance(r, HTTPResponse):
-                res = r
-            else:
-                res = await r
-            if res is None:
-                # TODO: Internal error
+            if not req:
+                # We did not get a full request
                 pass
             else:
-                await loop.sock_sendall(client, res.head())
-                sent = True
-                # And send the request
-                if isinstance(res.body, HTTPResponseBlob):
-                    await loop.sock_sendall(client, res.body.payload)
+                r: HTTPResponse | Coroutine[Any, HTTPResponse, Any] = app.process(req)
+                res: HTTPResponse | None = None
+                if isinstance(r, HTTPResponse):
+                    res = r
                 else:
+                    res = await r
+                if res is None:
+                    # TODO: Internal error
                     pass
+                else:
+                    # We send the request head
+                    await loop.sock_sendall(client, res.head())
+                    sent = True
+                    # And send the request
+                    if isinstance(res.body, HTTPResponseBlob):
+                        await loop.sock_sendall(client, res.body.payload)
+                    else:
+                        pass
         except Exception as e:
             exception(e)
         finally:
