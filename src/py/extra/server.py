@@ -3,10 +3,11 @@ from typing import Callable, NamedTuple, Any, Coroutine
 from enum import Enum
 from inspect import iscoroutine
 import socket
+import sys
 
-from .utils.logging import exception
-from .utils.json import json
-from .utils.io import DEFAULT_ENCODING
+
+from .utils.logging import exception, info
+from .utils.io import asWritable
 from .utils.primitives import TPrimitive
 from .model import Application, Service, mount
 from .http.model import (
@@ -46,15 +47,6 @@ SERVER_ERROR: bytes = (
     b"\r\n"
     b"Internal server error\r\n"
 )
-
-
-def asWritable(value: str | bytes | TPrimitive) -> bytes:
-    if isinstance(value, bytes):
-        return value
-    elif isinstance(value, str):
-        return value.encode(DEFAULT_ENCODING)
-    else:
-        return json(value)
 
 
 # NOTE: Based on benchmarks, this gave the best performance.
@@ -220,6 +212,13 @@ class AIOSocket:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = asyncio.new_event_loop()
+
+        info(
+            f"Extra AIO Server listening",
+            icon="🚀",
+            Host=options.host,
+            Port=options.port,
+        )
 
         # TODO: Add condition
         try:

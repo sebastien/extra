@@ -12,6 +12,9 @@ from mypy_extensions import KwArg, VarArg
 # --
 # HTMPL defines functions to create HTML templates
 
+HTML_EMPTY: list[LiteralString] = (
+    "area base br col embed hr img input link meta param source track wbr".split()
+)
 HTML_ESCAPED = str.maketrans(
     {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#x27;"}
 )
@@ -69,7 +72,7 @@ class Node:
                 yield f' {k}="{quoted(v)}"'
             if not self.children:
                 if html:
-                    yield f"></{self.name}>"
+                    yield ">" if self.name in HTML_EMPTY else f"></{self.name}>"
                 else:
                     yield " />"
             else:
@@ -166,7 +169,9 @@ def markup(name: str, tags: list[str | LiteralString]) -> Markup:
 H: Markup = markup("html", HTML_TAGS)
 
 
-def html(*nodes: Node) -> Iterator[str]:
+def html(*nodes: Node, doctype: str | None = None) -> Iterator[str]:
+    if doctype:
+        yield f"{doctype}\n" if doctype.startswith("<!") else f"<!DOCTYPE {doctype}>\n"
     for _ in nodes:
         yield from _.iterHTML()
 

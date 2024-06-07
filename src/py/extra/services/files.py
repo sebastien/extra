@@ -63,10 +63,19 @@ class FileService(Service):
         if localPath.is_dir():
             for p in localPath.iterdir():
                 if p.is_dir():
-                    dirs.append(H.li(H.a(f"{p.name}/", href=f"/{path}/{p.name}")))
+                    dirs.append(H.li(H.a(f"{p.name}/", href=f"{path}/{p.name}")))
                 else:
-                    files.append(H.li(H.a(p.name, href=f"/{path}/{p.name}")))
+                    files.append(H.li(H.a(p.name, href=f"{path}/{p.name}")))
         nodes = []
+        path = path or "/"
+        parent = os.path.dirname(path)
+        if path == parent:
+            parent = None
+        current = os.path.basename(path) or "/"
+        print("PATH", (path, parent, current))
+        if parent is not None:
+            dirs.insert(0, H.li(H.a("..", href=f"/{parent}")))
+
         if dirs:
             nodes += [
                 H.section(
@@ -80,8 +89,6 @@ class FileService(Service):
                     H.h2("Files"), H.ul(*files, style='list-style-type: "\\1F4C4";')
                 )
             ]
-        parent = os.path.dirname(path)
-        current = os.path.basename(path)
         return request.respondHTML(
             html(
                 H.html(
@@ -92,14 +99,19 @@ class FileService(Service):
                         H.body(
                             H.h1(
                                 "Listing for ",
-                                H.a(f"{parent}/", href=f"/{parent}/") if parent else "",
+                                (
+                                    H.a(f"{parent}/", href=f"/{parent}/")
+                                    if parent is not None
+                                    else ""
+                                ),
                                 current,
                             ),
                             *nodes,
-                            H.div(H.small("Served by Extra")),
+                            H.div(H.small("Served by Extra 🚀")),
                         ),
                     ),
-                )
+                ),
+                doctype="html",
             )
         )
 

@@ -35,6 +35,7 @@ class LogEntry(NamedTuple):
     name: str | None = None
     value: TPrimitive | None = None
     context: dict[str, TPrimitive] | None = None
+    icon: str | None = None
 
 
 def formatData(value: Any) -> str:
@@ -56,7 +57,8 @@ def formatData(value: Any) -> str:
 
 
 def send(entry: LogEntry) -> LogEntry:
-    ERR.write(f"[{entry.origin}] {entry.message} {formatData(entry.context)}\n")
+    icon: str = f"{entry.icon} " if entry.icon else ""
+    ERR.write(f"[{entry.origin}] {icon}{entry.message} {formatData(entry.context)}\n")
     ERR.flush()
     return entry
 
@@ -71,6 +73,7 @@ def entry(
     name: str | None = None,
     value: TPrimitive | None = None,
     context: dict[str, TPrimitive],
+    icon: str | None = None,
 ) -> LogEntry:
     return LogEntry(
         origin=origin or LogOrigin.get(),
@@ -81,6 +84,7 @@ def entry(
         name=name,
         value=value,
         context=context,
+        icon=icon,
     )
 
 
@@ -89,6 +93,7 @@ def info(
     *,
     origin: str | None = None,
     at: float | None = None,
+    icon: str | None = None,
     **context: TPrimitive,
 ) -> LogEntry:
     return send(
@@ -97,6 +102,7 @@ def info(
             origin=origin or LogOrigin.get(),
             at=at,
             context=context,
+            icon=icon,
         )
     )
 
@@ -107,6 +113,7 @@ def error(
     *,
     origin: str | None = None,
     at: float | None = None,
+    icon: str | None = None,
     **context: TPrimitive,
 ) -> LogEntry:
     return send(
@@ -117,6 +124,7 @@ def error(
             origin=origin or LogOrigin.get(),
             at=at,
             context=context,
+            icon=icon,
         )
     )
 
