@@ -1,4 +1,5 @@
-from typing import ClassVar, Union, Callable, NamedTuple, TypeVar, Iterable, Any
+from typing import ClassVar, Union, Callable, NamedTuple, TypeVar, Any
+import inspect
 
 T = TypeVar("T")
 
@@ -24,16 +25,27 @@ class Extra:
     POST: ClassVar[str] = "_extra_post"
     PRE: ClassVar[str] = "_extra_pre"
     WHEN: ClassVar[str] = "_extra_when"
+    # When using MyPy, we can't dynamically patch values, so instead we're
+    # collecting annotations by object id.
+    Annotations: ClassVar[dict[int, dict[str, Any]]] = {}
 
     @staticmethod
-    def Meta(scope: Any) -> dict:
+    def Meta(scope: Any, *, strict: bool = False) -> dict:
         """Returns the dictionary of meta attributes for the given value."""
         if isinstance(scope, type):
             if not hasattr(scope, "__extra__"):
                 setattr(scope, "__extra__", {})
             return getattr(scope, "__extra__")
         else:
-            return scope.__dict__
+            if hasattr(scope, "__dict__"):
+                return scope.__dict__
+            elif strict:
+                raise RuntimeError(f"Metadata cannot be attached to object: {scope}")
+            else:
+                sid = id(scope)
+                if sid not in Extra.Annotations:
+                    Extra.Annotations[sid] = {}
+                return Extra.Annotations[sid]
 
 
 def on(

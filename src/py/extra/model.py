@@ -1,4 +1,4 @@
-from typing import Optional, Iterable, ClassVar, Any, Coroutine, NamedTuple
+from typing import Iterable, ClassVar, Any, Coroutine, NamedTuple
 import sys
 import importlib
 
@@ -34,13 +34,11 @@ class Service:
         # TODO: What about the prefix?
         return res
 
-    def __init__(
-        self, name: Optional[str] = None, *, prefix: str | None = None
-    ) -> None:
+    def __init__(self, name: str | None = None, *, prefix: str | None = None) -> None:
         self.name: str = name or self.__class__.__name__
-        self.app: Optional[Application] = None
+        self.app: Application | None = None
         self.prefix = prefix or self.PREFIX
-        self._handlers: Optional[list[Handler]] = None
+        self._handlers: list[Handler] | None = None
         self.init()
 
     def init(self) -> None:
@@ -153,7 +151,7 @@ class Application:
         else:
             return self.onRouteNotFound(request)
 
-    def mount(self, service: Service, prefix: Optional[str] = None):
+    def mount(self, service: Service, prefix: str | None = None):
         if service.isMounted:
             raise RuntimeError(
                 f"Cannot mount service, it is already mounted: {service}"

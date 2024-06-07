@@ -30,6 +30,11 @@ compile:
 check: lint
 	@
 
+check-compiled:
+	@COMPILED=$$(PYTHONPATH=build python -c "import extra;print(extra)")
+	echo "Extra compiled at: $$COMPILED"
+
+
 lint:
 	@flake8 --ignore=E1,E202,E203,E231,E227,E252,E302,E401,E501,E741,F821,W $(SOURCES_PY)
 

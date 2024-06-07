@@ -3,6 +3,7 @@ from enum import Enum
 from typing import NamedTuple, Any
 from contextvars import ContextVar
 from .primitives import TPrimitive
+from .term import Term
 
 ERR = sys.stderr
 
@@ -43,9 +44,11 @@ def formatData(value: Any) -> str:
         return "◌"
     elif isinstance(value, dict):
         # TODO: We should make the key brighter/bolder
-        return " ".join(f"{k}={formatData(v)}" for k, v in value.items())
+        return " ".join(
+            f"{Term.BOLD}{k}{Term.NORMAL}={formatData(v)}" for k, v in value.items()
+        )
     elif isinstance(value, list) or isinstance(value, tuple):
-        return ",".join(formatData(v) for v in value)
+        return f",".join(formatData(v) for v in value)
     elif isinstance(value, str):
         return repr(value) if " " in value else value
     elif isinstance(value, bool):
@@ -57,8 +60,10 @@ def formatData(value: Any) -> str:
 
 
 def send(entry: LogEntry) -> LogEntry:
-    icon: str = f"{entry.icon} " if entry.icon else ""
-    ERR.write(f"[{entry.origin}] {icon}{entry.message} {formatData(entry.context)}\n")
+    icon: str = f" {entry.icon}" if entry.icon else ""
+    ERR.write(
+        f"{Term.BOLD}[{entry.origin}]{Term.RESET}{icon} {entry.message} {formatData(entry.context)}\n"
+    )
     ERR.flush()
     return entry
 

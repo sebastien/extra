@@ -8,6 +8,7 @@ import socket
 from .utils.logging import exception, info, warning
 from .utils.io import asWritable
 from .utils.primitives import TPrimitive
+from .utils.limits import LimitType, unlimit
 from .model import Application, Service, mount
 from .http.model import (
     HTTPRequest,
@@ -104,6 +105,7 @@ class AIOSocket:
                             status = atom
                         elif isinstance(atom, HTTPRequest):
                             req = atom
+                    del buffer[:n]
 
                 # NOTE: We'll need to think about the loading of the body, which
                 # should really be based on content length. It may be in memory,
@@ -119,6 +121,7 @@ class AIOSocket:
                             ReadCount=read_count,
                             Status=status.name,
                         )
+                    break
                 elif req is None:
                     warning(
                         "Client did not send a request",
@@ -231,6 +234,7 @@ class AIOSocket:
         # This is what we need to use it with asyncio
         server.setblocking(False)
 
+        tasks: set[asyncio.Task] = set()
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -249,14 +253,24 @@ class AIOSocket:
                 try:
                     client, _ = await loop.sock_accept(server)
                     # NOTE: Should do something with the tasks
-                    loop.create_task(
+                    task = loop.create_task(
                         cls.AWorker(app, client, loop=loop, options=options)
                     )
+                    tasks.add(task)
+                    task.add_done_callback(tasks.discard)
                 except OSError as e:
                     # This can be: [OSError] [Errno 24] Too many open files
-                    exception(e)
+                    if e.errno == 24:
+                        # Implement backpressure or wait mechanism here
+                        await asyncio.sleep(0.1)  # Short delay before retrying
+                    else:
+                        exception(e)
+
         finally:
             server.close()
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def run(
@@ -267,6 +281,7 @@ def run(
     condition: Callable | None = None,
     timeout: float = 10.0,
 ):
+    unlimit(LimitType.Files)
     options = ServerOptions(
         host=host, port=port, backlog=backlog, condition=condition, timeout=timeout
     )

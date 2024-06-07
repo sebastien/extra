@@ -383,11 +383,21 @@ class Handler:
 
     @classmethod
     def Attr(
-        cls, value, key: str, extra: dict | None = None, *, merge: bool = False
+        cls, value: Any, key: str, extra: dict | None = None, *, merge: bool = False
     ) -> Any:
         extra_value = extra[key] if extra and key in extra else None
-        if hasattr(value, key):
+        sid = id(value)
+        exists: bool = False
+        # This is to accommodate with
+        if sid in Extra.Annotations:
+            v: Any = Extra.Annotations[sid].get(key)
+            exists = True
+        elif hasattr(value, key):
             v = getattr(value, key)
+            exists = True
+        else:
+            v = None
+        if exists:
             # If we have a matching extra value, and we have that to
             # merge, then we merge it.
             if extra_value and merge:

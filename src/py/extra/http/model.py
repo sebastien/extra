@@ -2,12 +2,14 @@ from typing import (
     Any,
     NamedTuple,
     Iterator,
+    Generator,
     Awaitable,
     TypeAlias,
     Union,
     Callable,
     AsyncGenerator,
 )
+from ..utils.primitives import TPrimitive
 import os.path
 import inspect
 from enum import Enum
@@ -112,11 +114,11 @@ class HTTPResponseFile(NamedTuple):
 
 
 class HTTPResponseStream(NamedTuple):
-    stream: Iterator[bytes]
+    stream: Generator[str | bytes | TPrimitive, Any, Any]
 
 
 class HTTPResponseAsyncStream(NamedTuple):
-    stream: AsyncGenerator[Any, Any]
+    stream: AsyncGenerator[str | bytes | TPrimitive, Any]
 
 
 HTTPResponseBody: TypeAlias = (
