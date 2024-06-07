@@ -58,21 +58,24 @@ class FileService(Service):
     def renderDir(
         self, request: HTTPRequest, path: str, localPath: Path
     ) -> HTTPResponse:
+        current = os.path.basename(path) or "/"
+        parent: str | None = os.path.dirname(path)
+        if path == parent:
+            parent = None
+        if path.endswith("/"):
+            path = path[:-1]
         files: list[str] = []
         dirs: list[str] = []
         if localPath.is_dir():
-            for p in localPath.iterdir():
+            for p in sorted(localPath.iterdir()):
+                # We really want the href to be absolute
+                href = os.path.join("/", self.PREFIX or "/", path, p.name)
                 if p.is_dir():
-                    dirs.append(H.li(H.a(f"{p.name}/", href=f"{path}/{p.name}")))
+                    dirs.append(H.li(H.a(f"{p.name}/", href=href)))
                 else:
-                    files.append(H.li(H.a(p.name, href=f"{path}/{p.name}")))
+                    files.append(H.li(H.a(p.name, href=href)))
         nodes = []
-        path = path or "/"
-        parent = os.path.dirname(path)
-        if path == parent:
-            parent = None
-        current = os.path.basename(path) or "/"
-        print("PATH", (path, parent, current))
+
         if parent is not None:
             dirs.insert(0, H.li(H.a("..", href=f"/{parent}")))
 
@@ -89,29 +92,37 @@ class FileService(Service):
                     H.h2("Files"), H.ul(*files, style='list-style-type: "\\1F4C4";')
                 )
             ]
+        path_chunks: list[str] = path.split("/")
+        prefix = self.PREFIX or "/"
+        if not prefix.startswith("/"):
+            prefix = f"/{prefix}"
+        breadcrumbs = [H.a("/", href=prefix)]
+        for i, bp in enumerate(path_chunks[:-1]):
+            breadcrumbs.append(
+                H.a(bp, href=os.path.join(prefix, *path_chunks[: i + 1]))
+            )
+            breadcrumbs.append("/")
         return request.respondHTML(
-            html(
-                H.html(
-                    H.head(
-                        H.meta(charset="utf-8"),
-                        H.title(path),
-                        H.style(FILE_CSS),
-                        H.body(
-                            H.h1(
-                                "Listing for ",
-                                (
-                                    H.a(f"{parent}/", href=f"/{parent}/")
-                                    if parent is not None
-                                    else ""
+            "".join(
+                html(
+                    H.html(
+                        H.head(
+                            H.meta(charset="utf-8"),
+                            H.title(path),
+                            H.style(FILE_CSS),
+                            H.body(
+                                H.h1(
+                                    "Listing for ",
+                                    H.span(*breadcrumbs),
+                                    "" if current == "/" else current,
                                 ),
-                                current,
+                                *nodes,
+                                H.div(H.small("Served by Extra 🚀")),
                             ),
-                            *nodes,
-                            H.div(H.small("Served by Extra 🚀")),
                         ),
                     ),
-                ),
-                doctype="html",
+                    doctype="html",
+                )
             )
         )
 

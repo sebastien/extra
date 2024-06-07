@@ -252,12 +252,16 @@ class HTTPResponse:
         """Factory method to create HTTP response objects."""
         payload: bytes | None = None
         updated_headers: dict[str, str] = {} if headers is None else {}
-        if contentType and headers and headers.get("content-type") != contentType:
+        if contentType and (not headers or headers.get("content-type") != contentType):
             updated_headers["content-type"] = contentType
         # We process the body
-        body: HTTPResponseBlob | HTTPResponseFile | HTTPResponseAsyncStream | None = (
-            None
-        )
+        body: (
+            HTTPResponseBlob
+            | HTTPResponseFile
+            | HTTPResponseStream
+            | HTTPResponseAsyncStream
+            | None
+        ) = None
         content_length: str | None = None
         if content is None:
             pass
@@ -276,18 +280,15 @@ class HTTPResponse:
             raise ValueError(f"Unsupported content {type(content)}:{content}")
         # If we have a payload then it's a Blob response
         if payload is not None:
-            body = (
-                HTTPResponseBlob(payload, str(len(payload)))
-                if payload is not None
-                else None
-            )
+            body = HTTPResponseBlob(payload, str(len(payload)))
             content_length = body.length
         # TODO: We should have a response pipeline that can do things
         # like ETags, Ranged requests, etc.
         # We adjust any extra header
-        if content_length:
-            if headers and headers.get("content-length") != content_length:
-                updated_headers["content-length"] = content_length
+        if content_length and (
+            not headers or headers.get("content-length") != content_length
+        ):
+            updated_headers["content-length"] = content_length
         # --
         # The response is ready to be packaged
         return HTTPResponse(

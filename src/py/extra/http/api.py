@@ -67,7 +67,7 @@ class ResponseFactory(ABC, Generic[T]):
         pass
 
     def respondHTML(self, html: str | bytes | Iterator[str | bytes]):
-        return self.respond(content=html, contentType="application/html")
+        return self.respond(content=html, contentType="text/html")
 
     def respondFile(self, path: Path | str, status: int = 200):
         return self.respond(

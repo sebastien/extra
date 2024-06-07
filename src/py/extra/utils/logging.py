@@ -99,7 +99,27 @@ def info(
     return send(
         entry(
             message=message,
-            origin=origin or LogOrigin.get(),
+            origin=origin,
+            at=at,
+            context=context,
+            icon=icon,
+        )
+    )
+
+
+def warning(
+    message: str,
+    *,
+    origin: str | None = None,
+    at: float | None = None,
+    icon: str | None = None,
+    **context: TPrimitive,
+) -> LogEntry:
+    return send(
+        entry(
+            message=message,
+            level=LogLevel.Warning,
+            origin=origin,
             at=at,
             context=context,
             icon=icon,
@@ -121,7 +141,7 @@ def error(
             message=message,
             value=code,
             level=LogLevel.Error,
-            origin=origin or LogOrigin.get(),
+            origin=origin,
             at=at,
             context=context,
             icon=icon,

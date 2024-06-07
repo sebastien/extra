@@ -151,9 +151,7 @@ class Application:
                 raise RuntimeError(f"Route has no handler defined: {route}")
             return handler(request, {} if params is True else params if params else {})
         else:
-            print("No route found", repr(request.path))
-            raise NotImplementedError
-            # return self.onRouteNotFound(request)
+            return self.onRouteNotFound(request)
 
     def mount(self, service: Service, prefix: Optional[str] = None):
         if service.isMounted:
@@ -176,9 +174,8 @@ class Application:
         service.app = self
         return service
 
-    # TODO
-    # def onRouteNotFound(self, request: HTTPRequest):
-    #     return request.notFound()
+    def onRouteNotFound(self, request: HTTPRequest):
+        return request.notFound()
 
 
 class Components(NamedTuple):

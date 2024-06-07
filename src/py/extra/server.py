@@ -3,10 +3,9 @@ from typing import Callable, NamedTuple, Any, Coroutine
 from enum import Enum
 from inspect import iscoroutine
 import socket
-import sys
 
 
-from .utils.logging import exception, info
+from .utils.logging import exception, info, warning
 from .utils.io import asWritable
 from .utils.primitives import TPrimitive
 from .model import Application, Service, mount
@@ -39,13 +38,15 @@ SERVER_OK: bytes = (
     b"\r\n"
     b"OK\r\n"
 )
+
+SERVER_NOCONTENT: bytes = b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n"
 SERVER_ERROR: bytes = (
     b"HTTP/1.1 500 Internal Server Error\r\n"
     b"Content-Type: text/plain\r\n"
-    b"Content-Length: 21\r\n"
+    b"Content-Length: 39\r\n"
     b"Connection: close\r\n"
     b"\r\n"
-    b"Internal server error\r\n"
+    b"Internal server error: Request not sent\r\n"
 )
 
 
@@ -63,7 +64,6 @@ class AIOSocket:
     ):
         """Asynchronous worker, processing a socket in the context
         of an application."""
-        sent: bool = False
         try:
             parser: HTTPParser = HTTPParser()
             size: int = options.readsize
@@ -78,7 +78,9 @@ class AIOSocket:
             keep_alive: bool = True
             iteration: int = 0
             while keep_alive:
-                status = HTTPRequestStatus.Processing
+                status: HTTPRequestStatus = HTTPRequestStatus.Processing
+                sent: bool = False
+                read_count: int = 0
                 # --
                 # NOTE: With HTTP pipelining, multiple requests may be sent
                 # without waiting for the server response.
@@ -89,6 +91,7 @@ class AIOSocket:
                             loop.sock_recv_into(client, buffer),
                             timeout=keep_alive_timeout,
                         )
+                        read_count += n
                     except TimeoutError:
                         status = HTTPRequestStatus.Timeout
                         keep_alive_timeout = False
@@ -101,11 +104,28 @@ class AIOSocket:
                             status = atom
                         elif isinstance(atom, HTTPRequest):
                             req = atom
+
                 # NOTE: We'll need to think about the loading of the body, which
                 # should really be based on content length. It may be in memory,
                 # it may be spooled, or it may be streamed. There should be some
                 # update system as well.
-                if req is not None:
+                if (
+                    status is HTTPRequestStatus.Timeout
+                    or status is HTTPRequestStatus.NoData
+                ):
+                    if read_count:
+                        warning(
+                            "Client did not finish sending a request",
+                            ReadCount=read_count,
+                            Status=status.name,
+                        )
+                elif req is None:
+                    warning(
+                        "Client did not send a request",
+                        ReadCount=read_count,
+                        Status=status.name,
+                    )
+                else:
                     if (
                         req.protocol == "HTTP/1.0"
                         or req.headers.get("connection") == "close"
@@ -120,8 +140,13 @@ class AIOSocket:
                     else:
                         res = await r
                     if res is None:
-                        # TODO: Internal error
-                        pass
+                        warning(
+                            "Application did not return a response",
+                            Method=req.method,
+                            Path=req.path,
+                        )
+                        await loop.sock_sendall(client, SERVER_NOCONTENT)
+                        sent = True
                     else:
                         try:
                             # We send the request head
@@ -144,7 +169,6 @@ class AIOSocket:
                                         )
                                 finally:
                                     res.body.stream.close()
-
                             elif isinstance(res.body, HTTPResponseAsyncStream):
                                 # No keep alive with streaming as these are long
                                 # lived requests.
@@ -165,23 +189,22 @@ class AIOSocket:
                             sent = True
                         except Exception as e:
                             exception(e)
-
                     if req._onClose:
                         try:
                             req._onClose(req)
                         except Exception as e:
                             # NOTE: close handler failed
                             exception(e)
-                if not sent:
+                if req and not sent:
                     try:
+                        warning(
+                            "Server did not send a response",
+                            Method=req.method,
+                            Path=req.path,
+                        )
                         await loop.sock_sendall(client, SERVER_ERROR)
                     except Exception as e:
                         exception(e)
-                if (
-                    status is HTTPRequestStatus.Timeout
-                    or status is HTTPRequestStatus.NoData
-                ):
-                    break
                 iteration += 1
         except Exception as e:
             exception(e)
