@@ -13,18 +13,33 @@ LogSpan: ContextVar[str | int | None] = ContextVar("LogSpan", default=None)
 
 
 class LogType(Enum):
-    Message = 0
-    Event = 10
+    Message = 0  # A general information message
+    Metric = 10  # A data point/metric
+    Event = 20  # An event
+    Audit = 30  # An audit information (must keep)
 
 
 class LogLevel(Enum):
-    Critical = 60  # Critical needs to be relayed
-    Alert = 50  # Alerts need to be relayed
-    Audit = 40  # Audits need to be kept, always
-    Error = 30
-    Warning = 20
-    Info = 10
     Debug = 0
+    Info = 10
+    Checkpoint = 20
+    Warning = 30  # A Warning
+    Error = 40  # A managed error
+    Exception = 50  # An unmanaged error
+    Alert = 60  # Alerts need to be relayed
+    Critical = 70  # Critical needs to be relayed
+
+
+LOG_LEVEL_COLOR = {
+    LogLevel.Debug: 31,
+    LogLevel.Info: 75,
+    LogLevel.Checkpoint: 81,
+    LogLevel.Warning: 202,
+    LogLevel.Error: 160,
+    LogLevel.Exception: 124,
+    LogLevel.Alert: 89,
+    LogLevel.Critical: 163,
+}
 
 
 class LogEntry(NamedTuple):
@@ -61,8 +76,9 @@ def formatData(value: Any) -> str:
 
 def send(entry: LogEntry) -> LogEntry:
     icon: str = f" {entry.icon}" if entry.icon else ""
+    clr: str = Term.Color(LOG_LEVEL_COLOR[entry.level])
     ERR.write(
-        f"{Term.BOLD}[{entry.origin}]{Term.RESET}{icon} {entry.message} {formatData(entry.context)}\n"
+        f"{clr}{Term.BOLD}[{entry.origin}]{Term.RESET}{icon} {entry.message} {formatData(entry.context)}{Term.RESET}\n"
     )
     ERR.flush()
     return entry

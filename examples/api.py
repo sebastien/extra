@@ -1,4 +1,4 @@
-from extra import Service, Request, Response, on, expose, run
+from extra import Service, HTTPRequest, HTTPResponse, on, expose, run
 import time
 
 # --
@@ -44,13 +44,13 @@ class API(Service):
     # Note the `GET_POST` syntax that denotes that we're supporting both
     # `GET` and `POST` methods.
     @on(GET_POST="pong")
-    async def pong(self, request: Request) -> Response:
+    async def pong(self, request: HTTPRequest) -> HTTPResponse:
         """Returns the contents of the request as-as, encoded as JSON"""
         await request.load()
         return request.returns(request.data)
 
 
 if __name__ == "__main__":
-    app = run(API)
+    app = run(API())
 
 # EOF

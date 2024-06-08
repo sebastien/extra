@@ -19,6 +19,25 @@ GRADIENT = (
     196,
 )
 
+LOGGING_GRADIENT = [
+    # Debug
+    31,
+    # Info
+    75,
+    # Checkpoint
+    81,
+    # Warning
+    202,
+    # Error
+    160,
+    # Exception
+    124,
+    # Alert
+    89,
+    # Critical
+    163,
+]
+
 
 def lerp(a, b, k):
     return a + (b - a) * k
@@ -43,8 +62,10 @@ for y in range(40):
     sys.stdout.write("\n")
 
 
-sys.stdout.write("\n")
-for i in GRADIENT:
-    sys.stdout.write(normal(i))
-    sys.stdout.write(f"██")
-sys.stdout.write("\n")
+gradients = [GRADIENT, LOGGING_GRADIENT]
+for g in gradients:
+    sys.stdout.write("\n")
+    for i in g:
+        sys.stdout.write(normal(i))
+        sys.stdout.write(f"██")
+    sys.stdout.write("\n")
