@@ -29,6 +29,8 @@ class SSE(Service):
 
     @on(GET="/chunks")
     def chunks(self, request) -> AsyncIterator[str]:
+        # TODO: We should use chunked  encoding for performance, otherwise
+        # with the keepalive this will take some time to close.
         def stream():
             """The main streaming function, this is returned as a response
             and will be automatically stopped if the client disconnects."""
@@ -38,7 +40,10 @@ class SSE(Service):
                 yield ","
             yield "10]"
 
-        return request.respond(stream(), contentType=b"application/json")
+        return request.respond(
+            stream(),
+            contentType=b"application/json",
+        )
 
 
 # NOTE: You can start this with `uvicorn sse:app`

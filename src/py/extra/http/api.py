@@ -2,6 +2,7 @@ from typing import Any, Generic, TypeVar, Iterator
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from base64 import b64encode
 from .status import HTTP_STATUS
 from ..utils.json import json
 
@@ -48,7 +49,7 @@ class ResponseFactory(ABC, Generic[T]):
         content: str = "Unauthorized",
         contentType="text/plain",
         *,
-        status: int = 403
+        status: int = 403,
     ):
         return self.error(status, content=content, contentType=contentType)
 
@@ -79,10 +80,23 @@ class ResponseFactory(ABC, Generic[T]):
             content=path if isinstance(path, Path) else Path(path), status=status
         )
 
-    def returns(self, value: Any):
+    def respondError(
+        self,
+        content: str | None = None,
+        status: int = 500,
+        contentType: str = "text/plain",
+    ):
+        return self.error(status, content, contentType)
+
+    def returns(self, value: Any, contentType: str = "application/json"):
+        if isinstance(value, bytes):
+            try:
+                value = value.decode("ascii")
+            except:
+                value = f"base64:{b64encode(value).decode('ascii')}"
         payload: bytes = json(value)
         return self.respond(
-            payload, contentType="application/json", contentLength=len(payload)
+            payload, contentType=contentType, contentLength=len(payload)
         )
 
 

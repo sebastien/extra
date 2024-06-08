@@ -207,6 +207,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         return self
 
     async def load(self, timeout: float | None = None):
+        # TODO: This should load from the input stream
         return b""
 
     def respond(

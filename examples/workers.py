@@ -4,6 +4,10 @@ import time
 import threading
 
 
+# FIXME: This is not a good example. The example should be that there is a
+# channel used to send work requests, which are then fed back too the request.
+
+
 def producer(channel: Channel):
     """A timer that streams value every second."""
     while channel.isOpen:

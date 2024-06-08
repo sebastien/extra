@@ -25,6 +25,14 @@ import re
 
 T = TypeVar("T")
 
+
+async def awaited(value: Any):
+    if iscoroutine(value):
+        return await value
+    else:
+        return value
+
+
 # -----------------------------------------------------------------------------
 #
 # ROUTE
@@ -457,7 +465,7 @@ class Handler:
 
     # TODO: This is maybe more than routing, not sure if this really belongs here
     # NOTE: For now we only do HTTP Requests, we'll see if we can generalise.
-    def __call__(
+    async def __call__(
         self, request: HTTPRequest, params: dict[str, Any]
     ) -> HTTPResponse | Coroutine[Any, HTTPResponse, Any]:
         if self.pre:
@@ -466,33 +474,30 @@ class Handler:
                     res = t.transform(request, params)
                 except Exception as e:
                     raise e from e
-                # except HTTPRequestError as error:
-                #     return request.respondError(error)
-                # if isinstance(res, HTTPResponse):
-                #     return res
-                # elif isinstance(res, HTTPRequestError):
-                #     return request.respondError(res)
-                # elif res is False:
-                #     return request.fail(f"Precondition {1} failed")
+                except HTTPRequestError as error:
+                    return request.respondError(error)
+                if isinstance(res, HTTPResponse):
+                    return res
+                elif isinstance(res, HTTPRequestError):
+                    return request.respondError(res)
+                elif res is False:
+                    return request.fail(f"Precondition {1} failed")
         try:
             if self.expose:
                 # NOTE: This pattern is hard to optimise, maybe we could do something
                 # better, like code-generated dispatcher.
-                value: Any = self.functor(**params)
-                # TODO
-                raise NotImplementedError
-                # response = request.returns(
-                #     value, self.contentType or b"application/json"
-                # )
+                value: Any = await awaited(self.functor(**params))
+                response = request.returns(
+                    value, contentType=self.contentType or b"application/json"
+                )
             # TODO: Maybe we should handle the exception here and return an internal server error
             else:
-                response = self.functor(request, **params)
+                response = await awaited(self.functor(request, **params))
         except HTTPRequestError as error:
             # The `respond` method will take care of handling the different
             # types of responses there.
             # TODO
-            raise NotImplementedError
-            # response = request.respondError(error)
+            response = request.respondError(error)
         if self.post:
             if iscoroutine(response):
 
