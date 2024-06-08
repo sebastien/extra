@@ -24,34 +24,22 @@ request, while
 We run the benchmarks using [NG HTTP/2](https://nghttp2.org/), which is a pretty good and versatile performance
 testing suite for both HTTP/1 and HTTP/2.
 
-Here's the one liner to test simple (raw) performance for HTTP/1:
+Here's the one liner to test simple (raw) performance for HTTP/1.1:
 
 ```
-h2load  -n100000 -c100 -m10 --h1 http://localhost:8000/
+h2load  -n10000 -c1000 -m1 --h1 http://localhost:8000/
 ```
 
-and here's the same for HTTP/2:
+Note that using `-m10` for instance enables HTTP pipelining.
+
+and here's the same for HTTP/1.0:
 
 ```
-h2load  -n100000 -c100 -m10 http://localhost:8000/
+ab -n10000 -c1000 http://localhost:8000
 ```
 
-The following reports are done from running the `benchmark_*` scripts
-using uvicorn and tests on HTTP/1 using the first `h2load` command:
 
-| Date       |  RPS    | Throughput | Toolkit    |
-| ---------- | ------- | ---------- | ---------- |
-| 2021-03-21 | 7842.28 |   1.30MB/s | AIOHTTP    |
-| 2021-03-21 | 2732.19 | 400.22KB/s | Raw        |
-| 2021-03-21 | 2133.21 | 270.82KB/s | Extra      |
-| 2021-03-21 | 1873.80 | 259.84KB/s | FastAPI    |
-|  |  |  |   |
-| 2020-05-28 | 6030.30 | 883.34KB/s | Raw        |
-| 2020-05-22 | 5752.87 | 691.02KB/s | Extra+FW   |
-| 2020-05-28 | 4850.08 | 615.73KB/s | Extra      |
-| 2020-05-28 | 2200.13 | 305.10KB/s | FastAPI    |
 
-## Note: Async impact on latency
 
 The problem with a pure async HTTP server is that any non-async request, or any
 async requests that does not yield will simply block other requests. A working

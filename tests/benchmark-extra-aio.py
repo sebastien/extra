@@ -1,14 +1,10 @@
-from extra import Service, expose
-from extra.bridges.aio import run
-
-# NOTE: This is like FastAPI's example
-# https://fastapi.tiangolo.com/
+from extra import Service, on, run
 
 
 class API(Service):
-    @expose(GET="/")
-    def hello(self):
-        return {"Hello": "World"}
+    @on(GET="/")
+    def hello(self, request):
+        return request.respondText(b"Hello, World!")
 
 
 if __name__ == "__main__":

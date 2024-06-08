@@ -66,6 +66,11 @@ class ResponseFactory(ABC, Generic[T]):
     def redirect(self):
         pass
 
+    def respondText(
+        self, content: str | bytes | Iterator[str | bytes], contentType="text/plain"
+    ):
+        return self.respond(content=content, contentType=contentType)
+
     def respondHTML(self, html: str | bytes | Iterator[str | bytes]):
         return self.respond(content=html, contentType="text/html")
 
