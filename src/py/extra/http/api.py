@@ -30,11 +30,16 @@ class ResponseFactory(ABC, Generic[T]):
         contentType: str | None = None,
         contentLength: int | None = None,
         status: int = 200,
+        headers: dict[str, str] | None = None,
         message: str | None = None,
     ) -> T: ...
 
     def error(
-        self, status: int, content: str | None = None, contentType: str = "text/plain"
+        self,
+        status: int,
+        content: str | None = None,
+        contentType: str = "text/plain",
+        headers: dict[str, str] | None = None,
     ):
         message = HTTP_STATUS.get(status, "Server Error")
         return self.respond(
@@ -42,6 +47,7 @@ class ResponseFactory(ABC, Generic[T]):
             contentType=contentType,
             status=status,
             message=message,
+            headers=headers,
         )
 
     def notAuthorized(
@@ -62,10 +68,32 @@ class ResponseFactory(ABC, Generic[T]):
         pass
 
     def fail(self):
-        pass
+        return self.respondError()
 
-    def redirect(self):
-        pass
+    def redirect(self, url: str, permanent: bool = False):
+        # SEE: https://developer.mozilla.org/en-US/docs/Web/HTTP/Redirections
+        return self.respondEmpty(
+            status=301 if permanent else 302, headers={"Location": str(url)}
+        )
+
+    def returns(
+        self,
+        value: Any,
+        contentType: str = "application/json",
+        headers: dict[str, str] | None = None,
+    ):
+        if isinstance(value, bytes):
+            try:
+                value = value.decode("ascii")
+            except:
+                value = f"base64:{b64encode(value).decode('ascii')}"
+        payload: bytes = json(value)
+        return self.respond(
+            payload,
+            contentType=contentType,
+            contentLength=len(payload),
+            headers=headers,
+        )
 
     def respondText(
         self, content: str | bytes | Iterator[str | bytes], contentType="text/plain"
@@ -88,16 +116,8 @@ class ResponseFactory(ABC, Generic[T]):
     ):
         return self.error(status, content, contentType)
 
-    def returns(self, value: Any, contentType: str = "application/json"):
-        if isinstance(value, bytes):
-            try:
-                value = value.decode("ascii")
-            except:
-                value = f"base64:{b64encode(value).decode('ascii')}"
-        payload: bytes = json(value)
-        return self.respond(
-            payload, contentType=contentType, contentLength=len(payload)
-        )
+    def respondEmpty(self, status, headers: dict[str, str] | None = None):
+        return self.respond(content=None, status=status, headers=headers)
 
 
 # EOF

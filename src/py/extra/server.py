@@ -17,6 +17,7 @@ from .http.model import (
     HTTPResponseAsyncStream,
     HTTPResponseBlob,
     HTTPResponseFile,
+    HTTPBodyReader,
 )
 from .http.parser import HTTPParser, HTTPRequestStatus
 from .config import HOST, PORT
@@ -51,6 +52,21 @@ SERVER_ERROR: bytes = (
 )
 
 
+class AIOSocketReader(HTTPBodyReader):
+
+    __slots__ = ["socket", "loop", "buffer"]
+
+    def __init__(self, socket, loop, size: int = 64_000):
+        self.socket = socket
+        self.loop = loop
+
+    async def read(self, timeout: float = 1.0) -> bytes | None:
+        return await asyncio.wait_for(
+            self.loop.sock_recv(self.socket),
+            timeout=timeout,
+        )
+
+
 # NOTE: Based on benchmarks, this gave the best performance.
 class AIOSocketServer:
     """AsyncIO backend using sockets directly."""
@@ -68,6 +84,7 @@ class AIOSocketServer:
         of an application."""
         try:
             parser: HTTPParser = HTTPParser()
+            reader: AIOSocketReader = AIOSocketReader(client, loop)
             size: int = options.readsize
 
             # TODO: Support keep-alive
@@ -117,6 +134,7 @@ class AIOSocketServer:
                         status = atom
                     elif isinstance(atom, HTTPRequest):
                         req = atom
+                        req._reader = reader
                         req_count += 1
                         if (
                             req.protocol == "HTTP/1.0"

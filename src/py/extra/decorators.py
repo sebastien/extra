@@ -97,6 +97,13 @@ def on(
 # @expose(POST="/api/ads", name=lambda _:_.get("name"), ....)
 
 
+class Expose(NamedTuple):
+    json: Any | None = None
+    raw: bool = False
+    compress: bool = False
+    contentType: str | None = None
+
+
 def expose(
     priority=0, compress=False, contentType=None, raw=False, **methods
 ) -> Callable[[T], T]:
@@ -111,23 +118,29 @@ def expose(
 
     def decorator(function: T) -> T:
         meta = Extra.Meta(function)
-        meta.setdefault(Extra.EXPOSE, True)
-        meta.setdefault(Extra.EXPOSE_JSON, None)
-        meta.setdefault(Extra.EXPOSE_RAW, raw)
-        meta.setdefault(Extra.EXPOSE_COMPRESS, compress)
-        meta.setdefault(Extra.EXPOSE_CONTENT_TYPE, contentType)
+
         # This is copy and paste of the @on body
         v = meta.setdefault(Extra.ON, [])
         meta.setdefault(Extra.ON_PRIORITY, int(priority))
+        json_data: Any | None = None
         for http_method, url in list(methods.items()):
             if type(url) not in (list, tuple):
                 url = (url,)
             for method in http_method.upper().split("_"):
                 for _ in url:
                     if method == "JSON":
-                        function.__dict__[Extra.EXPOSE_JSON] = _
+                        json_data = _
                     else:
                         v.append((method, _))
+        meta.setdefault(
+            Extra.EXPOSE,
+            Expose(
+                json=json_data,
+                raw=raw,
+                compress=compress,
+                contentType=contentType,
+            ),
+        )
         return function
 
     return decorator

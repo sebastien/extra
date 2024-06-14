@@ -10,9 +10,10 @@ from typing import (
     NamedTuple,
     ClassVar,
     TypeVar,
+    cast,
 )
 
-from .decorators import Transform, Extra
+from .decorators import Transform, Extra, Expose
 from .http.model import HTTPRequest, HTTPRequestError, HTTPResponse
 from .utils.logging import info
 
@@ -429,7 +430,7 @@ class Handler:
             Handler(
                 functor=value,
                 methods=cls.Attr(value, Extra.ON),
-                expose=cls.Attr(value, Extra.EXPOSE),
+                expose=cast(Expose, cls.Attr(value, Extra.EXPOSE)),
                 priority=cls.Attr(value, Extra.ON_PRIORITY, extra),
                 contentType=cls.Attr(value, Extra.EXPOSE_CONTENT_TYPE, extra),
                 pre=cls.Attr(value, Extra.PRE, extra, merge=True),
@@ -445,7 +446,7 @@ class Handler:
         functor: Callable,
         methods: list[tuple[str, str]],
         priority: int = 0,
-        expose: bool = False,
+        expose: Expose | None = None,
         contentType: str | None = None,
         pre: list[Transform] | None = None,
         post: list[Transform] | None = None,
@@ -472,10 +473,10 @@ class Handler:
             for i, t in enumerate(self.pre):
                 try:
                     res = t.transform(request, params)
+                except HTTPRequestError as error:
+                    return request.respondError(str(error))
                 except Exception as e:
                     raise e from e
-                except HTTPRequestError as error:
-                    return request.respondError(error)
                 if isinstance(res, HTTPResponse):
                     return res
                 elif isinstance(res, HTTPRequestError):
@@ -487,8 +488,14 @@ class Handler:
                 # NOTE: This pattern is hard to optimise, maybe we could do something
                 # better, like code-generated dispatcher.
                 value: Any = await awaited(self.functor(**params))
-                response = request.returns(
-                    value, contentType=self.contentType or b"application/json"
+                content_type = (
+                    self.contentType or self.expose.contentType or b"application/json"
+                )
+                # TODO: Handle compression
+                response = (
+                    request.respond(value, contentType=content_type)
+                    if self.expose.raw
+                    else request.returns(value, contentType=content_type)
                 )
             # TODO: Maybe we should handle the exception here and return an internal server error
             else:

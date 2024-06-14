@@ -9,14 +9,15 @@ from typing import (
     Callable,
     AsyncGenerator,
 )
-from ..utils.primitives import TPrimitive
+from abc import ABC, abstractmethod
 import os.path
 import inspect
+from pathlib import Path
 from enum import Enum
+from ..utils.primitives import TPrimitive
 from .status import HTTP_STATUS
 from ..utils.io import DEFAULT_ENCODING
 from .api import ResponseFactory
-from pathlib import Path
 
 # NOTE: MyPyC doesn't support async generators. We're trying without.
 
@@ -49,21 +50,6 @@ class HTTPRequestHeaders(NamedTuple):
     contentLength: int | None = None
 
 
-class HTTPRequestBlob(NamedTuple):
-    payload: bytes = b""
-    length: int = 0
-    remaining: int = 0
-
-    @property
-    def raw(self) -> bytes:
-        return self.payload
-
-    async def load(
-        self,
-    ) -> bytes | None:
-        return self.payload
-
-
 class HTTPRequestBody:
     def __init__(
         self, instream: Iterator[Awaitable[bytes]], expected: int | None = None
@@ -82,6 +68,21 @@ class HTTPRequestBody:
                 data += chunk
         except StopIteration:
             return data
+
+
+class HTTPRequestBlob(NamedTuple):
+    payload: bytes = b""
+    length: int = 0
+    remaining: int = 0
+
+    @property
+    def raw(self) -> bytes:
+        return self.payload
+
+    async def load(
+        self,
+    ) -> bytes | None:
+        return self.payload
 
 
 class HTTPRequestStatus(Enum):
@@ -156,6 +157,24 @@ def headername(name: str, *, headers: dict[str, str] = {}) -> str:
 # -----------------------------------------------------------------------------
 
 
+BODY_READER_TIMEOUT: float = 1.0
+
+
+class HTTPBodyReader(ABC):
+
+    @abstractmethod
+    async def read(self, timeout: float = BODY_READER_TIMEOUT) -> bytes | None: ...
+
+    async def load(self, timeout: float = BODY_READER_TIMEOUT) -> bytes:
+        while True:
+            chunk = await self.read(timeout)
+            if not chunk:
+                break
+            else:
+                print("GOT", chunk)
+        return b"OK"
+
+
 class HTTPRequest(ResponseFactory["HTTPResponse"]):
 
     __slots__ = [
@@ -164,7 +183,9 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         "path",
         "query",
         "_headers",
-        "body",
+        "_body",
+        "_reader",
+        "_onClose",
     ]
 
     def __init__(
@@ -182,7 +203,8 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         self.query: str | None = query
         self.protocol: str = protocol
         self._headers: HTTPRequestHeaders = headers
-        self.body: HTTPRequestBody | HTTPRequestBlob | None = body
+        self._body: HTTPRequestBody | HTTPRequestBlob | None = body
+        self._reader: HTTPBodyReader | None
         self._onClose: Callable[[HTTPRequest], None] | None = None
 
     @property
@@ -197,6 +219,14 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         return self._headers.contentType
 
     @property
+    def body(self) -> HTTPRequestBody | HTTPRequestBlob:
+        if self._body is None:
+            if not self.reader:
+                raise RuntimeError("Request has no reader")
+            self._body = HTTPRequestBody(self._reader)
+        return self._body
+
+    @property
     def contentLength(self) -> int | None:
         return self._headers.contentLength
 
@@ -206,10 +236,6 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         self._onClose = callback
         return self
 
-    async def load(self, timeout: float | None = None):
-        # TODO: This should load from the input stream
-        return b""
-
     def respond(
         self,
         content: Any = None,
@@ -217,6 +243,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         contentLength: int | None = None,
         status: int = 200,
         message: str | None = None,
+        headers: dict[str, str] | None = None,
     ) -> "HTTPResponse":
         return HTTPResponse.Create(
             status=status,
@@ -224,6 +251,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
             content=content,
             contentType=contentType,
             protocol=self.protocol,
+            headers=headers,
         )
 
     # =========================================================================
