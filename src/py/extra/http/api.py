@@ -5,6 +5,7 @@ from pathlib import Path
 from base64 import b64encode
 from .status import HTTP_STATUS
 from ..utils.json import json
+from ..utils.files import contentType
 
 T = TypeVar("T")
 
@@ -103,9 +104,17 @@ class ResponseFactory(ABC, Generic[T]):
     def respondHTML(self, html: str | bytes | Iterator[str | bytes]):
         return self.respond(content=html, contentType="text/html")
 
-    def respondFile(self, path: Path | str, status: int = 200):
+    def respondFile(
+        self, path: Path | str, status: int = 200, headers: dict[str, str] | None = None
+    ):
+        # TODO: We should have a much more detailed file handling, supporting ranges, etags, etc.
+        content_type = contentType(path)
+        content_length = path.stat().st_size
+        base_headers = {"content-type": content_type, "content-length": content_length}
         return self.respond(
-            content=path if isinstance(path, Path) else Path(path), status=status
+            content=path if isinstance(path, Path) else Path(path),
+            status=status,
+            headers=base_headers | headers if headers else base_headers,
         )
 
     def respondError(

@@ -153,13 +153,17 @@ class AIOSocketServer:
             if res_count != req_count:
                 warning("Incomplete responses", Requests=req_count, Responses=res_count)
             if not read_count:
-                warning(
-                    "Client did not send any data",
-                    ReadCount=read_count,
-                    Status=status.name,
-                    Requests=req_count,
-                    Responses=res_count,
-                )
+                if req_count == 0:
+                    # This is a regular connection close
+                    pass
+                else:
+                    warning(
+                        "Client did not send any data",
+                        ReadCount=read_count,
+                        Status=status.name,
+                        Requests=req_count,
+                        Responses=res_count,
+                    )
             elif status is HTTPRequestStatus.NoData and not res_count:
                 warning(
                     "Client did not feed a complete request",
@@ -169,13 +173,17 @@ class AIOSocketServer:
                     Responses=res_count,
                 )
             elif status is HTTPRequestStatus.Timeout:
-                warning(
-                    f"Client timed out",
-                    ReadCount=read_count,
-                    Status=status.name,
-                    Requests=req_count,
-                    Responses=res_count,
-                )
+                if not req_count or req_count != res_count:
+                    warning(
+                        f"Client timed out",
+                        ReadCount=read_count,
+                        Status=status.name,
+                        Requests=req_count,
+                        Responses=res_count,
+                    )
+                else:
+                    # That's a normal timeout due to keep alive
+                    pass
             else:
                 pass
 
