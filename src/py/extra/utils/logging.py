@@ -77,9 +77,15 @@ def formatData(value: Any) -> str:
 def send(entry: LogEntry) -> LogEntry:
     icon: str = f" {entry.icon}" if entry.icon else ""
     clr: str = Term.Color(LOG_LEVEL_COLOR[entry.level])
-    ERR.write(
-        f"{clr}{Term.BOLD}[{entry.origin}]{Term.RESET}{icon} {entry.message} {formatData(entry.context)}{Term.RESET}\n"
-    )
+    match entry.type:
+        case LogType.Event:
+            ERR.write(
+                f"{clr}{Term.BOLD}[{entry.origin}] {entry.name}{Term.RESET} {formatData(entry.value)} {formatData(entry.context)}{Term.RESET}\n"
+            )
+        case _:
+            ERR.write(
+                f"{clr}{Term.BOLD}[{entry.origin}]{Term.RESET}{icon} {entry.message} {formatData(entry.context)}{Term.RESET}\n"
+            )
     ERR.flush()
     return entry
 
@@ -170,18 +176,30 @@ def error(
     )
 
 
-def notify(
-    event: str, value: Any, *, origin: str | None = None, at: float | None = None
+def event(
+    event: str,
+    value: Any,
+    *,
+    origin: str | None = None,
+    at: float | None = None,
+    **context: TPrimitive,
 ) -> LogEntry:
     return send(
-        LogEntry(
+        entry(
             name=event,
             value=value,
             type=LogType.Event,
-            origin=origin or LogOrigin.get(),
-            time=time.time() if at is None else at,
+            origin=origin,
+            at=at,
+            context=context,
         )
     )
+
+
+def notify(
+    event: str, value: Any, *, origin: str | None = None, at: float | None = None
+) -> LogEntry:
+    return event(event=event, value=value, origin=origin, at=at)
 
 
 def exception(

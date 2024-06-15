@@ -5,7 +5,7 @@ from inspect import iscoroutine
 import socket
 
 
-from .utils.logging import exception, info, warning
+from .utils.logging import exception, info, warning, event
 from .utils.io import asWritable
 from .utils.primitives import TPrimitive
 from .utils.limits import LimitType, unlimit
@@ -135,6 +135,7 @@ class AIOSocketServer:
                     elif isinstance(atom, HTTPRequest):
                         req = atom
                         req._reader = reader
+                        event(req.method, req.path)
                         req_count += 1
                         if (
                             req.protocol == "HTTP/1.0"
