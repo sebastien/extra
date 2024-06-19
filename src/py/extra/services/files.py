@@ -88,6 +88,10 @@ class FileService(Service):
                 H.html(
                     H.head(
                         H.meta(charset="utf-8"),
+                        H.meta(
+                            name="viewport",
+                            content="width=device-width, initial-scale=1.0",
+                        ),
                         H.title(path),
                         H.style(FILE_CSS),
                         H.body(
