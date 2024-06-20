@@ -192,7 +192,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         self,
         method: str,
         path: str,
-        query: str | None,
+        query: str | dict[str, str] | None,
         headers: HTTPRequestHeaders,
         body: HTTPRequestBody | HTTPRequestBlob | None = None,
         protocol: str = "HTTP/1.1",
@@ -200,7 +200,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         super().__init__()
         self.method: str = method
         self.path: str = path
-        self.query: str | None = query
+        self.query: str | dict[str, str] | None = query
         self.protocol: str = protocol
         self._headers: HTTPRequestHeaders = headers
         self._body: HTTPRequestBody | HTTPRequestBlob | None = body
