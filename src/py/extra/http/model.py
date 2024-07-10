@@ -34,7 +34,18 @@ DEFAULT_ENCODING = "UTF8"
 
 
 class HTTPRequestError(Exception):
-    pass
+    def __init__(
+        self,
+        message: str,
+        status: int | None = None,
+        contentType: bytes | None = None,
+        payload: TPrimitive | bytes | None = None,
+    ):
+        super().__init__(message)
+        self.message: str = message
+        self.status: int | None = status
+        self.contentType: bytes | None = contentType
+        self.payload: TPrimitive | bytes | None = payload
 
 
 class HTTPRequestLine(NamedTuple):
@@ -140,14 +151,15 @@ HTTPResponseBody: TypeAlias = (
 
 def headername(name: str, *, headers: dict[str, str] = {}) -> str:
     """Normalizes the header name."""
-    name = name.lower()
-    n: str | None = headers.get(name)
-    if n:
-        return n
+    if name in headers:
+        return headers[name]
+    key: str = name.lower()
+    if key in headers:
+        return headers[key]
     else:
-        n = "-".join(_.capitalize() for _ in name.split("-"))
-        headers[name] = n
-        return n
+        normalized: str = "-".join(_.capitalize() for _ in name.split("-"))
+        headers[key] = normalized
+        return normalized
 
 
 # -----------------------------------------------------------------------------
@@ -212,7 +224,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         return self._headers.headers
 
     def getHeader(self, name: str) -> str | None:
-        return self._headers.headers.get(name.lower())
+        return self._headers.headers.get(headername(name))
 
     @property
     def contentType(self) -> str | None:

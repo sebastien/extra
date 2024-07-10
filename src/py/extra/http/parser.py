@@ -7,6 +7,7 @@ from .model import (
     HTTPRequestBlob,
     HTTPRequestAtom,
     HTTPRequestStatus,
+    headername,
 )
 
 
@@ -94,7 +95,7 @@ class HeadersParser:
                         self.contentLength = None
                 elif h == "content-type":
                     self.contentType = v
-                self.headers[h] = v
+                self.headers[headername(h)] = v
                 return True, end
             else:
                 return None, end

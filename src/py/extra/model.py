@@ -6,6 +6,7 @@ from .routing import Handler, Dispatcher, Route
 from .http.model import HTTPRequest, HTTPResponse
 from .decorators import Extra
 from .utils.collections import flatiter
+from .utils.logging import warning
 
 # -----------------------------------------------------------------------------
 #
@@ -188,11 +189,13 @@ class Components(NamedTuple):
         """Makes a Component value given the applications and services."""
         apps: list[Application] = []
         services: list[Service] = []
-        for item in flatiter(components):
+        for i, item in enumerate(flatiter(components)):
             if isinstance(item, Application):
                 apps.append(item)
             elif isinstance(item, Service):
                 services.append(item)
+            elif item is None:
+                pass
             else:
                 raise RuntimeError(f"Unsupported component type {type(item)}: {item}")
         return Components(
