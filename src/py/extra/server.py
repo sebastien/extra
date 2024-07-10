@@ -134,7 +134,7 @@ class AIOSocketServer:
                         req_count += 1
                         if (
                             req.protocol == "HTTP/1.0"
-                            or req.headers.get("connection") == "close"
+                            or req.headers.get("Connection") == "close"
                         ):
                             keep_alive = False
                         if await cls.SendResponse(req, app, client, loop):

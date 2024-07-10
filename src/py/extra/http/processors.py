@@ -31,6 +31,7 @@ class Processor(ABC, Generic[T]):
 #
 # -----------------------------------------------------------------------------
 
+
 class MultipartBoundary(NamedTuple):
     boundary: str
 
@@ -52,24 +53,28 @@ class Multipart(Processor[MultipartOutput]):
     # which lead to writing these functions.
     # http://stackoverflow.com/questions/4526273/what-does-enctype-multipart-form-data-mean
 
-    def __init__( self, *, size:int=64_000 ):
-        self.boundary:bytes|None = None
-        self.boundaryLength:int = 0
-        self.hasMore:bool = True
-        self.size:int = size
+    def __init__(self, *, size: int = 64_000):
+        self.boundary: bytes | None = None
+        self.boundaryLength: int = 0
+        self.hasMore: bool = True
+        self.size: int = size
         self.line = LineParser()
 
     def accepts(self, headers: dict[str, str]) -> bool:
         # multipart/form-data
         # The contentType is expected to be
         # >   Content-Type: multipart/form-data; boundary=<BOUNDARY>\r\n
-        content_type = headers.get("content-type")
-        return content_type and (
-            "multipart/form-data" in content_type or "multipart/mixed" in content_type
+        content_type = headers.get("Content-Type")
+        return bool(
+            content_type
+            and (
+                "multipart/form-data" in content_type
+                or "multipart/mixed" in content_type
+            )
         )
 
-    def start(self, headers:dict[str,str]) -> int:
-        content_type = headers["content-type"]
+    def start(self, headers: dict[str, str]) -> int:
+        content_type = headers["Content-Type"]
         self.boundary = f"--{content_type.split("boundary=", 1)[1]}".encode("ascii")
         self.boundaryLength = len(self.boundary)
         self.line.reset(self.boundary)
@@ -79,7 +84,6 @@ class Multipart(Processor[MultipartOutput]):
     def feed(self, chunk: bytes) -> MultipartOutput | Control:
         # TODO: implement this
         return EOS
-     
 
 
 # EOF

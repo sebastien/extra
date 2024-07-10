@@ -58,7 +58,7 @@ class TextChunk(NamedTuple):
 
 
 class ParameterChunk(NamedTuple):
-    """A parameterizable chunk, where the chunk must match the given patttern."""
+    """A parameterizable chunk, where the chunk must match the given pattern."""
 
     name: str
     pattern: RoutePattern
@@ -480,7 +480,11 @@ class Handler:
                 if isinstance(res, HTTPResponse):
                     return res
                 elif isinstance(res, HTTPRequestError):
-                    return request.respondError(res)
+                    return request.respond(
+                        content=res.payload if res.payload else res.message,
+                        status=res.status or 500,
+                        contentType=res.contentType or "text/plain",
+                    )
                 elif res is False:
                     return request.fail(f"Precondition {1} failed")
         try:
@@ -488,8 +492,8 @@ class Handler:
                 # NOTE: This pattern is hard to optimise, maybe we could do something
                 # better, like code-generated dispatcher.
                 value: Any = await awaited(self.functor(**params))
-                content_type = (
-                    self.contentType or self.expose.contentType or b"application/json"
+                content_type: str = (
+                    self.contentType or self.expose.contentType or "application/json"
                 )
                 # TODO: Handle compression
                 response = (
@@ -504,7 +508,11 @@ class Handler:
             # The `respond` method will take care of handling the different
             # types of responses there.
             # TODO
-            response = request.respondError(error)
+            response = request.respond(
+                content=error.payload if error.payload else error.message,
+                status=error.status or 500,
+                contentType=error.contentType or "text/plain",
+            )
         if self.post:
             if iscoroutine(response):
 

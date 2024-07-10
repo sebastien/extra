@@ -68,8 +68,15 @@ class ResponseFactory(ABC, Generic[T]):
     def notModified(self):
         pass
 
-    def fail(self):
-        return self.respondError()
+    def fail(
+        self,
+        content: str | None = None,
+        status: int = 500,
+        contentType: str = "text/plain",
+    ):
+        return self.respondError(
+            content=content, status=status, contentType=contentType
+        )
 
     def redirect(self, url: str, permanent: bool = False):
         # SEE: https://developer.mozilla.org/en-US/docs/Web/HTTP/Redirections
@@ -108,9 +115,10 @@ class ResponseFactory(ABC, Generic[T]):
         self, path: Path | str, status: int = 200, headers: dict[str, str] | None = None
     ):
         # TODO: We should have a much more detailed file handling, supporting ranges, etags, etc.
-        content_type = contentType(path)
-        content_length = path.stat().st_size
-        base_headers = {"content-type": content_type, "content-length": content_length}
+        p: Path = path if isinstance(path, Path) else Path(path)
+        content_type: str = contentType(p)
+        content_length: str = str(p.stat().st_size)
+        base_headers = {"Content-Type": content_type, "Content-Length": content_length}
         return self.respond(
             content=path if isinstance(path, Path) else Path(path),
             status=status,

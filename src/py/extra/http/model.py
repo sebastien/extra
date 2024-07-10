@@ -1,13 +1,12 @@
 from typing import (
     Any,
     NamedTuple,
-    Iterator,
     Generator,
-    Awaitable,
     TypeAlias,
     Union,
     Callable,
     AsyncGenerator,
+    cast,
 )
 from abc import ABC, abstractmethod
 import os.path
@@ -20,7 +19,6 @@ from ..utils.io import DEFAULT_ENCODING
 from .api import ResponseFactory
 
 # NOTE: MyPyC doesn't support async generators. We're trying without.
-
 
 TControl = bool | None
 DEFAULT_ENCODING = "UTF8"
@@ -38,13 +36,13 @@ class HTTPRequestError(Exception):
         self,
         message: str,
         status: int | None = None,
-        contentType: bytes | None = None,
-        payload: TPrimitive | bytes | None = None,
+        contentType: str | None = None,
+        payload: TPrimitive | None = None,
     ):
         super().__init__(message)
         self.message: str = message
         self.status: int | None = status
-        self.contentType: bytes | None = contentType
+        self.contentType: str | None = contentType
         self.payload: TPrimitive | bytes | None = payload
 
 
@@ -62,10 +60,8 @@ class HTTPRequestHeaders(NamedTuple):
 
 
 class HTTPRequestBody:
-    def __init__(
-        self, instream: Iterator[Awaitable[bytes]], expected: int | None = None
-    ):
-        self.instream: Iterator[Awaitable[bytes]] = instream
+    def __init__(self, reader: HTTPBodyReader, expected: int | None = None):
+        self.reader: HTTPBodyReader = reader
         self.expected: int | None = None
 
     async def load(
@@ -75,8 +71,9 @@ class HTTPRequestBody:
         data = bytearray()
         try:
             while True:
-                chunk = await next(self.instream)
-                data += chunk
+                chunk = await self.reader.read()
+                if chunk is not None:
+                    data += chunk
         except StopIteration:
             return data
 
@@ -233,8 +230,8 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
     @property
     def body(self) -> HTTPRequestBody | HTTPRequestBlob:
         if self._body is None:
-            if not self.reader:
-                raise RuntimeError("Request has no reader")
+            if not self._reader:
+                raise RuntimeError("Request has no reader, can't read body")
             self._body = HTTPRequestBody(self._reader)
         return self._body
 
@@ -254,14 +251,15 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         contentType: str | None = None,
         contentLength: int | None = None,
         status: int = 200,
-        message: str | None = None,
         headers: dict[str, str] | None = None,
+        message: str | None = None,
     ) -> "HTTPResponse":
         return HTTPResponse.Create(
             status=status,
             message=message,
             content=content,
             contentType=contentType,
+            contentLength=contentLength,
             protocol=self.protocol,
             headers=headers,
         )
@@ -287,6 +285,7 @@ class HTTPResponse:
     def Create(
         content: Any = None,
         contentType: str | None = None,
+        contentLength: int | None = None,
         headers: dict[str, str] | None = None,
         status: int = 200,
         message: str | None = None,
@@ -295,8 +294,12 @@ class HTTPResponse:
         """Factory method to create HTTP response objects."""
         payload: bytes | None = None
         updated_headers: dict[str, str] = {} if headers is None else {}
-        if contentType and (not headers or headers.get("content-type") != contentType):
-            updated_headers["content-type"] = contentType
+        if contentType and (not headers or headers.get("Content-Type") != contentType):
+            updated_headers["Content-Type"] = contentType
+        if contentLength is not None and (
+            not headers or headers.get("Content-Type") != contentType
+        ):
+            updated_headers["Content-Type"] = cast(str, contentType)
         # We process the body
         body: (
             HTTPResponseBlob
@@ -329,9 +332,9 @@ class HTTPResponse:
         # like ETags, Ranged requests, etc.
         # We adjust any extra header
         if content_length and (
-            not headers or headers.get("content-length") != content_length
+            not headers or headers.get("Content-Length") != content_length
         ):
-            updated_headers["content-length"] = content_length
+            updated_headers["Content-Length"] = content_length
         # --
         # The response is ready to be packaged
         return HTTPResponse(
