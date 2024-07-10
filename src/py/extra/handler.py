@@ -240,7 +240,9 @@ def event(
 def awslambda(
     handler: Callable[[HTTPRequest], HTTPResponse | Coroutine[Any, HTTPResponse, Any]]
 ):
-    def wrapper(event: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    def wrapper(
+        event: dict[str, Any], context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         # TODO: Supports looking at pre/post, etc, registered in the `wrapper`.
         try:
             req = request(event)
