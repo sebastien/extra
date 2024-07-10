@@ -1,5 +1,4 @@
 from typing import ClassVar, Union, Callable, NamedTuple, TypeVar, Any
-import inspect
 
 T = TypeVar("T")
 

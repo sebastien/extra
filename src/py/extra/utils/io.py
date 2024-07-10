@@ -1,5 +1,3 @@
-from pathlib import Path
-import mimetypes
 from typing import NamedTuple
 from .json import json
 from .primitives import TPrimitive

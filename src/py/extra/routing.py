@@ -15,7 +15,7 @@ from typing import (
 
 from .decorators import Transform, Extra, Expose
 from .http.model import HTTPRequest, HTTPRequestError, HTTPResponse
-from .utils.logging import info
+from .utils.logging import info, warning
 
 # from .logging import info, error
 from inspect import iscoroutine
@@ -183,14 +183,14 @@ class Route:
             # for an exact match.
 
             try:
-                self._regexp = re.compile(text := f"^{self.toRegExp()}$")
+                self._regexp = re.compile(f"^{self.toRegExp()}$")
             except Exception as e:
-                msg: str = f"Route syntax is malformed: {repr(self.toRegExp())}"
-                # error(
-                #     "BADROUTE",
-                #     msg := f"Route syntax is malformed: {repr(self.toRegExp())}",
-                # )
-                raise ValueError(msg)
+                raise ValueError(
+                    warning(
+                        f"Route syntax is malformed: {repr(self.toRegExp())}",
+                        code="BADROUTE",
+                    ).message
+                ) from e
         return self._regexp
 
     def toRegExpChunks(self) -> list[str]:
@@ -569,7 +569,7 @@ class Dispatcher:
                 path = f"{prefix}{path}" if prefix else path
                 path = f"/{path}" if not path.startswith("/") else path
                 route: Route = Route(path, handler)
-                info(f"Registered route", Method=method, Path=path)
+                info("Registered route", Method=method, Path=path)
                 self.routes.setdefault(method, []).append(route)
                 self.isPrepared = False
         return self

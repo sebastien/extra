@@ -21,7 +21,6 @@ from .api import ResponseFactory
 # NOTE: MyPyC doesn't support async generators. We're trying without.
 
 TControl = bool | None
-DEFAULT_ENCODING = "UTF8"
 
 
 # -----------------------------------------------------------------------------
@@ -59,23 +58,35 @@ class HTTPRequestHeaders(NamedTuple):
     contentLength: int | None = None
 
 
+BODY_READER_TIMEOUT: float = 1.0
+
+
+class HTTPBodyReader(ABC):
+
+    @abstractmethod
+    async def read(self, timeout: float = BODY_READER_TIMEOUT) -> bytes | None: ...
+
+    async def load(self, timeout: float = BODY_READER_TIMEOUT) -> bytes:
+        data = bytearray()
+        while True:
+            chunk = await self.read(timeout)
+            if not chunk:
+                break
+            else:
+                data += chunk
+        return data
+
+
 class HTTPRequestBody:
     def __init__(self, reader: HTTPBodyReader, expected: int | None = None):
         self.reader: HTTPBodyReader = reader
-        self.expected: int | None = None
+        self.expected: int | None = expected
 
     async def load(
         self,
     ) -> bytes | None:
         """Loads all the data and returns a list of bodies."""
-        data = bytearray()
-        try:
-            while True:
-                chunk = await self.reader.read()
-                if chunk is not None:
-                    data += chunk
-        except StopIteration:
-            return data
+        return await self.reader.load()
 
 
 class HTTPRequestBlob(NamedTuple):
@@ -164,24 +175,6 @@ def headername(name: str, *, headers: dict[str, str] = {}) -> str:
 # REQUESTS
 #
 # -----------------------------------------------------------------------------
-
-
-BODY_READER_TIMEOUT: float = 1.0
-
-
-class HTTPBodyReader(ABC):
-
-    @abstractmethod
-    async def read(self, timeout: float = BODY_READER_TIMEOUT) -> bytes | None: ...
-
-    async def load(self, timeout: float = BODY_READER_TIMEOUT) -> bytes:
-        while True:
-            chunk = await self.read(timeout)
-            if not chunk:
-                break
-            else:
-                print("GOT", chunk)
-        return b"OK"
 
 
 class HTTPRequest(ResponseFactory["HTTPResponse"]):

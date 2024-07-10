@@ -98,7 +98,6 @@ class AIOSocketServer:
             res_count: int = 0
             req_count: int = 0
             while keep_alive:
-                sent: bool = False
                 req: HTTPRequest | None = None
                 # --
                 # We may have more than one request in each payload when
@@ -171,7 +170,7 @@ class AIOSocketServer:
             elif status is HTTPRequestStatus.Timeout:
                 if not req_count or req_count != res_count:
                     warning(
-                        f"Client timed out",
+                        "Client timed out",
                         ReadCount=read_count,
                         Status=status.name,
                         Requests=req_count,
@@ -232,7 +231,6 @@ class AIOSocketServer:
                 elif isinstance(res.body, HTTPResponseStream):
                     # No keep alive with streaming as these are long
                     # lived requests.
-                    keep_alive = False
                     try:
                         for chunk in res.body.stream:
                             await loop.sock_sendall(client, asWritable(chunk))
@@ -244,7 +242,6 @@ class AIOSocketServer:
                     try:
                         async for chunk in res.body.stream:
                             await loop.sock_sendall(client, asWritable(chunk))
-                            keep_alive = False
                     finally:
                         await res.body.stream.aclose()
                 elif res.body is None:
@@ -296,7 +293,7 @@ class AIOSocketServer:
             loop = asyncio.new_event_loop()
 
         info(
-            f"Extra AIO Server listening",
+            "Extra AIO Server listening",
             icon="🚀",
             Host=options.host,
             Port=options.port,

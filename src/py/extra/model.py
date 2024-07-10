@@ -6,7 +6,6 @@ from .routing import Handler, Dispatcher, Route
 from .http.model import HTTPRequest, HTTPResponse
 from .decorators import Extra
 from .utils.collections import flatiter
-from .utils.logging import warning
 
 # -----------------------------------------------------------------------------
 #

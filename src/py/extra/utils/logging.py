@@ -86,7 +86,7 @@ def formatData(value: Any) -> str:
             f"{Term.BOLD}{k}{Term.NORMAL}={formatData(v)}" for k, v in value.items()
         )
     elif isinstance(value, list) or isinstance(value, tuple):
-        return f",".join(formatData(v) for v in value)
+        return ",".join(formatData(v) for v in value)
     elif isinstance(value, str):
         return repr(value) if " " in value else value
     elif isinstance(value, bool):

@@ -1,5 +1,5 @@
 from os import getenv
-from .utils.io import DEFAULT_ENCODING
+from .utils.io import DEFAULT_ENCODING  # NOQA: F401
 
 PORT: int = int(getenv("PORT", 8000))
 

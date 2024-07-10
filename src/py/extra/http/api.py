@@ -93,7 +93,7 @@ class ResponseFactory(ABC, Generic[T]):
         if isinstance(value, bytes):
             try:
                 value = value.decode("ascii")
-            except:
+            except UnicodeDecodeError:
                 value = f"base64:{b64encode(value).decode('ascii')}"
         payload: bytes = json(value)
         return self.respond(
