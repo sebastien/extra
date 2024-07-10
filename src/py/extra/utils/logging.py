@@ -1,6 +1,6 @@
-import sys, time
+import sys, time, inspect
 from enum import Enum
-from typing import NamedTuple, Any
+from typing import NamedTuple, Any, TypeAlias
 from contextvars import ContextVar
 from .primitives import TPrimitive
 from .term import Term
@@ -25,7 +25,7 @@ class LogLevel(Enum):
     Checkpoint = 20
     Warning = 30  # A Warning
     Error = 40  # A managed error
-    Exception = 50  # An unmanaged error
+    Exception = 50  # An un-managed error
     Alert = 60  # Alerts need to be relayed
     Critical = 70  # Critical needs to be relayed
 
@@ -52,6 +52,29 @@ class LogEntry(NamedTuple):
     value: TPrimitive | None = None
     context: dict[str, TPrimitive] | None = None
     icon: str | None = None
+    stack: list[str] | None = None
+
+
+TStack: TypeAlias = list[str]
+
+
+def callstack(offset: int = 1) -> list[str]:
+    """
+    Returns a list of function/method names on the call stack.
+    For methods, the class name is included as 'ClassName.methodName'.
+    """
+    return [
+        (
+            f"{_.frame.f_locals['self'].__class__.__qualname__}.{_.function}"
+            if "self" in _.frame.f_locals
+            else (
+                f"{_.frame.f_locals['cls'].__class__.__qualname__}.{_.function}"
+                if "cls" in _.frame.f_locals
+                else _.function
+            )
+        ).replace("<lambda>", "λ")
+        for _ in reversed(inspect.stack()[offset:])
+    ]
 
 
 def formatData(value: Any) -> str:
@@ -86,6 +109,10 @@ def send(entry: LogEntry) -> LogEntry:
             ERR.write(
                 f"{clr}{Term.BOLD}[{entry.origin}]{Term.RESET}{icon} {entry.message} {formatData(entry.context)}{Term.RESET}\n"
             )
+    if entry.stack:
+        ERR.write(
+            f"{clr}{Term.Color(38)}  {' ' * len(entry.origin)} {'→'.join(entry.stack)}{Term.RESET}\n"
+        )
     ERR.flush()
     return entry
 
@@ -101,6 +128,7 @@ def entry(
     value: TPrimitive | None = None,
     context: dict[str, TPrimitive],
     icon: str | None = None,
+    stack: TStack | bool | None = None,
 ) -> LogEntry:
     return LogEntry(
         origin=origin or LogOrigin.get(),
@@ -112,6 +140,7 @@ def entry(
         value=value,
         context=context,
         icon=icon,
+        stack=callstack(1) if stack is True else stack if stack else None,
     )
 
 
@@ -121,6 +150,7 @@ def info(
     origin: str | None = None,
     at: float | None = None,
     icon: str | None = None,
+    stack: TStack | bool | None = None,
     **context: TPrimitive,
 ) -> LogEntry:
     return send(
@@ -130,6 +160,7 @@ def info(
             at=at,
             context=context,
             icon=icon,
+            stack=callstack(1) if stack is True else stack if stack else None,
         )
     )
 
@@ -140,6 +171,7 @@ def warning(
     origin: str | None = None,
     at: float | None = None,
     icon: str | None = None,
+    stack: TStack | bool | None = None,
     **context: TPrimitive,
 ) -> LogEntry:
     return send(
@@ -150,6 +182,7 @@ def warning(
             at=at,
             context=context,
             icon=icon,
+            stack=callstack(1) if stack is True else stack if stack else None,
         )
     )
 
@@ -161,6 +194,7 @@ def error(
     origin: str | None = None,
     at: float | None = None,
     icon: str | None = None,
+    stack: TStack | bool | None = None,
     **context: TPrimitive,
 ) -> LogEntry:
     return send(
@@ -172,6 +206,7 @@ def error(
             at=at,
             context=context,
             icon=icon,
+            stack=callstack(1) if stack is True else stack if stack else None,
         )
     )
 
@@ -182,6 +217,7 @@ def event(
     *,
     origin: str | None = None,
     at: float | None = None,
+    stack: TStack | bool | None = None,
     **context: TPrimitive,
 ) -> LogEntry:
     return send(
@@ -192,14 +228,26 @@ def event(
             origin=origin,
             at=at,
             context=context,
+            stack=callstack(1) if stack is True else stack if stack else None,
         )
     )
 
 
 def notify(
-    event: str, value: Any, *, origin: str | None = None, at: float | None = None
+    name: str,
+    value: Any,
+    *,
+    origin: str | None = None,
+    at: float | None = None,
+    stack: TStack | bool | None = None,
 ) -> LogEntry:
-    return event(event=event, value=value, origin=origin, at=at)
+    return event(
+        event=name,
+        value=value,
+        origin=origin,
+        at=at,
+        stack=callstack(2) if stack is True else stack if stack else None,
+    )
 
 
 def exception(

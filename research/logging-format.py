@@ -20,6 +20,8 @@ GRADIENT = (
 )
 
 LOGGING_GRADIENT = [
+    # Detail
+    38,
     # Debug
     31,
     # Info
