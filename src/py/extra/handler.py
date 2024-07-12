@@ -4,6 +4,7 @@ from urllib.parse import urlparse, parse_qs
 from functools import update_wrapper
 import asyncio
 from io import BytesIO
+
 from .utils.io import asWritable
 from .utils.logging import exception
 from .model import Application, Service, mount
@@ -76,7 +77,10 @@ from .http.model import (
 # - `authorizer`: (If applicable) Information from a custom authorizer (e.g., Lambda authorizer) that you've configured for your API Gateway API.
 
 
-TAWSEvent = dict[str, str | bytes | int | float | bool | dict[str, str] | None]
+TAWSRequestContext = dict[str, str | bytes | int | float | bool | dict[str, str] | None]
+TAWSEvent = dict[
+    str, str | bytes | int | float | bool | dict[str, str] | TAWSRequestContext | None
+]
 
 
 class AWSLambdaEvent:
@@ -94,12 +98,13 @@ class AWSLambdaEvent:
             "httpMethod": method,
             "path": url.path,
             "queryStringParameters": params,
+            "headers": {k.lower(): v for k, v in (headers or {}).items()},
             "host": "localhost",
         }
-        # FIXME: Not sure what the payload attribute is for.
+        payload: TAWSEvent = {"requestContext": request_context}
         if body:
-            # FIXME: Should be decode
-            payload["payload"] = b64encode(body) if isinstance(body, bytes) else body
+            payload["body"] = b64encode(body) if isinstance(body, bytes) else body
+            payload["isBase64Encoded"] = isinstance(body, bytes)
         if headers:
             payload["headers"] = headers
         return payload
@@ -116,9 +121,10 @@ class AWSLambdaEvent:
             else b""
         )
         raw_headers: dict[str, str] = {
-            k.lower(): v
-            for k, v in cast(dict[str, str], event.get("header", {})).items()
+            headername(k): v
+            for k, v in cast(dict[str, str], event.get("headers", {})).items()
         }
+        # TODO: Should do params
         return HTTPRequest(
             method=event.get("httpMethod", "GET"),
             path=event.get("path", "/"),
@@ -129,7 +135,7 @@ class AWSLambdaEvent:
                 int(raw_headers.get("Content-Length", len(body))),
             ),
             body=HTTPRequestBlob(body),
-            # host=h.get("Host") or h.get("host") or "aws",
+            # host=raw_headers.get("Host", "aws"),
         )
 
     @staticmethod
@@ -244,6 +250,23 @@ def awslambda(
         event: dict[str, Any], context: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         # TODO: Supports looking at pre/post, etc, registered in the `wrapper`.
+        # Event is like:
+        # ```
+        # {'requestContext': {'elb': {'targetGroupArn': 'arn:aws:elasticloadbalancing:…'}},
+        # 'httpMethod': 'GET', 'path': '/path/to/request-retractions',
+        # 'queryStringParameters': {}, 'headers': {'accept-encoding': 'gzip',
+        # 'cache-control': 'no-cache, max-age=0', 'connection': 'keep-alive',
+        # 'host': 'host.name', 'pragma':
+        # 'no-cache', 'te': 'chunked;q=1.0', 'true-client-ip': '103.103.41.59',
+        #  'x-forwarded-port':
+        # '443', 'x-forwarded-proto': 'https'}, 'body': '', 'isBase64Encoded': False}
+        # ```
+        # Context is like:
+        # ```
+        # LambdaContext([aws_request_id=…,log_group_name=/aws/lambda/…,log_stream_name=YYYY/MM/DD/[$LATEST]…,function_name=…,memory_limit_in_mb=128,function_version=$LATEST,invoked_function_arn=…,identity=CognitoIdentity([cognito_identity_id=None,cognito_identity_pool_id=None])])
+        # ``
+        print("YYYY EVENT", event)
+        print("YYYY CONTEXT", context)
         try:
             req = request(event)
         except Exception as e:
