@@ -101,7 +101,6 @@ class AWSLambdaEvent:
             "headers": {k.lower(): v for k, v in (headers or {}).items()},
             "host": "localhost",
         }
-        payload: TAWSEvent = {"requestContext": request_context}
         if body:
             payload["body"] = b64encode(body) if isinstance(body, bytes) else body
             payload["isBase64Encoded"] = isinstance(body, bytes)
