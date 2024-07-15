@@ -1,9 +1,20 @@
-from typing import Optional, Iterable, Iterator, Union, ClassVar, Callable, Type, cast
+from typing import (
+    LiteralString,
+    Optional,
+    Iterable,
+    Iterator,
+    Union,
+    Callable,
+    cast,
+)
 from mypy_extensions import KwArg, VarArg
 
 # --
 # HTMPL defines functions to create HTML templates
 
+HTML_EMPTY: list[LiteralString] = (
+    "area base br col embed hr img input link meta param source track wbr".split()
+)
 HTML_ESCAPED = str.maketrans(
     {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#x27;"}
 )
@@ -20,6 +31,8 @@ def quoted(text: Optional[str]) -> str:
 
 
 class Node:
+    __slots__ = ["name", "ns", "attributes", "children"]
+
     def __init__(
         self,
         name: str,
@@ -59,7 +72,7 @@ class Node:
                 yield f' {k}="{quoted(v)}"'
             if not self.children:
                 if html:
-                    yield f"></{self.name}>"
+                    yield ">" if self.name in HTML_EMPTY else f"></{self.name}>"
                 else:
                     yield " />"
             else:
@@ -100,8 +113,8 @@ def node(
 
 NodeFactory = Callable[
     [
-        VarArg(Iterable[Union[Node, str]]),
-        KwArg(Optional[str]),
+        VarArg(Iterable[Node | str]),
+        KwArg(str | None),
     ],
     Node,
 ]
@@ -115,7 +128,8 @@ def nodeFactory(name: str, ns: Optional[str] = None) -> NodeFactory:
     return cast(NodeFactory, f)
 
 
-HTML_TAGS = """\
+HTML_TAGS: list[LiteralString] = (
+    """\
 a abbr address area article aside audio b base bdi bdo blockquote body br
 button canvas caption cite code col colgroup data datalist dd del details dfn
 dialog div dl dt em embed fieldset figcaption figure footer form h1 h2 h3 h4 h5
@@ -125,30 +139,39 @@ pre progress q rp rt ruby s section samp script section select small source span
 style sub summary sup table tbody td template textarea tfoot th thead time
 title tr track u ul var video wbr\
 """.split()
+)
 
 
-def markup(name: str, tags: list[str]):
-    class HFactory(type):
-        def __new__(mcls, name: str, bases: tuple, attrs: dict) -> Type:
-            annotations = {}
-            attrs["__annotations__"] = annotations
-            for tag in tags:
-                annotations[tag] = ClassVar[Callable]
-                attrs[tag] = nodeFactory(tag)
-            return super().__new__(mcls, name, bases, attrs)
+class Markup:
+    __slots__ = ["_factories", "_name"]
 
-    class M(metaclass=HFactory):
-        pass
+    def __init__(self, name: str, factories: dict[str, NodeFactory]):
+        self._name: str = name
+        self._factories: dict[str, NodeFactory] = factories
 
-    M.__name__ = "html"
+    def __getattribute__(self, name: str):
+        if name.startswith("_"):
+            return super().__getattribute__(name)
+        else:
+            factories = self._factories
+            if name not in factories:
+                raise KeyError(
+                    f"No tag {name}, pick one of {','.join(factories.keys())}"
+                )
+            else:
+                return factories[name]
 
-    return M
+
+def markup(name: str, tags: list[str | LiteralString]) -> Markup:
+    return Markup(name, {_: nodeFactory(_) for _ in tags})
 
 
-H = markup("html", HTML_TAGS)
+H: Markup = markup("html", HTML_TAGS)
 
 
-def html(*nodes: Node) -> str:
+def html(*nodes: Node, doctype: str | None = None) -> Iterator[str]:
+    if doctype:
+        yield f"{doctype}\n" if doctype.startswith("<!") else f"<!DOCTYPE {doctype}>\n"
     for _ in nodes:
         yield from _.iterHTML()
 

@@ -19,15 +19,24 @@ audit: require-py-bandit
 
 # NOTE: The compilation seems to create many small modules instead of a big single one
 compile:
+	@
+	echo "Compiling $(MODULES_PY): $(SOURCES_PY)"
 	# NOTE: Output is going to be like 'extra/__init__.cpython-310-x86_64-linux-gnu.so'
+
+	mkdir -p "build"
 	$(foreach M,$(MODULES_PY),mkdir -p build/$M;)
 	env -C build MYPYPATH=$(realpath .)/src/py mypyc -p extra
 
 check: lint
 	@
 
+check-compiled:
+	@COMPILED=$$(PYTHONPATH=build python -c "import extra;print(extra)")
+	echo "Extra compiled at: $$COMPILED"
+
+
 lint:
-	@flake8 --ignore=E1,E202,E203,E231,E227,E252,E302,E401,E501,E741,F821,W $(SOURCES_PY)
+	@flake8 --ignore=E1,E202,E203,E231,E227,E252,E302,E401,E501,E704,E741,F821,W $(SOURCES_PY)
 
 format:
 	@black $(SOURCES_PY)
@@ -63,6 +72,12 @@ try-uninstall:
 
 require-py-%:
 	@if [ -z "$$(which '$*' 2> /dev/null)" ]; then $(PYTHON) -mpip install --user --upgrade '$*'; fi
+
+data/csic_2010-normalTrafficTraining.txt:
+	curl -o "$@" 'https://gitlab.fing.edu.uy/gsi/web-application-attacks-datasets/-/raw/master/csic_2010/normalTrafficTest.txt?inline=false'
+
+data/csic_2010-anomalousTrafficTraining.txt:
+	curl -o "$@" 'https://gitlab.fing.edu.uy/gsi/web-application-attacks-datasets/-/raw/master/csic_2010/anomalousTrafficTest.txt?inline=false'
 
 print-%:
 	$(info $*=$($*))
