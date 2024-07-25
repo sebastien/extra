@@ -222,7 +222,7 @@ class HTTPParser:
                             yield HTTPRequest(
                                 method=line.method,
                                 path=line.path,
-                                query=line.query,
+                                query=parseQuery(line.query),
                                 headers=headers or HTTPRequestHeaders({}),
                                 protocol=line.protocol,
                                 body=HTTPRequestBlob(b"", 0),
@@ -245,7 +245,7 @@ class HTTPParser:
                             method=line.method,
                             protocol=line.protocol,
                             path=line.path,
-                            query=line.query,
+                            query=parseQuery(line.query),
                             headers=headers or HTTPRequestHeaders({}),
                             # NOTE: This is an awkward dance around the type checker
                             body=(
@@ -261,6 +261,17 @@ class HTTPParser:
             if not n:
                 print("Not sure this is good", o)
                 raise NotImplementedError
+
+
+def parseQuery(text: str) -> dict[str, str]:
+    res: dict[str, str] = {}
+    for item in text.split("&"):
+        kv = item.split("=", 1)
+        if len(kv) == 1:
+            res[item] = ""
+        else:
+            res[kv[0]] = kv[1]
+    return res
 
 
 # EOF

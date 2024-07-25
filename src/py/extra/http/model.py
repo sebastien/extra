@@ -194,7 +194,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         self,
         method: str,
         path: str,
-        query: str | dict[str, str] | None,
+        query: dict[str, str] | None,
         headers: HTTPRequestHeaders,
         body: HTTPRequestBody | HTTPRequestBlob | None = None,
         protocol: str = "HTTP/1.1",
@@ -202,7 +202,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         super().__init__()
         self.method: str = method
         self.path: str = path
-        self.query: str | dict[str, str] | None = query
+        self.query: dict[str, str] | None = query
         self.protocol: str = protocol
         self._headers: HTTPRequestHeaders = headers
         self._body: HTTPRequestBody | HTTPRequestBlob | None = body
@@ -215,6 +215,9 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
 
     def getHeader(self, name: str) -> str | None:
         return self._headers.headers.get(headername(name))
+
+    def param(self, name: str) -> str | None:
+        return self.query.get(name) if self.query else None
 
     @property
     def contentType(self) -> str | None:
