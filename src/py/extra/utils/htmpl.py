@@ -9,6 +9,10 @@ from typing import (
 )
 from mypy_extensions import KwArg, VarArg
 
+# TODO: Define a Chunk to define a way to pre-rendere chunks of a Node, so that
+# we get fast serialization when writing to. The key thing, just like with JSON
+# is to cache as much as we can and write it out.
+
 # --
 # HTMPL defines functions to create HTML templates
 
@@ -85,6 +89,9 @@ class Node:
         for _ in content:
             self.children.append(text(_) if isinstance(_, str) else _)
         return self
+
+    def __str__(self) -> str:
+        return "".join(self.iterHTML())
 
 
 def text(text) -> Node:
