@@ -4,12 +4,16 @@ T = TypeVar("T")
 
 
 class Transform(NamedTuple):
+    """Represents a transformation to be applied to a request handler"""
+
     transform: Callable
     args: tuple[Any, ...]
     kwargs: dict[str, Any]
 
 
 class Extra:
+    """Defines Extra attributes used by decorators"""
+
     ON: ClassVar[str] = "_extra_on"
     ON_PRIORITY: ClassVar[str] = "_extra_on_priority"
     EXPOSE: ClassVar[str] = "_extra_expose"
@@ -20,18 +24,32 @@ class Extra:
     POST: ClassVar[str] = "_extra_post"
     PRE: ClassVar[str] = "_extra_pre"
     WHEN: ClassVar[str] = "_extra_when"
+    # When using MyPy, we can't dynamically patch values, so instead we're
+    # collecting annotations by object id.
+    Annotations: ClassVar[dict[int, dict[str, Any]]] = {}
 
     @staticmethod
-    def Meta(scope: Any) -> dict:
+    def Meta(scope: Any, *, strict: bool = False) -> dict:
+        """Returns the dictionary of meta attributes for the given value."""
         if isinstance(scope, type):
             if not hasattr(scope, "__extra__"):
                 setattr(scope, "__extra__", {})
             return getattr(scope, "__extra__")
         else:
-            return scope.__dict__
+            if hasattr(scope, "__dict__"):
+                return scope.__dict__
+            elif strict:
+                raise RuntimeError(f"Metadata cannot be attached to object: {scope}")
+            else:
+                sid = id(scope)
+                if sid not in Extra.Annotations:
+                    Extra.Annotations[sid] = {}
+                return Extra.Annotations[sid]
 
 
-def on(priority=0, **methods: Union[str, list[str], tuple[str, ...]]):
+def on(
+    priority=0, **methods: Union[str, list[str], tuple[str, ...]]
+) -> Callable[[T], T]:
     """The @on decorator is one of the main important things you will use within
     Retro. This decorator allows to wrap an existing method and indicate that
     it will be used to process an HTTP request.
@@ -58,16 +76,15 @@ def on(priority=0, **methods: Union[str, list[str], tuple[str, ...]]):
 
     The @Request class offers many methods to create and send responses."""
 
-    def decorator(function):
+    def decorator(function: T) -> T:
         # TODO: Should be using annotations
         meta = Extra.Meta(function)
         v = meta.setdefault(Extra.ON, [])
         meta.setdefault(Extra.ON_PRIORITY, priority)
         for http_methods, url in list(methods.items()):
-            if type(url) not in (list, tuple):
-                url = (url,)
+            urls = (url,) if type(url) not in (list, tuple) else url
             for http_method in http_methods.upper().split("_"):
-                for _ in url:
+                for _ in urls:
                     v.append((http_method, _))
         return function
 
@@ -79,7 +96,16 @@ def on(priority=0, **methods: Union[str, list[str], tuple[str, ...]]):
 # @expose(POST="/api/ads", name=lambda _:_.get("name"), ....)
 
 
-def expose(priority=0, compress=False, contentType=None, raw=False, **methods):
+class Expose(NamedTuple):
+    json: Any | None = None
+    raw: bool = False
+    compress: bool = False
+    contentType: str | None = None
+
+
+def expose(
+    priority=0, compress=False, contentType=None, raw=False, **methods
+) -> Callable[[T], T]:
     """The @expose decorator is a variation of the @on decorator. The @expose
     decorator allows you to _expose_ an existing Python function as a JavaScript
     (or JSON) producing method.
@@ -89,25 +115,31 @@ def expose(priority=0, compress=False, contentType=None, raw=False, **methods):
     This is perfect if you have an existing python class and want to expose it
     to the web."""
 
-    def decorator(function):
+    def decorator(function: T) -> T:
         meta = Extra.Meta(function)
-        meta.setdefault(Extra.EXPOSE, True)
-        meta.setdefault(Extra.EXPOSE_JSON, None)
-        meta.setdefault(Extra.EXPOSE_RAW, raw)
-        meta.setdefault(Extra.EXPOSE_COMPRESS, compress)
-        meta.setdefault(Extra.EXPOSE_CONTENT_TYPE, contentType)
+
         # This is copy and paste of the @on body
         v = meta.setdefault(Extra.ON, [])
         meta.setdefault(Extra.ON_PRIORITY, int(priority))
+        json_data: Any | None = None
         for http_method, url in list(methods.items()):
             if type(url) not in (list, tuple):
                 url = (url,)
             for method in http_method.upper().split("_"):
                 for _ in url:
                     if method == "JSON":
-                        function.__dict__[Extra.EXPOSE_JSON] = _
+                        json_data = _
                     else:
                         v.append((method, _))
+        meta.setdefault(
+            Extra.EXPOSE,
+            Expose(
+                json=json_data,
+                raw=raw,
+                compress=compress,
+                contentType=contentType,
+            ),
+        )
         return function
 
     return decorator
@@ -126,9 +158,11 @@ def when(*predicates):
     return decorator
 
 
-def pre(transform):
+def pre(transform: Callable) -> Callable[[T], T]:
+    """Registers the given `transform` as a pre-processing step of the
+    decorated function."""
 
-    def decorator(function, *args, **kwargs):
+    def decorator(function: T, *args, **kwargs) -> T:
         v = Extra.Meta(function).setdefault(Extra.PRE, [])
         v.append(Transform(transform, args, kwargs))
         return function
@@ -136,9 +170,11 @@ def pre(transform):
     return decorator
 
 
-def post(transform):
+def post(transform) -> Callable[[T], T]:
+    """Registers the given `transform` as a post-processing step of the
+    decorated function."""
 
-    def decorator(function, *args, **kwargs):
+    def decorator(function: T, *args, **kwargs) -> T:
         v = Extra.Meta(function).setdefault(Extra.POST, [])
         v.append(Transform(transform, args, kwargs))
         return function

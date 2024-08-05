@@ -5,8 +5,8 @@
      \___  >/__/\_ \ |__|   |__|   (____  / __
          \/       \/                    \/  \/
 
-Extra is an asynchronous HTTP/1, HTTP/2 and WebSocket toolkit written in
-Python and compatible with ASGI and WSGI.
+Extra is an toolkit to write HTTP/1.1 web services and applications, with
+first class support for streaming.
 
 It is focused on providing primitives for creating web services,
 implemented to work well both in development and production while
@@ -16,18 +16,10 @@ Features:
 
 -   Streaming reads and writes, lazy decoding and encoding
 -   Embedded asynchronous HTTP/1 development server
--   Implementation compiled using `mypyc` for performance
+-   Only requires Python stdlib
+-   Good baseline performance (5-10K RPS on average hardware)
 
-Planned:
-
--   Mount services on FUSE and query from the CLI
--   Multiple backends: ASGI, WSGI, AsyncIO, AIOHTTP, AWS Lambda, socket,
-    file
--   Building blocks for channels, pub/sub, topic tree.
--   Multi-threaded async (leverage all cores)
--   Dynamically (re)loadable services
-
-Design principles
+Design principles:
 
 -   Declarative: decorators to expose methods as web services
 -   Stream-oriented: encourages writing stream processing handlers
@@ -44,22 +36,22 @@ building blocks that help you build fast, readable and resilient web
 services.
 
 Similar projects include [Quart](https://github.com/pgjones/quart),
-[Starlette](https://github.com/encode/starlette). and
-[bareASGI](https://github.com/rob-blackbourn/bareASGI).
+[Starlette](https://github.com/encode/starlette),
+[bareASGI](https://github.com/rob-blackbourn/bareASGI) and of
+course, [FastAPI](https://fastapi.tiangolo.com/).
 
 # Example: Hello, World! Service
 
 Here is `helloworld.py`:
 
 ``` python
-from extra import Service, Request, Response, on, server
+from extra import Service, HTTPRequest, HTTPResponse, on, run
 
 class HelloWorld(Service):
     @on(GET="{any}")
-    def helloWorld(self, request: Request) -> Response:
-        return request.respond(b"Hello, World !"), b"text/plain")
+    def helloWorld(self, request: HTTPRequest, any:str) -> HTTPResponse:
+        return request.respond(b"Hello, World !", "text/plain")
 
-app = server(HelloWorld)
+app = run(HelloWorld())
 ```
 
-And this above can be started with `uvicorn helloworld:app`.

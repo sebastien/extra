@@ -2,6 +2,7 @@
 # NOTE: To run, `uvicorn benchmark-fastapi:app`
 try:
     from fastapi import FastAPI
+    from fastapi.responses import PlainTextResponse
 except ImportError:
     raise ImportError(
         "FastAPI not available, run: python -m pip install --user fastapi"
@@ -10,14 +11,9 @@ except ImportError:
 app = FastAPI()
 
 
-@app.get("/")
+@app.get("/", response_class=PlainTextResponse)
 def read_root():
-    return {"Hello": "World"}
-
-
-@app.get("/items/{item_id}")
-def read_item(item_id: int, q: str = None):
-    return {"item_id": item_id, "q": q}
+    return "Hello, World!"
 
 
 # EOF

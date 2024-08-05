@@ -1,15 +1,14 @@
-# Local files module
 from pathlib import Path
-from typing import Union, Optional, Callable
+from typing import Union, Callable
 from ..decorators import on
 from ..model import Service
-from ..protocols.http import HTTPRequest, HTTPResponse
+from ..http.model import HTTPRequest, HTTPResponse
 from ..features.cors import cors
 from ..utils.htmpl import H, html
 import os
 
 
-FILE_CSS = """
+FILE_CSS: str = """
 :root {
     font-family: sans-serif;
     font-size: 14px;
@@ -42,7 +41,7 @@ li {
 class FileService(Service):
     """A service to serve files from the local filesystem"""
 
-    def __init__(self, root: Optional[Path] = None):
+    def __init__(self, root: Path | None = None):
         super().__init__()
         self.root: Path = (Path(".") if not root else root).absolute()
         self.canWrite: Callable[[HTTPRequest, Path], bool] = lambda r, p: False
@@ -59,15 +58,27 @@ class FileService(Service):
     def renderDir(
         self, request: HTTPRequest, path: str, localPath: Path
     ) -> HTTPResponse:
+        current = os.path.basename(path) or "/"
+        parent: str | None = os.path.dirname(path)
+        if path == parent:
+            parent = None
+        if path.endswith("/"):
+            path = path[:-1]
         files: list[str] = []
         dirs: list[str] = []
         if localPath.is_dir():
-            for p in localPath.iterdir():
+            for p in sorted(localPath.iterdir()):
+                # We really want the href to be absolute
+                href = os.path.join("/", self.PREFIX or "/", path, p.name)
                 if p.is_dir():
-                    dirs.append(H.li(H.a(f"{p.name}/", href=f"/{path}/{p.name}")))
+                    dirs.append(H.li(H.a(f"{p.name}/", href=href)))
                 else:
-                    files.append(H.li(H.a(p.name, href=f"/{path}/{p.name}")))
+                    files.append(H.li(H.a(p.name, href=href)))
         nodes = []
+
+        if parent is not None:
+            dirs.insert(0, H.li(H.a("..", href=f"/{parent}")))
+
         if dirs:
             nodes += [
                 H.section(
@@ -81,8 +92,16 @@ class FileService(Service):
                     H.h2("Files"), H.ul(*files, style='list-style-type: "\\1F4C4";')
                 )
             ]
-        parent = os.path.dirname(path)
-        current = os.path.basename(path)
+        path_chunks: list[str] = path.split("/")
+        prefix = self.PREFIX or "/"
+        if not prefix.startswith("/"):
+            prefix = f"/{prefix}"
+        breadcrumbs = [H.a("/", href=prefix)]
+        for i, bp in enumerate(path_chunks[:-1]):
+            breadcrumbs.append(
+                H.a(bp, href=os.path.join(prefix, *path_chunks[: i + 1]))
+            )
+            breadcrumbs.append("/")
         return request.respondHTML(
             html(
                 H.html(
@@ -100,10 +119,9 @@ class FileService(Service):
                                 H.a(f"{parent}/", href=f"/{parent}/") if parent else "",
                                 current,
                             ),
-                            *nodes,
-                            H.div(H.small("Served by Extra")),
                         ),
                     ),
+                    doctype="html",
                 )
             )
         )
@@ -166,7 +184,7 @@ class FileService(Service):
             else:
                 return request.returns(False)
 
-    def resolvePath(self, path: Union[str, Path]) -> Optional[Path]:
+    def resolvePath(self, path: Union[str, Path]) -> Path | None:
         path = self.root.joinpath(path).absolute()
         if path.parts[: len(parts := self.root.parts)] == parts:
             return path

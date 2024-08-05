@@ -1,5 +1,8 @@
+from .server import run
 from .services.files import FileService
-from .bridges.aio import run as aio_run
+from .utils.logging import info
+from . import config  # NOQA: F401
 
-aio_run(FileService())
+info("Starting Extra in standalone local file server")
+run(FileService())
 # EOF

@@ -1,13 +1,11 @@
-from .routing import Handler, Dispatcher, Route
-from .protocols.http import HTTPRequest, HTTPResponse
-from .decorators import Extra
-from .logging import Logger
-from typing import Optional, Iterable, ClassVar, Any
+from typing import Iterable, ClassVar, Any, Coroutine, NamedTuple
 import sys
 import importlib
-import asyncio
 
-logging: Logger = Logger.Instance()
+from .routing import Handler, Dispatcher, Route
+from .http.model import HTTPRequest, HTTPResponse
+from .decorators import Extra
+from .utils.collections import flatiter
 
 # -----------------------------------------------------------------------------
 #
@@ -36,20 +34,22 @@ class Service:
         # TODO: What about the prefix?
         return res
 
-    def __init__(self, name: Optional[str] = None, *, prefix: str | None = None):
+    def __init__(self, name: str | None = None, *, prefix: str | None = None) -> None:
         self.name: str = name or self.__class__.__name__
-        self.app: Optional[Application] = None
+        self.app: Application | None = None
         self.prefix = prefix or self.PREFIX
-        self._handlers: Optional[list[Handler]] = None
+        self._handlers: list[Handler] | None = None
         self.init()
 
-    def init(self):
+    def init(self) -> None:
         pass
 
-    async def start(self):
+    async def start(self) -> None:
+        """Can be overridden to do asynchronous pre-start work"""
         pass
 
-    async def stop(self):
+    async def stop(self) -> None:
+        """Can be overridden to do asynchronous post-stop work"""
         pass
 
     @property
@@ -116,10 +116,11 @@ class Application:
             try:
                 await srv.start()
             except Exception as e:
-                logging.error(
-                    "APPSTART",
-                    f"Exception occurred when starting service #{i} {srv}: {e}",
-                )
+                # TODO: Logging
+                # logging.error(
+                #     "APPSTART",
+                #     f"Exception occurred when starting service #{i} {srv}: {e}",
+                # )
                 raise e from e
         return self
 
@@ -128,14 +129,17 @@ class Application:
             try:
                 await srv.stop()
             except Exception as e:
-                logging.error(
-                    "APPSTART",
-                    f"Exception occurred when stopping service #{i} {srv}: {e}",
-                )
+                # TODO: Logging
+                # logging.error(
+                #     "APPSTART",
+                #     f"Exception occurred when stopping service #{i} {srv}: {e}",
+                # )
                 raise e from e
         return self
 
-    def process(self, request: HTTPRequest) -> HTTPResponse:
+    def process(
+        self, request: HTTPRequest
+    ) -> HTTPResponse | Coroutine[Any, HTTPResponse, Any]:
         route, params = self.dispatcher.match(
             request.method or "GET", request.path or "/"
         )
@@ -147,7 +151,7 @@ class Application:
         else:
             return self.onRouteNotFound(request)
 
-    def mount(self, service: Service, prefix: Optional[str] = None):
+    def mount(self, service: Service, prefix: str | None = None):
         if service.isMounted:
             raise RuntimeError(
                 f"Cannot mount service, it is already mounted: {service}"
@@ -170,6 +174,47 @@ class Application:
 
     def onRouteNotFound(self, request: HTTPRequest):
         return request.notFound()
+
+
+class Components(NamedTuple):
+    """Groups Application and Service objects together"""
+
+    app: Application
+    apps: list[Application]
+    services: list[Service]
+
+    @staticmethod
+    def Make(components: Iterable[Application | Service]) -> "Components":
+        """Makes a Component value given the applications and services."""
+        apps: list[Application] = []
+        services: list[Service] = []
+        for i, item in enumerate(flatiter(components)):
+            if isinstance(item, Application):
+                apps.append(item)
+            elif isinstance(item, Service):
+                services.append(item)
+            elif item is None:
+                pass
+            else:
+                raise RuntimeError(f"Unsupported component type {type(item)}: {item}")
+        return Components(
+            apps[0] if apps else Application(services=services), apps, services
+        )
+
+
+def components(*components: Application | Service) -> Components:
+    """Wraps the application and compponents in a components structure."""
+    return Components.Make(components)
+
+
+def mount(*components: Application | Service) -> Application:
+    """Mounts the given components into and application"""
+    c = Components.Make(components)
+    app: Application = c.app
+    # Now we mount all the services on the application
+    for service in c.services:
+        app.mount(service)
+    return app
 
 
 # EOF

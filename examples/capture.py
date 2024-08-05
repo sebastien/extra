@@ -1,6 +1,8 @@
 from extra import Service, HTTPRequest, HTTPResponse, on, run
 
 
+# To send:
+# curl -X POST -H "Content-Type: application/json" -d '{"key1":"value1", "key2":"value2"}' http://localhost:8000/data
 class CaptureService(Service):
     @on(GET_POST="/{path:any}")
     async def catchall(self, request: HTTPRequest, path: str) -> HTTPResponse:
@@ -12,11 +14,13 @@ class CaptureService(Service):
         # 		pass
         # Or
         # 1 - Puts the request on a spool
-        # 2 - Post proceses the raw data
+        # 2 - Post processs the raw data
         await request.load()
         print("Headers:", request.headers)
         print("Body:", request.body.raw)
-        return request.respond(b"OK", b"text/plain")
+        return request.returns(
+            {"headers": request.headers, "body": request.body.raw.decode("ascii")}
+        )
 
 
 # NOTE: You can start this with `uvicorn helloworld:app`
