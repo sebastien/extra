@@ -119,6 +119,7 @@ class FileService(Service):
                                 H.a(f"{parent}/", href=f"/{parent}/") if parent else "",
                                 current,
                             ),
+                            *nodes,
                         ),
                     ),
                     doctype="html",
