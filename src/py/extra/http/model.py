@@ -98,7 +98,8 @@ class HTTPRequestBody:
 class HTTPBodyBlob(NamedTuple):
     payload: bytes = b""
     length: int = 0
-    remaining: int = 0
+    # NOTE: We don't know how many is remaining
+    remaining: int | None = None
 
     @property
     def raw(self) -> bytes:
@@ -110,7 +111,7 @@ class HTTPBodyBlob(NamedTuple):
         return self.payload
 
 
-class HTTPRequestStatus(Enum):
+class HTTPProcessingStatus(Enum):
     Processing = 0
     Body = 1
     Complete = 2
@@ -119,13 +120,14 @@ class HTTPRequestStatus(Enum):
     BadFormat = 12
 
 
-HTTPRequestAtom: TypeAlias = Union[
+HTTPAtom: TypeAlias = Union[
     HTTPRequestLine,
     HTTPHeaders,
     HTTPBodyBlob,
     HTTPRequestBody,
-    HTTPRequestStatus,
+    HTTPProcessingStatus,
     "HTTPRequest",
+    "HTTPResponse",
 ]
 
 
@@ -296,12 +298,7 @@ class HTTPResponse:
         """Factory method to create HTTP response objects."""
         payload: bytes | None = None
         updated_headers: dict[str, str] = {} if headers is None else {}
-        if contentType and (not headers or headers.get("Content-Type") != contentType):
-            updated_headers["Content-Type"] = contentType
-        if contentLength is not None and (
-            not headers or headers.get("Content-Type") != contentType
-        ):
-            updated_headers["Content-Type"] = cast(str, contentType)
+
         # We process the body
         body: (
             HTTPResponseBlob
@@ -310,7 +307,6 @@ class HTTPResponse:
             | HTTPResponseAsyncStream
             | None
         ) = None
-        content_length: str | None = None
         if content is None:
             pass
         elif isinstance(content, str):
@@ -319,7 +315,7 @@ class HTTPResponse:
             payload = content
         elif isinstance(content, Path):
             body = HTTPResponseFile(content.absolute())
-            content_length = str(os.path.getsize(body.path))
+            contentLength = os.path.getsize(body.path)
         elif inspect.isgenerator(content):
             body = HTTPResponseStream(content)
         elif inspect.isasyncgen(content):
@@ -329,20 +325,40 @@ class HTTPResponse:
         # If we have a payload then it's a Blob response
         if payload is not None:
             body = HTTPResponseBlob(payload, str(len(payload)))
-            content_length = body.length
+            contentLength = body.length
+        # Content Type
+        content_type: str | None = headers.get("Content-Type") if headers else None
+        if contentType is not None and contentType != content_type:
+            updated_headers["Content-Type"] = contentType
+            content_type = contentType
+        # Content Length
+        content_length_str: str | None = (
+            headers.get("Content-Length") if headers else None
+        )
+        if contentLength is not None and (t := contentLength) != content_length_str:
+            updated_headers["Content-Length"] = t
+        elif contentLength is None:
+            c = (
+                updated_headers.get("Content-Length")
+                or headers
+                and headers.get("Content-Length")
+            )
+            if c is not None:
+                contentLength = int(c)
+
         # TODO: We should have a response pipeline that can do things
         # like ETags, Ranged requests, etc.
         # We adjust any extra header
-        if content_length and (
-            not headers or headers.get("Content-Length") != content_length
-        ):
-            updated_headers["Content-Length"] = content_length
         # --
         # The response is ready to be packaged
         return HTTPResponse(
             status=status,
             message=message or HTTP_STATUS.get(status, "Unknown status"),
-            headers=(headers | updated_headers) if headers else updated_headers,
+            headers=HTTPHeaders(
+                (headers | updated_headers) if headers else updated_headers,
+                contentType=contentType,
+                contentLength=contentLength,
+            ),
             body=body,
             protocol=protocol,
         )
@@ -354,7 +370,7 @@ class HTTPResponse:
         protocol: str,
         status: int,
         message: str | None,
-        headers: dict[str, str],
+        headers: HTTPHeaders,
         body: HTTPResponseBody | None = None,
     ):
         super().__init__()
@@ -363,17 +379,18 @@ class HTTPResponse:
         self.message: str | None = message
         # NOTE: Content-Disposition headers may have a non-ascii value, but we
         # don't support that.
-        self.headers: dict[str, str] = headers
+        self.headers: HTTPHeaders = headers
         self.body: HTTPResponseBody | None = body
 
+    # TODO: Deprecate
     def getHeader(self, name: str) -> str | None:
-        return self.headers.get(name.lower())
+        return self.headers.get(headername(name))
 
     def setHeader(self, name: str, value: str | int | None) -> "HTTPResponse":
         if value is None:
-            del self.headers[name.lower()]
+            del self.headers.headers[headername(name)]
         else:
-            self.headers[name.lower()] = str(value)
+            self.headers.headers[headername(name)] = str(value)
         return self
 
     def setHeaders(self, headers: dict[str, str | int | None]) -> "HTTPResponse":
@@ -385,7 +402,9 @@ class HTTPResponse:
         """Serializes the head as a payload."""
         status: int = 204 if self.body is None else self.status
         message: str = self.message or HTTP_STATUS[status]
-        lines: list[str] = [f"{headername(k)}: {v}" for k, v in self.headers.items()]
+        lines: list[str] = [
+            f"{headername(k)}: {v}" for k, v in self.headers.headers.items()
+        ]
         # TODO: No Content support?
         lines.insert(0, f"{self.protocol} {status} {message}")
         lines.append("")

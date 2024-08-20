@@ -14,7 +14,7 @@ from .http.model import (
     HTTPResponseFile,
     HTTPBodyReader,
 )
-from .http.parser import HTTPParser, HTTPRequestStatus
+from .http.parser import HTTPParser, HTTPProcessingStatus
 from .config import HOST, PORT
 
 
@@ -95,7 +95,7 @@ class AIOSocketServer:
             iteration: int = 0
             # --
             # We continue reading from the socket if we have keep_alive
-            status: HTTPRequestStatus = HTTPRequestStatus.Processing
+            status: HTTPProcessingStatus = HTTPProcessingStatus.Processing
             read_count: int = 0
             res_count: int = 0
             req_count: int = 0
@@ -111,11 +111,11 @@ class AIOSocketServer:
                     )
                     read_count += n
                 except TimeoutError:
-                    status = HTTPRequestStatus.Timeout
+                    status = HTTPProcessingStatus.Timeout
                     keep_alive_timeout = False
                     break
                 if not n:
-                    status = HTTPRequestStatus.NoData
+                    status = HTTPProcessingStatus.NoData
                     break
                 # NOTE: With HTTP Pipelining, we may receive more than one
                 # request in the same payload, so we need to be prepared
@@ -126,7 +126,7 @@ class AIOSocketServer:
                         atom = next(stream)
                     except StopIteration:
                         break
-                    if atom is HTTPRequestStatus.Complete:
+                    if atom is HTTPProcessingStatus.Complete:
                         status = atom
                     elif isinstance(atom, HTTPRequest):
                         req = atom
@@ -161,7 +161,7 @@ class AIOSocketServer:
                         Requests=req_count,
                         Responses=res_count,
                     )
-            elif status is HTTPRequestStatus.NoData and not res_count:
+            elif status is HTTPProcessingStatus.NoData and not res_count:
                 warning(
                     "Client did not feed a complete request",
                     ReadCount=read_count,
@@ -169,7 +169,7 @@ class AIOSocketServer:
                     Requests=req_count,
                     Responses=res_count,
                 )
-            elif status is HTTPRequestStatus.Timeout:
+            elif status is HTTPProcessingStatus.Timeout:
                 if not req_count or req_count != res_count:
                     warning(
                         "Client timed out",

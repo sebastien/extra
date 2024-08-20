@@ -1,16 +1,22 @@
-from typing import NamedTuple, ClassVar
-from .http.model import (
-    HTTPRequest,
-    HTTPHeaders,
-    HTTPRequestBody,
-    HTTPBodyBlob,
-    headername,
-)
-import asyncio, ssl, time, os
+from typing import NamedTuple, ClassVar, AsyncGenerator
 from urllib.parse import quote_plus, urlparse
 from contextvars import ContextVar
 from contextlib import contextmanager
 from dataclasses import dataclass
+import asyncio, ssl, time, os
+
+from .http.model import (
+    HTTPRequest,
+    HTTPResponse,
+    HTTPHeaders,
+    HTTPRequestBody,
+    HTTPBodyBlob,
+    HTTPAtom,
+    headername,
+)
+from .http.parser import HTTPParser, HTTPProcessingStatus
+from .utils.logging import event
+
 
 # --
 # An low level async HTTP client with connection pooling support.
@@ -94,6 +100,10 @@ class Connection:
     writer: asyncio.StreamWriter
     idle: float
     until: float | None
+    # NOTE: We put parsers here as they're typically per connection
+    parser: HTTPParser
+    # A streaming connection won't be reused
+    isStreaming: bool = False
 
     def close(self):
         """Closes the writer."""
@@ -144,7 +154,12 @@ class Connection:
         # We return a wrapper there
         idle = idle or CONNECTION_IDLE
         return Connection(
-            target, reader, writer, idle=idle, until=time.monotonic() + idle
+            target,
+            reader,
+            writer,
+            idle=idle,
+            until=time.monotonic() + idle,
+            parser=HTTPParser(),
         )
 
 
@@ -195,7 +210,12 @@ class ConnectionPool:
         # connection.underlying.close()
         if not connection.isValid:
             return False
+        elif connection.isStreaming:
+            connection.close()
+            return False
         elif pools:
+            # FIXME: Why are we closing the connection upon release, that
+            # should totally not be the case. We only close if expired.
             connection.close()
             pools[-1].put(connection)
             return True
@@ -293,7 +313,13 @@ class ConnectionPool:
 # -----------------------------------------------------------------------------
 
 
-class AIOSocketClient:
+class ClientException(Exception):
+    def __init__(self, status: HTTPProcessingStatus):
+        super().__init__(f"Client response processing failed: {status}")
+        self.status = status
+
+
+class HTTPClient:
 
     @classmethod
     async def OnRequest(
@@ -304,7 +330,10 @@ class AIOSocketClient:
         *,
         headers: dict[str, str] | None = None,
         body: HTTPRequestBody | HTTPBodyBlob | None = None,
-    ):
+        timeout: float = 2.0,
+        buffer: int = 32_000,
+        streaming: bool | None = None,
+    ) -> AsyncGenerator[HTTPAtom, bool | None]:
         """Low level function to process HTTP requests with the given connection."""
         # We send the line
         line = f"{request.method} {request.path} HTTP/1.1\r\n".encode()
@@ -323,9 +352,67 @@ class AIOSocketClient:
         cxn.writer.write(payload)
         cxn.writer.write(b"\r\n\r\n")
         await cxn.writer.drain()
-        # TODO: Write the body
-        res = await cxn.reader.read()
-        return res
+
+        iteration: int = 0
+        # --
+        # We continue reading from the socket if we have keep_alive
+        status: HTTPProcessingStatus = HTTPProcessingStatus.Processing
+        read_count: int = 0
+        expected_length = 0
+        # --
+        # We may have more than one request in each payload when
+        # HTTP Pipelininig is on.
+        res: HTTPResponse | None = None
+        while status is HTTPProcessingStatus.Processing and res is None:
+            try:
+                chunk = await asyncio.wait_for(
+                    cxn.reader.read(buffer),
+                    timeout=timeout,
+                )
+                read_count += len(chunk)
+            except TimeoutError:
+                raise ClientException(HTTPProcessingStatus.Timeout)
+            if not chunk:
+                raise ClientException(HTTPProcessingStatus.NoData)
+            # NOTE: With HTTP Pipelining, we may receive more than one
+            # request in the same payload, so we need to be prepared
+            # to answer more than one request.
+            stream = cxn.parser.feed(chunk)
+            while True:
+                try:
+                    atom = next(stream)
+                except StopIteration:
+                    status = HTTPProcessingStatus.Complete
+                    break
+                if atom is HTTPProcessingStatus.Complete:
+                    status = atom
+                elif isinstance(atom, HTTPResponse):
+                    res = atom
+                    break
+                else:
+                    yield atom
+            iteration += 1
+        if streaming is True or res.headers.contentType in {"text/event-stream"}:
+            # TODO: We should swap out the body for a streaming body
+            cxn.isStreaming = True
+            should_continue: bool | None = True
+            while should_continue is not False:
+                try:
+                    chunk = await asyncio.wait_for(
+                        cxn.reader.read(buffer),
+                        timeout=timeout,
+                    )
+                    if not chunk:
+                        break
+                    else:
+                        # We stream body blobs
+                        should_continue = yield HTTPBodyBlob(chunk, len(chunk))
+                    read_count += len(chunk)
+                except TimeoutError:
+                    raise ClientException(HTTPProcessingStatus.Timeout)
+
+        # We always finish with the response
+        yield res
 
     @classmethod
     async def Request(
@@ -344,7 +431,8 @@ class AIOSocketClient:
         follow: bool = True,
         proxy: tuple[str, int] | bool | None = None,
         connection: Connection | None = None,
-    ):
+        streaming: bool | None = None,
+    ) -> AsyncGenerator[HTTPAtom, None]:
         """Somewhat high level API to perform an HTTP request."""
 
         # There's much work to get proxy support to work
@@ -407,15 +495,18 @@ class AIOSocketClient:
                 path = f"http://{host}:{actual_port}{path}"
 
         try:
-            res = await cls.OnRequest(
-                HTTPRequest(
-                    method, path, query=None, headers=HTTPHeaders(headers)
-                ),
+            async for atom in cls.OnRequest(
+                HTTPRequest(method, path, query=None, headers=HTTPHeaders(headers)),
                 host,
                 cxn,
-            )
-            return res
+                timeout=timeout,
+                streaming=streaming,
+            ):
+                yield atom
         finally:
+            # FIXME: That's a bit of an issue as the request may be streaming,
+            # and so the connection should only be released when the request
+            # parsing has ended, so probably not here.
             ConnectionPool.Release(cxn)
 
 
@@ -431,7 +522,7 @@ def pooling(idle: float | None = None):
 
 if __name__ == "__main__":
     res = asyncio.run(
-        AIOSocketClient.Request(
+        HTTPClient.Request(
             host="google.com",
             method="GET",
             path="/index.html",

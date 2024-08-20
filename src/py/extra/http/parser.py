@@ -7,9 +7,8 @@ from .model import (
     HTTPResponseLine,
     HTTPHeaders,
     HTTPBodyBlob,
-    HTTPRequestAtom,
-    HTTPResponseAtom,
-    HTTPRequestStatus,
+    HTTPAtom,
+    HTTPProcessingStatus,
     headername,
 )
 
@@ -209,7 +208,7 @@ class HTTPParser:
             MessageParser | HeadersParser | BodyEOSParser | BodyLengthParser
         ) = self.message
 
-    def feed(self, chunk: bytes) -> Iterator[HTTPRequestAtom | HTTPResponseAtom]:
+    def feed(self, chunk: bytes) -> Iterator[HTTPAtom]:
         size: int = len(chunk)
         o: int = 0
         line: HTTPRequestLine | HTTPResponseLine | None = None
@@ -229,7 +228,12 @@ class HTTPParser:
                         headers = self.headers.flush()
                         if headers is not None:
                             yield headers
-                        if line and line.method not in self.HAS_BODY:
+                        if (
+                            line
+                            and isinstance(line, HTTPRequestLine)
+                            and line.method not in self.HAS_BODY
+                        ):
+                            # That's an early exit
                             yield HTTPRequest(
                                 method=line.method,
                                 path=line.path,
@@ -242,15 +246,15 @@ class HTTPParser:
                         elif headers is not None:
                             if headers.contentLength is None:
                                 self.parser = self.bodyEOS.reset(b"\n")
-                                yield HTTPRequestStatus.Body
+                                yield HTTPProcessingStatus.Body
                             else:
                                 self.parser = self.bodyLength.reset(
                                     headers.contentLength
                                 )
-                                yield HTTPRequestStatus.Body
+                                yield HTTPProcessingStatus.Body
                 elif self.parser is self.bodyEOS or self.parser is self.bodyLength:
                     if line is None or headers is None:
-                        yield HTTPRequestStatus.BadFormat
+                        yield HTTPProcessingStatus.BadFormat
                     else:
                         headers = headers or HTTPHeaders({})
                         # NOTE: This is an awkward dance around the type checker
@@ -272,7 +276,7 @@ class HTTPParser:
                             if isinstance(line, HTTPRequestLine)
                             else HTTPResponse(
                                 protocol=line.protocol,
-                                status=line.method,
+                                status=line.status,
                                 message=line.message,
                                 headers=headers,
                                 body=body,
@@ -283,7 +287,7 @@ class HTTPParser:
                     raise RuntimeError(f"Unsupported parser: {self.parser}")
             o += n
             if not n:
-                print("Not sure this is good", o)
+                # FIXME: Not sure what this is about
                 raise NotImplementedError
 
 

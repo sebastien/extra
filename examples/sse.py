@@ -8,7 +8,8 @@ import asyncio
 class SSE(Service):
 
     @on(GET="/time")
-    def time(self, request) -> AsyncIterator[str]:
+    @on(GET="/time/{delay:int}")
+    def time(self, request, delay: float | int = 1) -> AsyncIterator[str]:
         async def stream():
             """The main streaming function, this is returned as a response
             and will be automatically stopped if the client disconnects."""
@@ -17,14 +18,14 @@ class SSE(Service):
                 info(f"SSE stream iteration {counter}")
                 yield "event: message\n"
                 yield f"date: {time.time()}\n\n"
-                await asyncio.sleep(1)
+                await asyncio.sleep(delay)
                 counter += 1
 
         # We register the `onClose` handler that will be called when the
         # client disconnects, or when the iteration stops.
         # FIXME: Should be request.respond().then(XX)
         return request.onClose(lambda _: info(f"SSE stream stopped")).respond(
-            stream(), contentType=b"text/plain"
+            stream(), contentType="text/event-stream"
         )
 
     @on(GET="/chunks")
@@ -42,7 +43,7 @@ class SSE(Service):
 
         return request.respond(
             stream(),
-            contentType=b"application/json",
+            contentType="application/json",
         )
 
 
