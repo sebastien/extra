@@ -3,7 +3,7 @@ from .http.model import (
     HTTPRequest,
     HTTPHeaders,
     HTTPRequestBody,
-    HTTPRequestBlob,
+    HTTPBodyBlob,
     headername,
 )
 import asyncio, ssl, time, os
@@ -303,7 +303,7 @@ class AIOSocketClient:
         cxn: Connection,
         *,
         headers: dict[str, str] | None = None,
-        body: HTTPRequestBody | HTTPRequestBlob | None = None,
+        body: HTTPRequestBody | HTTPBodyBlob | None = None,
     ):
         """Low level function to process HTTP requests with the given connection."""
         # We send the line
@@ -336,7 +336,7 @@ class AIOSocketClient:
         *,
         port: int | None = None,
         headers: dict[str, str] | None = None,
-        body: HTTPRequestBody | HTTPRequestBlob | None = None,
+        body: HTTPRequestBody | HTTPBodyBlob | None = None,
         params: dict[str, str] | str | None = None,
         ssl: bool = True,
         verified: bool = True,

@@ -2,29 +2,32 @@ from typing import Iterator, ClassVar
 from ..utils.io import LineParser, EOL
 from .model import (
     HTTPRequest,
+    HTTPResponse,
     HTTPRequestLine,
+    HTTPResponseLine,
     HTTPHeaders,
-    HTTPRequestBlob,
+    HTTPBodyBlob,
     HTTPRequestAtom,
+    HTTPResponseAtom,
     HTTPRequestStatus,
     headername,
 )
 
 
-class RequestParser:
+class MessageParser:
 
     __slots__ = ["line", "value"]
 
     def __init__(self) -> None:
         self.line: LineParser = LineParser()
-        self.value: HTTPRequestLine | None = None
+        self.value: HTTPRequestLine | HTTPResponseLine | None = None
 
-    def flush(self) -> "HTTPRequestLine|None":
+    def flush(self) -> "HTTPRequestLine|HTTPResponseLine|None":
         res = self.value
         self.value = None
         return res
 
-    def reset(self) -> "RequestParser":
+    def reset(self) -> "MessageParser":
         self.line.reset()
         self.value = None
         return self
@@ -34,57 +37,27 @@ class RequestParser:
         if line:
             # NOTE: This is safe
             l = line.decode("ascii")
-            i = l.find(" ")
-            j = l.rfind(" ")
-            p: list[str] = l[i + 1 : j].split("?", 1)
-            # NOTE: There may be junk before the method name
-            self.value = HTTPRequestLine(
-                l[0:i], p[0], p[1] if len(p) > 1 else "", l[j + 1 :]
-            )
+            if l.startswith("HTTP/"):
+                protocol, status, message = l.split(" ", 2)
+                self.value = HTTPResponseLine(
+                    protocol,
+                    int(status),
+                    message,
+                )
+            else:
+                i = l.find(" ")
+                j = l.rfind(" ")
+                p: list[str] = l[i + 1 : j].split("?", 1)
+                # NOTE: There may be junk before the method name
+                self.value = HTTPRequestLine(
+                    l[0:i], p[0], p[1] if len(p) > 1 else "", l[j + 1 :]
+                )
             return True, end
         else:
             return None, end
 
     def __str__(self) -> str:
-        return f"RequestParser({self.value})"
-
-
-class ReponseParser:
-
-    __slots__ = ["line", "value"]
-
-    def __init__(self) -> None:
-        self.line: LineParser = LineParser()
-        self.value: HTTPResponseLine | None = None
-
-    def flush(self) -> "HTTPResponseLine|None":
-        res = self.value
-        self.value = None
-        return res
-
-    def reset(self) -> "ResponseParser":
-        self.line.reset()
-        self.value = None
-        return self
-
-    def feed(self, chunk: bytes, start: int = 0) -> tuple[bool | None, int]:
-        line, end = self.line.feed(chunk, start)
-        if line:
-            # NOTE: This is safe
-            l = line.decode("ascii")
-            i = l.find(" ")
-            j = l.rfind(" ")
-            p: list[str] = l[i + 1 : j].split("?", 1)
-            # NOTE: There may be junk before the method name
-            self.value = HTTPResponseLine(
-                l[0:i], p[0], p[1] if len(p) > 1 else "", l[j + 1 :]
-            )
-            return True, end
-        else:
-            return None, end
-
-    def __str__(self) -> str:
-        return f"ResponseParser({self.value})"
+        return f"MessageParser({self.value})"
 
 
 class HeadersParser:
@@ -153,15 +126,15 @@ class BodyEOSParser:
         self.line = LineParser()
         self.data: bytes | None = None
 
-    def flush(self) -> HTTPRequestBlob:
+    def flush(self) -> HTTPBodyBlob:
         # TODO: We should check it's expected
         res = (
-            HTTPRequestBlob(
+            HTTPBodyBlob(
                 self.data,
                 len(self.data),
             )
             if self.data is not None
-            else HTTPRequestBlob()
+            else HTTPBodyBlob()
         )
         self.reset()
         return res
@@ -190,9 +163,9 @@ class BodyLengthParser:
         self.read: int = 0
         self.data: list[bytes] = []
 
-    def flush(self) -> HTTPRequestBlob:
+    def flush(self) -> HTTPBodyBlob:
         # TODO: We should check it's expected
-        res = HTTPRequestBlob(
+        res = HTTPBodyBlob(
             b"".join(self.data),
             self.read,
             0 if self.expected is None else self.expected - self.read,
@@ -228,25 +201,25 @@ class HTTPParser:
     HAS_BODY: ClassVar[set[str]] = {"POST", "PUT", "PATCH"}
 
     def __init__(self) -> None:
-        self.request: RequestParser = RequestParser()
+        self.message: MessageParser = MessageParser()
         self.headers: HeadersParser = HeadersParser()
         self.bodyEOS: BodyEOSParser = BodyEOSParser()
         self.bodyLength: BodyLengthParser = BodyLengthParser()
         self.parser: (
-            RequestParser | HeadersParser | BodyEOSParser | BodyLengthParser
-        ) = self.request
+            MessageParser | HeadersParser | BodyEOSParser | BodyLengthParser
+        ) = self.message
 
-    def feed(self, chunk: bytes) -> Iterator[HTTPRequestAtom]:
+    def feed(self, chunk: bytes) -> Iterator[HTTPRequestAtom | HTTPResponseAtom]:
         size: int = len(chunk)
         o: int = 0
-        line: HTTPRequestLine | None = None
+        line: HTTPRequestLine | HTTPResponseLine | None = None
         headers: HTTPHeaders | None = None
         while o < size:
             l, n = self.parser.feed(chunk, o)
             if l is not None:
-                if self.parser is self.request:
+                if self.parser is self.message:
                     # We've parsed a request line
-                    line = self.request.flush()
+                    line = self.message.flush()
                     if line is not None:
                         yield line
                         self.parser = self.headers
@@ -263,9 +236,9 @@ class HTTPParser:
                                 query=parseQuery(line.query),
                                 headers=headers or HTTPHeaders({}),
                                 protocol=line.protocol,
-                                body=HTTPRequestBlob(b"", 0),
+                                body=HTTPBodyBlob(b"", 0),
                             )
-                            self.parser = self.request.reset()
+                            self.parser = self.message.reset()
                         elif headers is not None:
                             if headers.contentLength is None:
                                 self.parser = self.bodyEOS.reset(b"\n")
@@ -279,20 +252,33 @@ class HTTPParser:
                     if line is None or headers is None:
                         yield HTTPRequestStatus.BadFormat
                     else:
-                        yield HTTPRequest(
-                            method=line.method,
-                            protocol=line.protocol,
-                            path=line.path,
-                            query=parseQuery(line.query),
-                            headers=headers or HTTPHeaders({}),
-                            # NOTE: This is an awkward dance around the type checker
-                            body=(
-                                self.bodyEOS.flush()
-                                if self.parser is self.bodyEOS
-                                else self.bodyLength.flush()
-                            ),
+                        headers = headers or HTTPHeaders({})
+                        # NOTE: This is an awkward dance around the type checker
+                        body = (
+                            self.bodyEOS.flush()
+                            if self.parser is self.bodyEOS
+                            else self.bodyLength.flush()
                         )
-                    self.parser = self.request.reset()
+                        yield (
+                            HTTPRequest(
+                                method=line.method,
+                                protocol=line.protocol,
+                                path=line.path,
+                                query=parseQuery(line.query),
+                                headers=headers,
+                                # NOTE: This is an awkward dance around the type checker
+                                body=body,
+                            )
+                            if isinstance(line, HTTPRequestLine)
+                            else HTTPResponse(
+                                protocol=line.protocol,
+                                status=line.method,
+                                message=line.message,
+                                headers=headers,
+                                body=body,
+                            )
+                        )
+                    self.parser = self.message.reset()
                 else:
                     raise RuntimeError(f"Unsupported parser: {self.parser}")
             o += n

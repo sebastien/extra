@@ -15,7 +15,7 @@ from .http.model import (
     HTTPResponseFile,
     HTTPResponseStream,
     HTTPResponseAsyncStream,
-    HTTPRequestBlob,
+    HTTPBodyBlob,
     HTTPResponse,
     headername,
 )
@@ -133,7 +133,7 @@ class AWSLambdaEvent:
                 raw_headers.get("Content-Type"),
                 int(raw_headers.get("Content-Length", len(body))),
             ),
-            body=HTTPRequestBlob(body),
+            body=HTTPBodyBlob(body),
             # host=raw_headers.get("Host", "aws"),
         )
 

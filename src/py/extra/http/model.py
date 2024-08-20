@@ -95,7 +95,7 @@ class HTTPRequestBody:
         return await self.reader.load()
 
 
-class HTTPRequestBlob(NamedTuple):
+class HTTPBodyBlob(NamedTuple):
     payload: bytes = b""
     length: int = 0
     remaining: int = 0
@@ -122,7 +122,7 @@ class HTTPRequestStatus(Enum):
 HTTPRequestAtom: TypeAlias = Union[
     HTTPRequestLine,
     HTTPHeaders,
-    HTTPRequestBlob,
+    HTTPBodyBlob,
     HTTPRequestBody,
     HTTPRequestStatus,
     "HTTPRequest",
@@ -202,7 +202,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         path: str,
         query: dict[str, str] | None,
         headers: HTTPHeaders,
-        body: HTTPRequestBody | HTTPRequestBlob | None = None,
+        body: HTTPRequestBody | HTTPBodyBlob | None = None,
         protocol: str = "HTTP/1.1",
     ):
         super().__init__()
@@ -211,7 +211,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         self.query: dict[str, str] | None = query
         self.protocol: str = protocol
         self._headers: HTTPHeaders = headers
-        self._body: HTTPRequestBody | HTTPRequestBlob | None = body
+        self._body: HTTPRequestBody | HTTPBodyBlob | None = body
         self._reader: HTTPBodyReader | None
         self._onClose: Callable[[HTTPRequest], None] | None = None
 
@@ -230,7 +230,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         return self._headers.contentType
 
     @property
-    def body(self) -> HTTPRequestBody | HTTPRequestBlob:
+    def body(self) -> HTTPRequestBody | HTTPBodyBlob:
         if self._body is None:
             if not self._reader:
                 raise RuntimeError("Request has no reader, can't read body")
