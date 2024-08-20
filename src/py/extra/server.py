@@ -47,7 +47,7 @@ SERVER_ERROR: bytes = (
 )
 
 
-class AIOSocketReader(HTTPBodyReader):
+class AIOSocketBodyReader(HTTPBodyReader):
 
     __slots__ = ["socket", "loop", "buffer"]
 
@@ -63,6 +63,8 @@ class AIOSocketReader(HTTPBodyReader):
 
 
 # NOTE: Based on benchmarks, this gave the best performance.
+# NOTE: The caveat is that getting SSL directly is a pain, so we may
+# need to rewrite this a bit.
 class AIOSocketServer:
     """AsyncIO backend using sockets directly."""
 
@@ -79,7 +81,7 @@ class AIOSocketServer:
         of an application."""
         try:
             parser: HTTPParser = HTTPParser()
-            reader: AIOSocketReader = AIOSocketReader(client, loop)
+            reader: AIOSocketBodyReader = AIOSocketBodyReader(client, loop)
             size: int = options.readsize
 
             # TODO: Support keep-alive

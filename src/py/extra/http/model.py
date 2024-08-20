@@ -52,6 +52,12 @@ class HTTPRequestLine(NamedTuple):
     protocol: str
 
 
+class HTTPResponseLine(NamedTuple):
+    protocol: str
+    status: int
+    message: str
+
+
 class HTTPRequestHeaders(NamedTuple):
     headers: dict[str, str]
     contentType: str | None = None
@@ -384,6 +390,7 @@ class HTTPResponse:
         lines.insert(0, f"{self.protocol} {status} {message}")
         lines.append("")
         lines.append("")
+        # TODO: UTF8 maybe? Why ASCII?
         return "\r\n".join(lines).encode("ascii")
 
     def __str__(self):

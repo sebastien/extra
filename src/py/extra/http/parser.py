@@ -49,6 +49,44 @@ class RequestParser:
         return f"RequestParser({self.value})"
 
 
+class ReponseParser:
+
+    __slots__ = ["line", "value"]
+
+    def __init__(self) -> None:
+        self.line: LineParser = LineParser()
+        self.value: HTTPResponseLine | None = None
+
+    def flush(self) -> "HTTPResponseLine|None":
+        res = self.value
+        self.value = None
+        return res
+
+    def reset(self) -> "ResponseParser":
+        self.line.reset()
+        self.value = None
+        return self
+
+    def feed(self, chunk: bytes, start: int = 0) -> tuple[bool | None, int]:
+        line, end = self.line.feed(chunk, start)
+        if line:
+            # NOTE: This is safe
+            l = line.decode("ascii")
+            i = l.find(" ")
+            j = l.rfind(" ")
+            p: list[str] = l[i + 1 : j].split("?", 1)
+            # NOTE: There may be junk before the method name
+            self.value = HTTPResponseLine(
+                l[0:i], p[0], p[1] if len(p) > 1 else "", l[j + 1 :]
+            )
+            return True, end
+        else:
+            return None, end
+
+    def __str__(self) -> str:
+        return f"ResponseParser({self.value})"
+
+
 class HeadersParser:
 
     __slots__ = ["previous", "headers", "contentType", "contentLength", "line"]
