@@ -11,7 +11,7 @@ from .model import Application, Service, mount
 from .http.model import (
     HTTPRequest,
     HTTPHeaders,
-    HTTPResponseBlob,
+    HTTPBodyBlob,
     HTTPResponseFile,
     HTTPResponseStream,
     HTTPResponseAsyncStream,
@@ -143,7 +143,7 @@ class AWSLambdaEvent:
         buffer = BytesIO()
         if response.body is None:
             pass
-        elif isinstance(response.body, HTTPResponseBlob):
+        elif isinstance(response.body, HTTPBodyBlob):
             buffer.write(response.body.payload or b"")
         elif isinstance(response.body, HTTPResponseFile):
             with open(response.body.path, "rb") as f:
@@ -182,7 +182,7 @@ class AWSLambdaEvent:
         body = buffer.read(size)
         return {
             "statusCode": response.status,
-            "headers": {headername(k): v for k, v in response.headers.items()},
+            "headers": {headername(k): v for k, v in response.headers.headers.items()},
             # FIXME: Ensure it's properly encoded
             "body": b64encode(body) if is_binary else body.decode("utf8"),
         }

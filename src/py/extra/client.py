@@ -4,6 +4,7 @@ from contextvars import ContextVar
 from contextlib import contextmanager
 from dataclasses import dataclass
 import asyncio, ssl, time, os
+from .utils.logging import event
 
 from .http.model import (
     HTTPRequest,
@@ -15,7 +16,6 @@ from .http.model import (
     headername,
 )
 from .http.parser import HTTPParser, HTTPProcessingStatus
-from .utils.logging import event
 
 
 # --
@@ -193,12 +193,10 @@ class ConnectionPool:
         """Returns a connection to the target from the pool (if the pool is available
         and has a valid connection to the target), or creates a new connection."""
         pools = cls.All.get(None)
-        return (
+        return await (
             pools[-1].get(target)
             if pools
-            else await Connection.Make(
-                target, idle=idle, timeout=timeout, verified=verified
-            )
+            else Connection.Make(target, idle=idle, timeout=timeout, verified=verified)
         )
 
     @classmethod
@@ -243,7 +241,7 @@ class ConnectionPool:
         self.connections: dict[ConnectionTarget, list[Connection]] = {}
         self.idle: float | None = idle
 
-    def get(
+    async def get(
         self,
         target: ConnectionTarget,
         *,
@@ -258,7 +256,7 @@ class ConnectionPool:
                 return c
             else:
                 c.close()
-        return Connection.Make(target, idle=idle or self.idle)
+        return await Connection.Make(target, idle=idle or self.idle)
 
     def put(self, connection: Connection) -> None:
         """Put the connection back into the pool, it will be available
@@ -330,7 +328,7 @@ class HTTPClient:
         *,
         headers: dict[str, str] | None = None,
         body: HTTPRequestBody | HTTPBodyBlob | None = None,
-        timeout: float = 2.0,
+        timeout: float | None = 2.0,
         buffer: int = 32_000,
         streaming: bool | None = None,
     ) -> AsyncGenerator[HTTPAtom, bool | None]:
@@ -358,7 +356,6 @@ class HTTPClient:
         # We continue reading from the socket if we have keep_alive
         status: HTTPProcessingStatus = HTTPProcessingStatus.Processing
         read_count: int = 0
-        expected_length = 0
         # --
         # We may have more than one request in each payload when
         # HTTP Pipelininig is on.
@@ -392,7 +389,11 @@ class HTTPClient:
                 else:
                     yield atom
             iteration += 1
-        if streaming is True or res.headers.contentType in {"text/event-stream"}:
+        if (
+            streaming is True
+            or res
+            and res.headers.contentType in {"text/event-stream"}
+        ):
             # TODO: We should swap out the body for a streaming body
             cxn.isStreaming = True
             should_continue: bool | None = True
@@ -411,8 +412,9 @@ class HTTPClient:
                 except TimeoutError:
                     raise ClientException(HTTPProcessingStatus.Timeout)
 
-        # We always finish with the response
-        yield res
+        # We always finish with the response if we have one
+        if res is not None:
+            yield res
 
     @classmethod
     async def Request(
@@ -427,7 +429,7 @@ class HTTPClient:
         params: dict[str, str] | str | None = None,
         ssl: bool = True,
         verified: bool = True,
-        timeout: float | None = 10.0,
+        timeout: float = 10.0,
         follow: bool = True,
         proxy: tuple[str, int] | bool | None = None,
         connection: Connection | None = None,
@@ -496,7 +498,12 @@ class HTTPClient:
 
         try:
             async for atom in cls.OnRequest(
-                HTTPRequest(method, path, query=None, headers=HTTPHeaders(headers)),
+                HTTPRequest(
+                    method,
+                    path,
+                    query=None,
+                    headers=HTTPHeaders(headers or {}),
+                ),
                 host,
                 cxn,
                 timeout=timeout,
@@ -521,13 +528,16 @@ def pooling(idle: float | None = None):
 
 
 if __name__ == "__main__":
-    res = asyncio.run(
-        HTTPClient.Request(
+
+    async def main():
+        async for atom in HTTPClient.Request(
             host="google.com",
             method="GET",
             path="/index.html",
-        )
-    )
+        ):
+            event("atom", atom)
+
+    asyncio.run(main())
 
 
 # EOF

@@ -6,11 +6,12 @@ from .utils.io import asWritable
 from .utils.limits import LimitType, unlimit
 from .model import Application, Service, mount
 from .http.model import (
+    HTTPBodyBlob,
     HTTPRequest,
     HTTPResponse,
     HTTPResponseStream,
     HTTPResponseAsyncStream,
-    HTTPResponseBlob,
+    HTTPBodyBlob,
     HTTPResponseFile,
     HTTPBodyReader,
 )
@@ -225,7 +226,7 @@ class AIOSocketServer:
                 await loop.sock_sendall(client, res.head())
                 sent = True
                 # And send the request
-                if isinstance(res.body, HTTPResponseBlob):
+                if isinstance(res.body, HTTPBodyBlob):
                     await loop.sock_sendall(client, res.body.payload)
                 elif isinstance(res.body, HTTPResponseFile):
                     with open(res.body.path, "rb") as f:

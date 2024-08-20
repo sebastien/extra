@@ -6,7 +6,6 @@ from typing import (
     Union,
     Callable,
     AsyncGenerator,
-    cast,
 )
 from abc import ABC, abstractmethod
 import os.path
@@ -122,6 +121,7 @@ class HTTPProcessingStatus(Enum):
 
 HTTPAtom: TypeAlias = Union[
     HTTPRequestLine,
+    HTTPResponseLine,
     HTTPHeaders,
     HTTPBodyBlob,
     HTTPRequestBody,
@@ -129,11 +129,6 @@ HTTPAtom: TypeAlias = Union[
     "HTTPRequest",
     "HTTPResponse",
 ]
-
-
-class HTTPResponseBlob(NamedTuple):
-    payload: bytes
-    length: str
 
 
 class HTTPResponseFile(NamedTuple):
@@ -150,7 +145,7 @@ class HTTPResponseAsyncStream(NamedTuple):
 
 
 HTTPResponseBody: TypeAlias = (
-    HTTPResponseBlob | HTTPResponseFile | HTTPResponseStream | HTTPResponseAsyncStream
+    HTTPBodyBlob | HTTPResponseFile | HTTPResponseStream | HTTPResponseAsyncStream
 )
 
 
@@ -301,7 +296,7 @@ class HTTPResponse:
 
         # We process the body
         body: (
-            HTTPResponseBlob
+            HTTPBodyBlob
             | HTTPResponseFile
             | HTTPResponseStream
             | HTTPResponseAsyncStream
@@ -324,8 +319,8 @@ class HTTPResponse:
             raise ValueError(f"Unsupported content {type(content)}:{content}")
         # If we have a payload then it's a Blob response
         if payload is not None:
-            body = HTTPResponseBlob(payload, str(len(payload)))
-            contentLength = body.length
+            contentLength = len(payload)
+            body = HTTPBodyBlob(payload, contentLength)
         # Content Type
         content_type: str | None = headers.get("Content-Type") if headers else None
         if contentType is not None and contentType != content_type:
@@ -335,16 +330,17 @@ class HTTPResponse:
         content_length_str: str | None = (
             headers.get("Content-Length") if headers else None
         )
-        if contentLength is not None and (t := contentLength) != content_length_str:
+        if (
+            contentLength is not None
+            and (t := str(contentLength)) != content_length_str
+        ):
             updated_headers["Content-Length"] = t
         elif contentLength is None:
-            c = (
-                updated_headers.get("Content-Length")
-                or headers
-                and headers.get("Content-Length")
+            hcl: str | None = updated_headers.get("Content-Length") or (
+                headers.get("Content-Length") if headers else None
             )
-            if c is not None:
-                contentLength = int(c)
+            if hcl is not None:
+                contentLength = int(hcl)
 
         # TODO: We should have a response pipeline that can do things
         # like ETags, Ranged requests, etc.
@@ -384,7 +380,7 @@ class HTTPResponse:
 
     # TODO: Deprecate
     def getHeader(self, name: str) -> str | None:
-        return self.headers.get(headername(name))
+        return self.headers.headers.get(headername(name))
 
     def setHeader(self, name: str, value: str | int | None) -> "HTTPResponse":
         if value is None:
