@@ -12,8 +12,9 @@ It is focused on providing primitives for creating web services,
 implemented to work well both in development and production while
 providing a great developer experience.
 
-Features:
+Key Features:
 
+-   Client and server
 -   Streaming reads and writes, lazy decoding and encoding
 -   Embedded asynchronous HTTP/1 development server
 -   Only requires Python stdlib
@@ -25,6 +26,14 @@ Design principles:
 -   Stream-oriented: encourages writing stream processing handlers
 -   Service focused: template are left out, but lots of building blocks
     are available for services.
+
+Highlights:
+
+- Pre/post conditions for request handlers
+- HTML templating (plays nice with HTMX)
+- CORS support
+- Integrated logging
+- Regexp-based tree router
 
 Extra is the successor of [Retro](https://github.com/sebastien/retro),
 one of the oldest decorator-based framework for HTTP applications and

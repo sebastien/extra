@@ -10,12 +10,12 @@ from .utils.logging import exception
 from .model import Application, Service, mount
 from .http.model import (
     HTTPRequest,
-    HTTPRequestHeaders,
-    HTTPResponseBlob,
+    HTTPHeaders,
+    HTTPBodyBlob,
     HTTPResponseFile,
     HTTPResponseStream,
     HTTPResponseAsyncStream,
-    HTTPRequestBlob,
+    HTTPBodyBlob,
     HTTPResponse,
     headername,
 )
@@ -128,12 +128,12 @@ class AWSLambdaEvent:
             method=event.get("httpMethod", "GET"),
             path=event.get("path", "/"),
             query=cast(dict[str, str], event.get("queryStringParameters", {})),
-            headers=HTTPRequestHeaders(
+            headers=HTTPHeaders(
                 raw_headers,
                 raw_headers.get("Content-Type"),
                 int(raw_headers.get("Content-Length", len(body))),
             ),
-            body=HTTPRequestBlob(body),
+            body=HTTPBodyBlob(body),
             # host=raw_headers.get("Host", "aws"),
         )
 
@@ -143,7 +143,7 @@ class AWSLambdaEvent:
         buffer = BytesIO()
         if response.body is None:
             pass
-        elif isinstance(response.body, HTTPResponseBlob):
+        elif isinstance(response.body, HTTPBodyBlob):
             buffer.write(response.body.payload or b"")
         elif isinstance(response.body, HTTPResponseFile):
             with open(response.body.path, "rb") as f:
@@ -182,7 +182,7 @@ class AWSLambdaEvent:
         body = buffer.read(size)
         return {
             "statusCode": response.status,
-            "headers": {headername(k): v for k, v in response.headers.items()},
+            "headers": {headername(k): v for k, v in response.headers.headers.items()},
             # FIXME: Ensure it's properly encoded
             "body": b64encode(body) if is_binary else body.decode("utf8"),
         }

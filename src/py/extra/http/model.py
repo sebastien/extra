@@ -6,7 +6,6 @@ from typing import (
     Union,
     Callable,
     AsyncGenerator,
-    cast,
 )
 from abc import ABC, abstractmethod
 import os.path
@@ -52,7 +51,13 @@ class HTTPRequestLine(NamedTuple):
     protocol: str
 
 
-class HTTPRequestHeaders(NamedTuple):
+class HTTPResponseLine(NamedTuple):
+    protocol: str
+    status: int
+    message: str
+
+
+class HTTPHeaders(NamedTuple):
     headers: dict[str, str]
     contentType: str | None = None
     contentLength: int | None = None
@@ -89,10 +94,11 @@ class HTTPRequestBody:
         return await self.reader.load()
 
 
-class HTTPRequestBlob(NamedTuple):
+class HTTPBodyBlob(NamedTuple):
     payload: bytes = b""
     length: int = 0
-    remaining: int = 0
+    # NOTE: We don't know how many is remaining
+    remaining: int | None = None
 
     @property
     def raw(self) -> bytes:
@@ -104,7 +110,7 @@ class HTTPRequestBlob(NamedTuple):
         return self.payload
 
 
-class HTTPRequestStatus(Enum):
+class HTTPProcessingStatus(Enum):
     Processing = 0
     Body = 1
     Complete = 2
@@ -113,19 +119,16 @@ class HTTPRequestStatus(Enum):
     BadFormat = 12
 
 
-HTTPRequestAtom: TypeAlias = Union[
+HTTPAtom: TypeAlias = Union[
     HTTPRequestLine,
-    HTTPRequestHeaders,
-    HTTPRequestBlob,
+    HTTPResponseLine,
+    HTTPHeaders,
+    HTTPBodyBlob,
     HTTPRequestBody,
-    HTTPRequestStatus,
+    HTTPProcessingStatus,
     "HTTPRequest",
+    "HTTPResponse",
 ]
-
-
-class HTTPResponseBlob(NamedTuple):
-    payload: bytes
-    length: str
 
 
 class HTTPResponseFile(NamedTuple):
@@ -142,7 +145,7 @@ class HTTPResponseAsyncStream(NamedTuple):
 
 
 HTTPResponseBody: TypeAlias = (
-    HTTPResponseBlob | HTTPResponseFile | HTTPResponseStream | HTTPResponseAsyncStream
+    HTTPBodyBlob | HTTPResponseFile | HTTPResponseStream | HTTPResponseAsyncStream
 )
 
 
@@ -195,8 +198,8 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         method: str,
         path: str,
         query: dict[str, str] | None,
-        headers: HTTPRequestHeaders,
-        body: HTTPRequestBody | HTTPRequestBlob | None = None,
+        headers: HTTPHeaders,
+        body: HTTPRequestBody | HTTPBodyBlob | None = None,
         protocol: str = "HTTP/1.1",
     ):
         super().__init__()
@@ -204,8 +207,8 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         self.path: str = path
         self.query: dict[str, str] | None = query
         self.protocol: str = protocol
-        self._headers: HTTPRequestHeaders = headers
-        self._body: HTTPRequestBody | HTTPRequestBlob | None = body
+        self._headers: HTTPHeaders = headers
+        self._body: HTTPRequestBody | HTTPBodyBlob | None = body
         self._reader: HTTPBodyReader | None
         self._onClose: Callable[[HTTPRequest], None] | None = None
 
@@ -224,7 +227,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         return self._headers.contentType
 
     @property
-    def body(self) -> HTTPRequestBody | HTTPRequestBlob:
+    def body(self) -> HTTPRequestBody | HTTPBodyBlob:
         if self._body is None:
             if not self._reader:
                 raise RuntimeError("Request has no reader, can't read body")
@@ -290,21 +293,15 @@ class HTTPResponse:
         """Factory method to create HTTP response objects."""
         payload: bytes | None = None
         updated_headers: dict[str, str] = {} if headers is None else {}
-        if contentType and (not headers or headers.get("Content-Type") != contentType):
-            updated_headers["Content-Type"] = contentType
-        if contentLength is not None and (
-            not headers or headers.get("Content-Type") != contentType
-        ):
-            updated_headers["Content-Type"] = cast(str, contentType)
+
         # We process the body
         body: (
-            HTTPResponseBlob
+            HTTPBodyBlob
             | HTTPResponseFile
             | HTTPResponseStream
             | HTTPResponseAsyncStream
             | None
         ) = None
-        content_length: str | None = None
         if content is None:
             pass
         elif isinstance(content, str):
@@ -313,7 +310,7 @@ class HTTPResponse:
             payload = content
         elif isinstance(content, Path):
             body = HTTPResponseFile(content.absolute())
-            content_length = str(os.path.getsize(body.path))
+            contentLength = os.path.getsize(body.path)
         elif inspect.isgenerator(content):
             body = HTTPResponseStream(content)
         elif inspect.isasyncgen(content):
@@ -322,21 +319,42 @@ class HTTPResponse:
             raise ValueError(f"Unsupported content {type(content)}:{content}")
         # If we have a payload then it's a Blob response
         if payload is not None:
-            body = HTTPResponseBlob(payload, str(len(payload)))
-            content_length = body.length
+            contentLength = len(payload)
+            body = HTTPBodyBlob(payload, contentLength)
+        # Content Type
+        content_type: str | None = headers.get("Content-Type") if headers else None
+        if contentType is not None and contentType != content_type:
+            updated_headers["Content-Type"] = contentType
+            content_type = contentType
+        # Content Length
+        content_length_str: str | None = (
+            headers.get("Content-Length") if headers else None
+        )
+        if (
+            contentLength is not None
+            and (t := str(contentLength)) != content_length_str
+        ):
+            updated_headers["Content-Length"] = t
+        elif contentLength is None:
+            hcl: str | None = updated_headers.get("Content-Length") or (
+                headers.get("Content-Length") if headers else None
+            )
+            if hcl is not None:
+                contentLength = int(hcl)
+
         # TODO: We should have a response pipeline that can do things
         # like ETags, Ranged requests, etc.
         # We adjust any extra header
-        if content_length and (
-            not headers or headers.get("Content-Length") != content_length
-        ):
-            updated_headers["Content-Length"] = content_length
         # --
         # The response is ready to be packaged
         return HTTPResponse(
             status=status,
             message=message or HTTP_STATUS.get(status, "Unknown status"),
-            headers=(headers | updated_headers) if headers else updated_headers,
+            headers=HTTPHeaders(
+                (headers | updated_headers) if headers else updated_headers,
+                contentType=contentType,
+                contentLength=contentLength,
+            ),
             body=body,
             protocol=protocol,
         )
@@ -348,7 +366,7 @@ class HTTPResponse:
         protocol: str,
         status: int,
         message: str | None,
-        headers: dict[str, str],
+        headers: HTTPHeaders,
         body: HTTPResponseBody | None = None,
     ):
         super().__init__()
@@ -357,17 +375,18 @@ class HTTPResponse:
         self.message: str | None = message
         # NOTE: Content-Disposition headers may have a non-ascii value, but we
         # don't support that.
-        self.headers: dict[str, str] = headers
+        self.headers: HTTPHeaders = headers
         self.body: HTTPResponseBody | None = body
 
+    # TODO: Deprecate
     def getHeader(self, name: str) -> str | None:
-        return self.headers.get(name.lower())
+        return self.headers.headers.get(headername(name))
 
     def setHeader(self, name: str, value: str | int | None) -> "HTTPResponse":
         if value is None:
-            del self.headers[name.lower()]
+            del self.headers.headers[headername(name)]
         else:
-            self.headers[name.lower()] = str(value)
+            self.headers.headers[headername(name)] = str(value)
         return self
 
     def setHeaders(self, headers: dict[str, str | int | None]) -> "HTTPResponse":
@@ -379,11 +398,14 @@ class HTTPResponse:
         """Serializes the head as a payload."""
         status: int = 204 if self.body is None else self.status
         message: str = self.message or HTTP_STATUS[status]
-        lines: list[str] = [f"{headername(k)}: {v}" for k, v in self.headers.items()]
+        lines: list[str] = [
+            f"{headername(k)}: {v}" for k, v in self.headers.headers.items()
+        ]
         # TODO: No Content support?
         lines.insert(0, f"{self.protocol} {status} {message}")
         lines.append("")
         lines.append("")
+        # TODO: UTF8 maybe? Why ASCII?
         return "\r\n".join(lines).encode("ascii")
 
     def __str__(self):
