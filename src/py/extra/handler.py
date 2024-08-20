@@ -10,7 +10,7 @@ from .utils.logging import exception
 from .model import Application, Service, mount
 from .http.model import (
     HTTPRequest,
-    HTTPRequestHeaders,
+    HTTPHeaders,
     HTTPResponseBlob,
     HTTPResponseFile,
     HTTPResponseStream,
@@ -128,7 +128,7 @@ class AWSLambdaEvent:
             method=event.get("httpMethod", "GET"),
             path=event.get("path", "/"),
             query=cast(dict[str, str], event.get("queryStringParameters", {})),
-            headers=HTTPRequestHeaders(
+            headers=HTTPHeaders(
                 raw_headers,
                 raw_headers.get("Content-Type"),
                 int(raw_headers.get("Content-Length", len(body))),

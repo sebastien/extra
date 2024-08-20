@@ -3,7 +3,7 @@ from ..utils.io import LineParser, EOL
 from .model import (
     HTTPRequest,
     HTTPRequestLine,
-    HTTPRequestHeaders,
+    HTTPHeaders,
     HTTPRequestBlob,
     HTTPRequestAtom,
     HTTPRequestStatus,
@@ -100,8 +100,8 @@ class HeadersParser:
         # TODO: Close header
         # self.close:bool = False
 
-    def flush(self) -> "HTTPRequestHeaders|None":
-        res = HTTPRequestHeaders(self.headers, self.contentType, self.contentLength)
+    def flush(self) -> "HTTPHeaders|None":
+        res = HTTPHeaders(self.headers, self.contentType, self.contentLength)
         self.reset()
         return res
 
@@ -240,7 +240,7 @@ class HTTPParser:
         size: int = len(chunk)
         o: int = 0
         line: HTTPRequestLine | None = None
-        headers: HTTPRequestHeaders | None = None
+        headers: HTTPHeaders | None = None
         while o < size:
             l, n = self.parser.feed(chunk, o)
             if l is not None:
@@ -261,7 +261,7 @@ class HTTPParser:
                                 method=line.method,
                                 path=line.path,
                                 query=parseQuery(line.query),
-                                headers=headers or HTTPRequestHeaders({}),
+                                headers=headers or HTTPHeaders({}),
                                 protocol=line.protocol,
                                 body=HTTPRequestBlob(b"", 0),
                             )
@@ -284,7 +284,7 @@ class HTTPParser:
                             protocol=line.protocol,
                             path=line.path,
                             query=parseQuery(line.query),
-                            headers=headers or HTTPRequestHeaders({}),
+                            headers=headers or HTTPHeaders({}),
                             # NOTE: This is an awkward dance around the type checker
                             body=(
                                 self.bodyEOS.flush()

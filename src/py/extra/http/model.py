@@ -58,7 +58,7 @@ class HTTPResponseLine(NamedTuple):
     message: str
 
 
-class HTTPRequestHeaders(NamedTuple):
+class HTTPHeaders(NamedTuple):
     headers: dict[str, str]
     contentType: str | None = None
     contentLength: int | None = None
@@ -121,7 +121,7 @@ class HTTPRequestStatus(Enum):
 
 HTTPRequestAtom: TypeAlias = Union[
     HTTPRequestLine,
-    HTTPRequestHeaders,
+    HTTPHeaders,
     HTTPRequestBlob,
     HTTPRequestBody,
     HTTPRequestStatus,
@@ -201,7 +201,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         method: str,
         path: str,
         query: dict[str, str] | None,
-        headers: HTTPRequestHeaders,
+        headers: HTTPHeaders,
         body: HTTPRequestBody | HTTPRequestBlob | None = None,
         protocol: str = "HTTP/1.1",
     ):
@@ -210,7 +210,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         self.path: str = path
         self.query: dict[str, str] | None = query
         self.protocol: str = protocol
-        self._headers: HTTPRequestHeaders = headers
+        self._headers: HTTPHeaders = headers
         self._body: HTTPRequestBody | HTTPRequestBlob | None = body
         self._reader: HTTPBodyReader | None
         self._onClose: Callable[[HTTPRequest], None] | None = None

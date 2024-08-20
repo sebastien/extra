@@ -1,7 +1,7 @@
 from typing import NamedTuple, ClassVar
 from .http.model import (
     HTTPRequest,
-    HTTPRequestHeaders,
+    HTTPHeaders,
     HTTPRequestBody,
     HTTPRequestBlob,
     headername,
@@ -409,7 +409,7 @@ class AIOSocketClient:
         try:
             res = await cls.OnRequest(
                 HTTPRequest(
-                    method, path, query=None, headers=HTTPRequestHeaders(headers)
+                    method, path, query=None, headers=HTTPHeaders(headers)
                 ),
                 host,
                 cxn,
