@@ -1,6 +1,7 @@
 from typing import (
     Any,
     NamedTuple,
+    Iterable,
     Generator,
     TypeAlias,
     Union,
@@ -8,6 +9,8 @@ from typing import (
     AsyncGenerator,
 )
 from abc import ABC, abstractmethod
+from functools import cached_property
+from http.cookies import SimpleCookie, Morsel
 import os.path
 import inspect
 from pathlib import Path
@@ -216,7 +219,28 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
     def headers(self) -> dict[str, str]:
         return self._headers.headers
 
+    @cached_property
+    def _cookies(self) -> SimpleCookie:
+        """Returns the cookies (as a 'Cookie.SimpleCookie' instance)
+        attached to this request."""
+        cookies = SimpleCookie()
+        h = self.header("Cookie")
+        if h is not None:
+            cookies.load(h)
+        return cookies
+
+    def cookies(self) -> Iterable[str]:
+        for _ in self._cookies.keys():
+            yield _
+
+    def cookie(self, name: str) -> Morsel | None:
+        return self._cookies.get(name)
+
+    # FIXME: Should be header
     def getHeader(self, name: str) -> str | None:
+        return self.header(name)
+
+    def header(self, name: str) -> str | None:
         return self._headers.headers.get(headername(name))
 
     def param(self, name: str) -> str | None:
