@@ -122,8 +122,8 @@ class FileService(Service):
                             *nodes,
                         ),
                     ),
-                    doctype="html",
-                )
+                ),
+                doctype="html",
             )
         )
 
