@@ -6,7 +6,6 @@ from .utils.io import asWritable
 from .utils.limits import LimitType, unlimit
 from .model import Application, Service, mount
 from .http.model import (
-    HTTPBodyBlob,
     HTTPRequest,
     HTTPResponse,
     HTTPResponseStream,

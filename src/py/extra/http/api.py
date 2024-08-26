@@ -71,6 +71,7 @@ class ResponseFactory(ABC, Generic[T]):
     def fail(
         self,
         content: str | None = None,
+        *,
         status: int = 500,
         contentType: str = "text/plain",
     ):
@@ -87,8 +88,10 @@ class ResponseFactory(ABC, Generic[T]):
     def returns(
         self,
         value: Any,
-        contentType: str = "application/json",
         headers: dict[str, str] | None = None,
+        *,
+        status: int = 200,
+        contentType: str = "application/json",
     ):
         if isinstance(value, bytes):
             try:
@@ -101,18 +104,25 @@ class ResponseFactory(ABC, Generic[T]):
             contentType=contentType,
             contentLength=len(payload),
             headers=headers,
+            status=status,
         )
 
     def respondText(
-        self, content: str | bytes | Iterator[str | bytes], contentType="text/plain"
+        self,
+        content: str | bytes | Iterator[str | bytes],
+        contentType="text/plain",
+        status: int = 200,
     ):
-        return self.respond(content=content, contentType=contentType)
+        return self.respond(content=content, contentType=contentType, status=status)
 
-    def respondHTML(self, html: str | bytes | Iterator[str | bytes]):
-        return self.respond(content=html, contentType="text/html")
+    def respondHTML(self, html: str | bytes | Iterator[str | bytes], status: int = 200):
+        return self.respond(content=html, contentType="text/html", status=status)
 
     def respondFile(
-        self, path: Path | str, status: int = 200, headers: dict[str, str] | None = None
+        self,
+        path: Path | str,
+        headers: dict[str, str] | None = None,
+        status: int = 200,
     ):
         # TODO: We should have a much more detailed file handling, supporting ranges, etags, etc.
         p: Path = path if isinstance(path, Path) else Path(path)
@@ -128,8 +138,9 @@ class ResponseFactory(ABC, Generic[T]):
     def respondError(
         self,
         content: str | None = None,
-        status: int = 500,
         contentType: str = "text/plain",
+        *,
+        status: int = 500,
     ):
         return self.error(status, content, contentType)
 

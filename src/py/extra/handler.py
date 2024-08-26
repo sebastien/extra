@@ -11,7 +11,6 @@ from .model import Application, Service, mount
 from .http.model import (
     HTTPRequest,
     HTTPHeaders,
-    HTTPBodyBlob,
     HTTPResponseFile,
     HTTPResponseStream,
     HTTPResponseAsyncStream,
