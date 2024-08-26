@@ -264,8 +264,6 @@ def awslambda(
         # ```
         # LambdaContext([aws_request_id=…,log_group_name=/aws/lambda/…,log_stream_name=YYYY/MM/DD/[$LATEST]…,function_name=…,memory_limit_in_mb=128,function_version=$LATEST,invoked_function_arn=…,identity=CognitoIdentity([cognito_identity_id=None,cognito_identity_pool_id=None])])
         # ``
-        print("YYYY EVENT", event)
-        print("YYYY CONTEXT", context)
         try:
             req = request(event)
         except Exception as e:
