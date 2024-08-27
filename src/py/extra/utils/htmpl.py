@@ -34,6 +34,10 @@ def quoted(text: Optional[str]) -> str:
     return text.translate(HTML_QUOTED) if text else ""
 
 
+TNodeContent = Union["Node", str, bool, float, int]
+TAttributeContent = str | bool | float | int | None
+
+
 class Node:
     __slots__ = ["name", "ns", "attributes", "children"]
 
@@ -41,39 +45,55 @@ class Node:
         self,
         name: str,
         ns: Optional[str] = None,
-        children: Optional[Iterable["Node"]] = None,
-        attributes: Optional[dict[str, Optional[str]]] = None,
+        children: Optional[Iterable[TNodeContent]] = None,
+        attributes: Optional[dict[str, TAttributeContent]] = None,
     ):
         self.name = name
         self.ns = ns
-        self.attributes = attributes or {}
-        self.children: list["Node"] = [_ for _ in children] if children else []
+        self.attributes: dict[str, TAttributeContent] = attributes or {}
+        self.children: list[TNodeContent] = [_ for _ in children] if children else []
 
     def iterHTML(self) -> Iterator[str]:
         yield from self.iterXML(html=True)
 
     def iterXML(self, html=False) -> Iterator[str]:
         if self.name == "#text":
-            yield escape(self.attributes.get("#value") or "")
+            yield escape(str(self.attributes.get("#value") or ""))
         elif self.name == "--":
             yield "<!--"
             for _ in self.children:
-                yield from _.iterXML()
+                if isinstance(_, Node):
+                    yield from _.iterXML()
+                elif _ is None:
+                    pass
+                else:
+                    yield str(_)
             yield "-->"
         elif self.name == "!CDATA":
             yield "<![DATA["
             for _ in self.children:
-                yield from _.iterXML(html=html)
+                if isinstance(_, Node):
+                    yield from _.iterXML(html=html)
+                elif _ is None:
+                    pass
+                else:
+                    yield str(_)
+
             yield "]]>"
         elif self.name == "!DOCTYPE":
             yield "<!DOCTYPE "
             for _ in self.children:
-                yield from _.iterXML(html=html)
+                if isinstance(_, Node):
+                    yield from _.iterXML(html=html)
+                elif _ is None:
+                    pass
+                else:
+                    yield str(_)
             yield ">\n"
         else:
             yield f"<{self.name}"
             for k, v in (self.attributes or {}).items():
-                yield f' {k}="{quoted(v)}"'
+                yield f' {k}="{quoted(str(v))}"' if v is not None else f" {k}"
             if not self.children:
                 if html:
                     yield ">" if self.name in HTML_EMPTY else f"></{self.name}>"
@@ -82,7 +102,12 @@ class Node:
             else:
                 yield ">"
                 for _ in self.children:
-                    yield from _.iterXML(html=html)
+                    if isinstance(_, Node):
+                        yield from _.iterXML(html=html)
+                    elif _ is None:
+                        pass
+                    else:
+                        yield str(_)
                 yield f"</{self.name}>"
 
     def __call__(self, *content: Union[str, "Node"]):
@@ -101,15 +126,14 @@ def text(text) -> Node:
 def node(
     name: str,
     ns: Optional[str] = None,
-    children: Optional[Iterable[Union[Node, str]]] = None,
-    attributes: Optional[dict[str, Optional[str]]] = None,
+    children: Optional[Iterable[TNodeContent]] = None,
+    attributes: Optional[dict[str, TAttributeContent]] = None,
     **attrs: Optional[str],
 ) -> Node:
-    a = {}
-    if attributes:
-        a.update(attributes)
-    if attrs:
-        a.update(attrs)
+    a: dict[str, TAttributeContent] = {}
+    for d in (attributes, attrs):
+        if d:
+            a.update(d)
     return Node(
         name,
         ns,
@@ -128,8 +152,17 @@ NodeFactory = Callable[
 
 
 def nodeFactory(name: str, ns: Optional[str] = None) -> NodeFactory:
-    def f(*children: Union[Node, str], **attributes: Optional[str]):
-        return node(name, ns, children, {k: v for k, v in attributes.items()})
+    def f(*children: TNodeContent, **attributes: TAttributeContent):
+        content: list[TNodeContent] = list(children)
+        attrs: dict[str, TAttributeContent] = {}
+        for k, v in attributes.items():
+            if k == "children":
+                content += cast(list[TNodeContent], v if isinstance(v, list) else [v])
+            elif k == "_":
+                attrs["class"] = v
+            else:
+                attrs[k] = v
+        return node(name, ns, content, attrs)
 
     f.__name__ = name
     return cast(NodeFactory, f)
@@ -176,11 +209,20 @@ def markup(name: str, tags: list[str | LiteralString]) -> Markup:
 H: Markup = markup("html", HTML_TAGS)
 
 
-def html(*nodes: Node, doctype: str | None = None) -> Iterator[str]:
+def html(
+    *nodes: Node, doctype: str | None = None, children: Node | list[Node] | None = None
+) -> Iterator[str]:
     if doctype:
         yield f"{doctype}\n" if doctype.startswith("<!") else f"<!DOCTYPE {doctype}>\n"
     for _ in nodes:
         yield from _.iterHTML()
+    if children is None:
+        pass
+    elif isinstance(children, Node):
+        yield from children.iterHTML()
+    else:
+        for _ in children:
+            yield from _.iterHTML()
 
 
 if __name__ == "__main__":
