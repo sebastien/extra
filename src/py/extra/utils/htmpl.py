@@ -153,11 +153,25 @@ NodeFactory = Callable[
 
 def nodeFactory(name: str, ns: Optional[str] = None) -> NodeFactory:
     def f(*children: TNodeContent, **attributes: TAttributeContent):
-        content: list[TNodeContent] = list(children)
+        content: list[TNodeContent] = []
+        for _ in children:
+            if isinstance(_, list):
+                content += _
+            elif isinstance(_, tuple):
+                content += list(_)
+            else:
+                content.append(_)
         attrs: dict[str, TAttributeContent] = {}
         for k, v in attributes.items():
             if k == "children":
-                content += cast(list[TNodeContent], v if isinstance(v, list) else [v])
+                content += cast(
+                    list[TNodeContent],
+                    (
+                        v
+                        if isinstance(v, list)
+                        else list(v) if isinstance(v, tuple) else [v]
+                    ),
+                )
             elif k == "_":
                 attrs["class"] = v
             else:
