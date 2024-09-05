@@ -19,7 +19,7 @@ from .config import HOST, PORT
 
 
 class ServerOptions(NamedTuple):
-    host: str = "0.0.0.0"
+    host: str = "0.0.0.0"  # nosec: B104
     port: int = 8000
     backlog: int = 10_000
     timeout: float = 10.0

@@ -169,7 +169,9 @@ def nodeFactory(name: str, ns: Optional[str] = None) -> NodeFactory:
                     (
                         v
                         if isinstance(v, list)
-                        else list(v) if isinstance(v, tuple) else [v]
+                        else (
+                            [_ for _ in cast(tuple, v)] if isinstance(v, tuple) else [v]
+                        )
                     ),
                 )
             elif k == "_":

@@ -15,7 +15,10 @@ def cors(
 
 
 def setCORSHeaders(
-    request: HTTPRequest | HTTPResponse, *, origin=None, allowAll=True
+    request: HTTPRequest | HTTPResponse,
+    *,
+    origin: str | None = None,
+    allowAll: bool = True
 ) -> HTTPResponse:
     """Takes the given request or response, and return (a response) with the CORS headers set properly.
 

@@ -1,11 +1,11 @@
-from typing import Any
+from typing import Any, TypeAlias, cast
 import json as basejson
 from .primitives import asPrimitive
 
 
 # TODO: We do want to use ORJSON when available: https://github.com/tktech/json_benchmark
 
-TJSON = None | int | float | bool | list | dict
+TJSON: TypeAlias = None | int | float | bool | list[Any] | dict[str, Any]
 
 
 def json(value: Any) -> bytes:
@@ -15,7 +15,7 @@ def json(value: Any) -> bytes:
 
 def unjson(value: bytes | str) -> TJSON:
     """Converts JSON-encoded to a string."""
-    return basejson.loads(value)
+    return cast(TJSON, basejson.loads(value))
 
 
 # EOF

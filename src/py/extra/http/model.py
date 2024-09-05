@@ -233,7 +233,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         for _ in self._cookies.keys():
             yield _
 
-    def cookie(self, name: str) -> Morsel | None:
+    def cookie(self, name: str) -> Morsel[str] | None:
         return self._cookies.get(name)
 
     # FIXME: Should be header
@@ -291,7 +291,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
     # API
     # =========================================================================
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Request({self.method} {self.path}{f'?{self.query}' if self.query else ''} {self.headers})"
 
 
@@ -432,7 +432,7 @@ class HTTPResponse:
         # TODO: UTF8 maybe? Why ASCII?
         return "\r\n".join(lines).encode("ascii")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Response({self.protocol} {self.status} {self.message} {self.headers} {self.body})"
 
 
