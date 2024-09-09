@@ -307,13 +307,21 @@ class AIOSocketServer:
                 if options.condition and not options.condition():
                     break
                 try:
-                    client, _ = await loop.sock_accept(server)
+                    client, _ = (
+                        await asyncio.wait_for(
+                            loop.sock_accept(server), timeout=options.timeout
+                        )
+                        if options.timeout
+                        else loop.sock_accept(server)
+                    )
                     # NOTE: Should do something with the tasks
                     task = loop.create_task(
                         cls.OnRequest(app, client, loop=loop, options=options)
                     )
                     tasks.add(task)
                     task.add_done_callback(tasks.discard)
+                except asyncio.TimeoutError:
+                    continue
                 except OSError as e:
                     # This can be: [OSError] [Errno 24] Too many open files
                     if e.errno == 24:
