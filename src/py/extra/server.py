@@ -304,6 +304,8 @@ class AIOSocketServer:
         # TODO: Add condition
         try:
             while True:
+                if options.condition and not options.condition():
+                    break
                 try:
                     client, _ = await loop.sock_accept(server)
                     # NOTE: Should do something with the tasks
