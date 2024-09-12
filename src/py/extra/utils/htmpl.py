@@ -57,7 +57,9 @@ class Node:
         yield from self.iterXML(html=True)
 
     def iterXML(self, html=False) -> Iterator[str]:
-        if self.name == "#text":
+        if self.name == "#raw":
+            yield str(self.attributes.get("#value") or "")
+        elif self.name == "#text":
             yield escape(str(self.attributes.get("#value") or ""))
         elif self.name == "--":
             yield "<!--"
@@ -223,6 +225,10 @@ def markup(name: str, tags: list[str | LiteralString]) -> Markup:
 
 
 H: Markup = markup("html", HTML_TAGS)
+
+
+def raw(html: str) -> Node:
+    return Node("#raw", attributes={"#value": html})
 
 
 def html(
