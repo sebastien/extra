@@ -10,6 +10,7 @@ from typing import (
     NamedTuple,
     ClassVar,
     TypeVar,
+    Self,
     cast,
 )
 
@@ -27,7 +28,7 @@ import re
 T = TypeVar("T")
 
 
-async def awaited(value: Any):
+async def awaited(value: Any) -> Any:
     if iscoroutine(value):
         return await value
     else:
@@ -123,7 +124,7 @@ class Route:
         return res
 
     @classmethod
-    def Parse(cls, expression: str, isStart=True) -> list[TChunk]:
+    def Parse(cls, expression: str, isStart: bool = True) -> list[TChunk]:
         """Parses routes expressses as strings where patterns are denoted
         as `{name}` or `{name:pattern}`"""
         chunks: list[TChunk] = []
@@ -312,14 +313,16 @@ class Prefix:
     string."""
 
     @classmethod
-    def Make(self, values: Iterable[str]):
+    def Make(self, values: Iterable[str]) -> "Prefix":
         root = Prefix()
         for _ in values:
             root.register(_)
         root.simplify()
         return root
 
-    def __init__(self, value: str | None = None, parent: Optional["Prefix"] = None):
+    def __init__(
+        self, value: str | None = None, parent: Optional["Prefix"] = None
+    ) -> None:
         self.value: str | None = value
         self.parent = parent
         self.children: dict[str, Prefix] = {}
@@ -337,7 +340,7 @@ class Prefix:
         self.children = dict((k, v.simplify()) for k, v in children.items())
         return self
 
-    def register(self, text: str):
+    def register(self, text: str) -> None:
         """Registers the given `text` in this prefix tree."""
         c: str = text[0] if text else ""
         rest: str = text[1:] if len(text) > 1 else ""
@@ -347,7 +350,7 @@ class Prefix:
             if rest:
                 self.children[c].register(rest)
 
-    def iterLines(self, level=0) -> Iterable[str]:
+    def iterLines(self, level: int = 0) -> Iterable[str]:
         yield f"{self.value or '┐'}"
         last_i = len(self.children) - 1
         for i, child in enumerate(self.children.values()):
@@ -367,10 +370,10 @@ class Prefix:
                 yield from self.children[_].iterRegExpr()
             yield ")"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "\n".join(self.iterLines())
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"'{self.value or '⦰'}'→({', '.join(repr(_) for _ in self.children.values())})"
 
 
@@ -387,12 +390,17 @@ class Handler:
     a request."""
 
     @classmethod
-    def Has(cls, value):
+    def Has(cls, value: Any) -> bool:
         return hasattr(value, Extra.ON)
 
     @classmethod
     def Attr(
-        cls, value: Any, key: str, extra: dict | None = None, *, merge: bool = False
+        cls,
+        value: Any,
+        key: str,
+        extra: dict[str, Any] | None = None,
+        *,
+        merge: bool = False,
     ) -> Any:
         extra_value = extra[key] if extra and key in extra else None
         sid = id(value)
@@ -425,7 +433,7 @@ class Handler:
     # FIXME: Handlers should compose transforms and predicate, right now it's
     # passed as attributes, but it should not really be a stack of transforms.
     @classmethod
-    def Get(cls, value, extra: dict | None = None):
+    def Get(cls, value: Any, extra: dict[str, Any] | None = None) -> Any | None:
         return (
             Handler(
                 functor=value,
@@ -443,14 +451,14 @@ class Handler:
     def __init__(
         self,
         # TODO: Refine type
-        functor: Callable,
+        functor: Callable[..., Any],
         methods: list[tuple[str, str]],
         priority: int = 0,
         expose: Expose | None = None,
         contentType: str | None = None,
         pre: list[Transform] | None = None,
         post: list[Transform] | None = None,
-    ):
+    ) -> None:
         self.functor = functor
         # This extracts and normalizes the methods
         # NOTE: This may have been done at the decoartor level
@@ -530,7 +538,7 @@ class Handler:
                         t.transform(request, response, *t.args, **t.kwargs)
         return response
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         methods = " ".join(
             f'({k} {" ".join(repr(_) for _ in v)})' for k, v in self.methods.items()
         )
@@ -574,7 +582,7 @@ class Dispatcher:
                 self.isPrepared = False
         return self
 
-    def prepare(self):
+    def prepare(self) -> Self:
         """Prepares the dispatcher, which optimizes the prefix tree for faster matching."""
         res = {}
         for method, routes in self.routes.items():

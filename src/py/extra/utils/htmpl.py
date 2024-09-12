@@ -5,6 +5,7 @@ from typing import (
     Iterator,
     Union,
     Callable,
+    Self,
     cast,
 )
 from mypy_extensions import KwArg, VarArg
@@ -56,7 +57,7 @@ class Node:
     def iterHTML(self) -> Iterator[str]:
         yield from self.iterXML(html=True)
 
-    def iterXML(self, html=False) -> Iterator[str]:
+    def iterXML(self, html: bool = False) -> Iterator[str]:
         if self.name == "#raw":
             yield str(self.attributes.get("#value") or "")
         elif self.name == "#text":
@@ -112,7 +113,7 @@ class Node:
                         yield str(_)
                 yield f"</{self.name}>"
 
-    def __call__(self, *content: Union[str, "Node"]):
+    def __call__(self, *content: Union[str, "Node"]) -> Self:
         for _ in content:
             self.children.append(text(_) if isinstance(_, str) else _)
         return self
@@ -121,7 +122,7 @@ class Node:
         return "".join(self.iterHTML())
 
 
-def text(text) -> Node:
+def text(text: str) -> Node:
     return Node("#text", attributes={"#value": text})
 
 
@@ -153,8 +154,8 @@ NodeFactory = Callable[
 ]
 
 
-def nodeFactory(name: str, ns: Optional[str] = None) -> NodeFactory:
-    def f(*children: TNodeContent, **attributes: TAttributeContent):
+def nodeFactory(name: str, ns: str | None = None) -> NodeFactory:
+    def f(*children: TNodeContent, **attributes: TAttributeContent) -> Node:
         content: list[TNodeContent] = []
         for _ in children:
             if isinstance(_, list):
@@ -207,7 +208,7 @@ class Markup:
         self._name: str = name
         self._factories: dict[str, NodeFactory] = factories
 
-    def __getattribute__(self, name: str):
+    def __getattribute__(self, name: str) -> Callable[..., Node]:
         if name.startswith("_"):
             return super().__getattribute__(name)
         else:
