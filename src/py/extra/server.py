@@ -13,8 +13,9 @@ from .http.model import (
     HTTPBodyBlob,
     HTTPResponseFile,
     HTTPBodyReader,
+    HTTPProcessingStatus,
 )
-from .http.parser import HTTPParser, HTTPProcessingStatus
+from .http.parser import HTTPParser
 from .config import HOST, PORT
 
 
@@ -51,13 +52,18 @@ class AIOSocketBodyReader(HTTPBodyReader):
 
     __slots__ = ["socket", "loop", "buffer"]
 
-    def __init__(self, socket, loop, size: int = 64_000):
+    def __init__(
+        self,
+        socket: "socket.socket",
+        loop: asyncio.AbstractEventLoop,
+        size: int = 64_000,
+    ) -> None:
         self.socket = socket
         self.loop = loop
 
-    async def read(self, timeout: float = 1.0) -> bytes | None:
+    async def read(self, timeout: float = 1.0, size: int = 64_000) -> bytes | None:
         return await asyncio.wait_for(
-            self.loop.sock_recv(self.socket),
+            self.loop.sock_recv(self.socket, size),
             timeout=timeout,
         )
 
@@ -76,7 +82,7 @@ class AIOSocketServer:
         *,
         loop: asyncio.AbstractEventLoop,
         options: ServerOptions,
-    ):
+    ) -> None:
         """Asynchronous worker, processing a socket in the context
         of an application."""
         try:
@@ -278,7 +284,7 @@ class AIOSocketServer:
         cls,
         app: Application,
         options: ServerOptions = ServerOptions(),
-    ):
+    ) -> None:
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((options.host, options.port))
@@ -288,7 +294,7 @@ class AIOSocketServer:
         # This is what we need to use it with asyncio
         server.setblocking(False)
 
-        tasks: set[asyncio.Task] = set()
+        tasks: set[asyncio.Task[None]] = set()
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -307,13 +313,17 @@ class AIOSocketServer:
                 if options.condition and not options.condition():
                     break
                 try:
-                    client, _ = (
+                    res = (
                         await asyncio.wait_for(
                             loop.sock_accept(server), timeout=options.timeout
                         )
                         if options.timeout
                         else loop.sock_accept(server)
                     )
+                    if res is None:
+                        continue
+                    else:
+                        client = res[0]
                     # NOTE: Should do something with the tasks
                     task = loop.create_task(
                         cls.OnRequest(app, client, loop=loop, options=options)
@@ -342,9 +352,9 @@ def run(
     host: str = HOST,
     port: int = PORT,
     backlog: int = 10_000,
-    condition: Callable | None = None,
+    condition: Callable[[], bool] | None = None,
     timeout: float = 10.0,
-):
+) -> None:
     unlimit(LimitType.Files)
     options = ServerOptions(
         host=host, port=port, backlog=backlog, condition=condition, timeout=timeout

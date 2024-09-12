@@ -108,7 +108,7 @@ class AWSLambdaEvent:
         return payload
 
     @staticmethod
-    def AsRequest(event: dict) -> HTTPRequest:
+    def AsRequest(event: dict[str, Any]) -> HTTPRequest:
         body: bytes = (
             (
                 b64decode(event["body"].encode())
@@ -237,13 +237,13 @@ def event(
     uri: str,
     headers: dict[str, str] | None = None,
     body: str | bytes | None = None,
-) -> dict:
+) -> dict[str, Any]:
     return AWSLambdaEvent.Create(method=method, uri=uri, headers=headers, body=body)
 
 
 def awslambda(
     handler: Callable[[HTTPRequest], HTTPResponse | Coroutine[Any, HTTPResponse, Any]]
-):
+) -> Callable[[dict[str, Any], dict[str, Any] | None], dict[str, Any]]:
     def wrapper(
         event: dict[str, Any], context: dict[str, Any] | None = None
     ) -> dict[str, Any]:

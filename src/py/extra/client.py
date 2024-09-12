@@ -1,4 +1,4 @@
-from typing import NamedTuple, ClassVar, AsyncGenerator
+from typing import NamedTuple, ClassVar, AsyncGenerator, Self, Any, Iterator
 from urllib.parse import quote_plus, urlparse
 from contextvars import ContextVar
 from contextlib import contextmanager
@@ -13,9 +13,10 @@ from .http.model import (
     HTTPRequestBody,
     HTTPBodyBlob,
     HTTPAtom,
+    HTTPProcessingStatus,
     headername,
 )
-from .http.parser import HTTPParser, HTTPProcessingStatus
+from .http.parser import HTTPParser
 
 
 # --
@@ -105,7 +106,7 @@ class Connection:
     # A streaming connection won't be reused
     isStreaming: bool = False
 
-    def close(self):
+    def close(self) -> Self:
         """Closes the writer."""
         self.writer.close()
         self.until = None
@@ -116,7 +117,7 @@ class Connection:
         """Tells if the connection is still valid."""
         return (time.monotonic() <= self.until) if self.until else None
 
-    def touch(self):
+    def touch(self) -> Self:
         """Touches the connection, bumping its `until` time."""
         self.until = time.monotonic() + self.idle
         return self
@@ -166,7 +167,9 @@ class Connection:
 class ConnectionPool:
     """Context-aware pool of connections."""
 
-    All: ClassVar[ContextVar] = ContextVar("httpConnectionsPool")
+    All: ClassVar[ContextVar[list["ConnectionPool"]]] = ContextVar(
+        "httpConnectionsPool"
+    )
 
     @classmethod
     def Get(cls, *, idle: float | None = None) -> "ConnectionPool":
@@ -232,10 +235,9 @@ class ConnectionPool:
         return pool
 
     @classmethod
-    def Pop(cls):
+    def Pop(cls) -> "ConnectionPool|None":
         pools = cls.All.get(None)
-        if pools:
-            pools.pop().release()
+        return pools.pop().release() if pools else None
 
     def __init__(self, idle: float | None = None):
         self.connections: dict[ConnectionTarget, list[Connection]] = {}
@@ -263,7 +265,7 @@ class ConnectionPool:
         as long as it is valid."""
         self.connections.setdefault(connection.target, []).append(connection)
 
-    def clean(self):
+    def clean(self) -> Self:
         """Cleans idle connections by closing them and removing them
         from available connections."""
         to_remove = []
@@ -279,14 +281,15 @@ class ConnectionPool:
                 del self.connections[k]
         return self
 
-    def release(self):
+    def release(self) -> Self:
         """Releases all the connections registered"""
         for l in self.connections.values():
             while l:
                 l.pop().close()
         self.connections.clear()
+        return self
 
-    def pop(self):
+    def pop(self) -> Self:
         """Pops this pool from the connection pool context and release
         all its connections."""
         pools = ConnectionPool.All.get(None)
@@ -295,10 +298,10 @@ class ConnectionPool:
         self.release()
         return self
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, type: Any, value: Any, traceback: Any) -> None:
         """The connection pool automatically cleans when used
         as a context manager."""
         self.clean()
@@ -518,7 +521,7 @@ class HTTPClient:
 
 
 @contextmanager
-def pooling(idle: float | None = None):
+def pooling(idle: float | None = None) -> Iterator[ConnectionPool]:
     """Creates a context in which connections will be pooled."""
     pool = ConnectionPool().Push(idle=idle)
     try:
@@ -529,7 +532,7 @@ def pooling(idle: float | None = None):
 
 if __name__ == "__main__":
 
-    async def main():
+    async def main() -> None:
         async for atom in HTTPClient.Request(
             host="google.com",
             method="GET",

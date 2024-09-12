@@ -4,8 +4,9 @@ from ..decorators import on
 from ..model import Service
 from ..http.model import HTTPRequest, HTTPResponse
 from ..features.cors import cors
-from ..utils.htmpl import H, html
-import os, html
+from ..utils.htmpl import Node, H, html
+from html import escape
+import os
 
 
 FILE_CSS: str = """
@@ -48,7 +49,9 @@ class FileService(Service):
         self.canRead: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
         self.canDelete: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
 
-    def renderPath(self, request: HTTPRequest, path: str, localPath: Path):
+    def renderPath(
+        self, request: HTTPRequest, path: str, localPath: Path
+    ) -> HTTPResponse:
         path = path.strip("/")
         if localPath.is_dir():
             return self.renderDir(request, path, localPath)
@@ -64,18 +67,18 @@ class FileService(Service):
             parent = None
         if path.endswith("/"):
             path = path[:-1]
-        files: list[str] = []
-        dirs: list[str] = []
-        # TODO: We may want to have a strict mode to prevent resolving symlinks
+
+        files: list[Node] = []
+        dirs: list[Node] = []
         if localPath.is_dir():
             for p in sorted(localPath.iterdir()):
                 # We really want the href to be absolute
                 href = os.path.join("/", self.PREFIX or "/", path, p.name)
                 if p.is_dir():
-                    dirs.append(H.li(H.a(f"{html.escape(p.name)}/", href=href)))
+                    dirs.append(H.li(H.a(f"{escape(p.name)}/", href=href)))
                 else:
-                    files.append(H.li(H.a(html.escape(p.name), href=href)))
-        nodes = []
+                    files.append(H.li(H.a(p.name, href=href)))
+        nodes: list[Node] = []
 
         if parent is not None:
             dirs.insert(0, H.li(H.a("..", href=f"/{parent}")))
@@ -97,7 +100,7 @@ class FileService(Service):
         prefix = self.PREFIX or "/"
         if not prefix.startswith("/"):
             prefix = f"/{prefix}"
-        breadcrumbs = [H.a("/", href=prefix)]
+        breadcrumbs: list[Node | str] = [H.a("/", href=prefix)]
         for i, bp in enumerate(path_chunks[:-1]):
             breadcrumbs.append(
                 H.a(bp, href=os.path.join(prefix, *path_chunks[: i + 1]))
@@ -132,7 +135,7 @@ class FileService(Service):
     # def favicon(self, request: HTTPRequest, path: str):
 
     @on(INFO=("/", "/{path:any}"))
-    def info(self, request: HTTPRequest, path: str):
+    def info(self, request: HTTPRequest, path: str) -> HTTPResponse:
         local_path = self.resolvePath(path)
         if not (local_path and self.canRead(request, local_path)):
             return request.notAuthorized(f"Not authorized to access path: {path}")
@@ -141,7 +144,7 @@ class FileService(Service):
 
     @cors
     @on(HEAD=("/", "/{path:any}"))
-    def head(self, request: HTTPRequest, path: str):
+    def head(self, request: HTTPRequest, path: str) -> HTTPResponse:
         local_path = self.resolvePath(path)
         if not (local_path and self.canRead(request, local_path)):
             return request.notAuthorized(f"Not authorized to access path: {path}")
@@ -150,7 +153,7 @@ class FileService(Service):
 
     @cors
     @on(GET=("/", "/{path:any}"))
-    def read(self, request: HTTPRequest, path: str = "."):
+    def read(self, request: HTTPRequest, path: str = ".") -> HTTPResponse:
         local_path = self.resolvePath(path)
         if not (local_path and self.canRead(request, local_path)):
             return request.notAuthorized(f"Not authorized to access path: {path}")
@@ -160,7 +163,7 @@ class FileService(Service):
             return self.renderPath(request, path, local_path)
 
     @on(PUT_PATCH="/{path:any}")
-    def write(self, request: HTTPRequest, path: str = "."):
+    def write(self, request: HTTPRequest, path: str = ".") -> HTTPResponse:
         local_path = self.resolvePath(path)
         if not (local_path and self.canWrite(request, local_path)):
             return request.notAuthorized(f"Not authoried to write to path: {path}")
@@ -174,7 +177,7 @@ class FileService(Service):
         return request.returns(True)
 
     @on(DELETE="/{path:any}")
-    def delete(self, request, path):
+    def delete(self, request: HTTPRequest, path: str) -> HTTPResponse:
         local_path = self.resolvePath(path)
         if not (local_path and self.canWrite(request, local_path)):
             return request.notAuthorized(f"Not authorized to delete path: {path}")
@@ -185,14 +188,27 @@ class FileService(Service):
                 return request.returns(True)
             else:
                 return request.returns(False)
+        else:
+            return request.returns(False)
 
     def resolvePath(self, path: Union[str, Path]) -> Path | None:
-        path = self.root.joinpath(path).absolute()
-        if path.parts[: len(parts := self.root.parts)] == parts:
-            return path
-        else:
+        has_slash = isinstance(path, str) and path.endswith("/")
+        local_path = self.root.joinpath(path).absolute()
+        if not local_path.parts[: len(parts := self.root.parts)] == parts:
             return None
-        return path if path.parts[: len(parts := self.root.parts)] == parts else None
+        if local_path.is_dir():
+            index_path = local_path / "index.html"
+            if not has_slash and index_path.exists():
+                return index_path
+            else:
+                return local_path
+        else:
+            if not local_path.exists() and not local_path.suffix:
+                for suffix in [".html", ".htm", ".txt", ".md"]:
+                    html_path = local_path.with_suffix(suffix)
+                    if html_path.exists():
+                        return html_path
+            return local_path
 
 
 # EOF

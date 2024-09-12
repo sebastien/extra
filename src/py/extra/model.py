@@ -151,7 +151,7 @@ class Application:
         else:
             return self.onRouteNotFound(request)
 
-    def mount(self, service: Service, prefix: str | None = None):
+    def mount(self, service: Service, prefix: str | None = None) -> Service:
         if service.isMounted:
             raise RuntimeError(
                 f"Cannot mount service, it is already mounted: {service}"
@@ -160,7 +160,7 @@ class Application:
             self.dispatcher.register(handler, prefix or service.prefix)
         return service
 
-    def unmount(self, service: Service):
+    def unmount(self, service: Service) -> Service:
         if not service.isMounted:
             raise RuntimeError(
                 f"Cannot unmount service, it is not already mounted: {service}"
@@ -172,7 +172,7 @@ class Application:
         service.app = self
         return service
 
-    def onRouteNotFound(self, request: HTTPRequest):
+    def onRouteNotFound(self, request: HTTPRequest) -> HTTPResponse:
         return request.notFound()
 
 

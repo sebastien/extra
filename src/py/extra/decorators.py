@@ -1,4 +1,4 @@
-from typing import ClassVar, Union, Callable, NamedTuple, TypeVar, Any
+from typing import ClassVar, Union, Callable, NamedTuple, TypeVar, Any, cast
 
 T = TypeVar("T")
 
@@ -6,7 +6,7 @@ T = TypeVar("T")
 class Transform(NamedTuple):
     """Represents a transformation to be applied to a request handler"""
 
-    transform: Callable
+    transform: Callable[..., Any]
     args: tuple[Any, ...]
     kwargs: dict[str, Any]
 
@@ -29,12 +29,12 @@ class Extra:
     Annotations: ClassVar[dict[int, dict[str, Any]]] = {}
 
     @staticmethod
-    def Meta(scope: Any, *, strict: bool = False) -> dict:
+    def Meta(scope: Any, *, strict: bool = False) -> dict[str, Any]:
         """Returns the dictionary of meta attributes for the given value."""
         if isinstance(scope, type):
             if not hasattr(scope, "__extra__"):
                 setattr(scope, "__extra__", {})
-            return getattr(scope, "__extra__")
+            return cast(dict[str, Any], getattr(scope, "__extra__"))
         else:
             if hasattr(scope, "__dict__"):
                 return scope.__dict__
@@ -48,7 +48,7 @@ class Extra:
 
 
 def on(
-    priority=0, **methods: Union[str, list[str], tuple[str, ...]]
+    priority: int = 0, **methods: Union[str, list[str], tuple[str, ...]]
 ) -> Callable[[T], T]:
     """The @on decorator is one of the main important things you will use within
     Retro. This decorator allows to wrap an existing method and indicate that
@@ -104,7 +104,11 @@ class Expose(NamedTuple):
 
 
 def expose(
-    priority=0, compress=False, contentType=None, raw=False, **methods
+    priority: int = 0,
+    compress: bool = False,
+    contentType: str | None = None,
+    raw: bool = False,
+    **methods: str,
 ) -> Callable[[T], T]:
     """The @expose decorator is a variation of the @on decorator. The @expose
     decorator allows you to _expose_ an existing Python function as a JavaScript
@@ -145,12 +149,12 @@ def expose(
     return decorator
 
 
-def when(*predicates):
+def when(*predicates: Callable[..., bool]) -> Callable[..., T]:
     """The @when(...) decorate allows to specify that the wrapped method will
     only be executed when the given predicate (decorated with `@on`)
     succeeds."""
 
-    def decorator(function):
+    def decorator(function: T, *args: Any, **kwargs: Any) -> T:
         v = Extra.Meta(function).setdefault(Extra.WHEN, [])
         v.extend(predicates)
         return function
@@ -158,11 +162,11 @@ def when(*predicates):
     return decorator
 
 
-def pre(transform: Callable) -> Callable[[T], T]:
+def pre(transform: Callable[..., bool]) -> Callable[..., T]:
     """Registers the given `transform` as a pre-processing step of the
     decorated function."""
 
-    def decorator(function: T, *args, **kwargs) -> T:
+    def decorator(function: T, *args: Any, **kwargs: Any) -> T:
         v = Extra.Meta(function).setdefault(Extra.PRE, [])
         v.append(Transform(transform, args, kwargs))
         return function
@@ -170,11 +174,11 @@ def pre(transform: Callable) -> Callable[[T], T]:
     return decorator
 
 
-def post(transform) -> Callable[[T], T]:
+def post(transform: Callable[..., bool]) -> Callable[[T], T]:
     """Registers the given `transform` as a post-processing step of the
     decorated function."""
 
-    def decorator(function: T, *args, **kwargs) -> T:
+    def decorator(function: T, *args: Any, **kwargs: Any) -> T:
         v = Extra.Meta(function).setdefault(Extra.POST, [])
         v.append(Transform(transform, args, kwargs))
         return function

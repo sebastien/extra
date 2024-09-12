@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from base64 import b64encode
+
 from .status import HTTP_STATUS
 from ..utils.json import json
 from ..utils.files import contentType
@@ -41,7 +42,7 @@ class ResponseFactory(ABC, Generic[T]):
         content: str | None = None,
         contentType: str = "text/plain",
         headers: dict[str, str] | None = None,
-    ):
+    ) -> T:
         message = HTTP_STATUS.get(status, "Server Error")
         return self.respond(
             content=message if content is None else content,
@@ -54,19 +55,23 @@ class ResponseFactory(ABC, Generic[T]):
     def notAuthorized(
         self,
         content: str = "Unauthorized",
-        contentType="text/plain",
+        contentType: str = "text/plain",
         *,
         status: int = 403,
-    ):
+    ) -> T:
         return self.error(status, content=content, contentType=contentType)
 
     def notFound(
-        self, content: str = "Not Found", contentType="text/plain", *, status: int = 404
-    ):
+        self,
+        content: str = "Not Found",
+        contentType: str = "text/plain",
+        *,
+        status: int = 404,
+    ) -> T:
         return self.error(status, content=content, contentType=contentType)
 
-    def notModified(self):
-        pass
+    def notModified(self) -> None:
+        raise NotImplementedError
 
     def fail(
         self,
@@ -74,12 +79,12 @@ class ResponseFactory(ABC, Generic[T]):
         *,
         status: int = 500,
         contentType: str = "text/plain",
-    ):
+    ) -> T:
         return self.respondError(
             content=content, status=status, contentType=contentType
         )
 
-    def redirect(self, url: str, permanent: bool = False):
+    def redirect(self, url: str, permanent: bool = False) -> T:
         # SEE: https://developer.mozilla.org/en-US/docs/Web/HTTP/Redirections
         return self.respondEmpty(
             status=301 if permanent else 302, headers={"Location": str(url)}
@@ -92,7 +97,7 @@ class ResponseFactory(ABC, Generic[T]):
         *,
         status: int = 200,
         contentType: str = "application/json",
-    ):
+    ) -> T:
         if isinstance(value, bytes):
             try:
                 value = value.decode("ascii")
@@ -110,12 +115,14 @@ class ResponseFactory(ABC, Generic[T]):
     def respondText(
         self,
         content: str | bytes | Iterator[str | bytes],
-        contentType="text/plain",
+        contentType: str = "text/plain",
         status: int = 200,
-    ):
+    ) -> T:
         return self.respond(content=content, contentType=contentType, status=status)
 
-    def respondHTML(self, html: str | bytes | Iterator[str | bytes], status: int = 200):
+    def respondHTML(
+        self, html: str | bytes | Iterator[str | bytes], status: int = 200
+    ) -> T:
         return self.respond(content=html, contentType="text/html", status=status)
 
     def respondFile(
@@ -123,7 +130,7 @@ class ResponseFactory(ABC, Generic[T]):
         path: Path | str,
         headers: dict[str, str] | None = None,
         status: int = 200,
-    ):
+    ) -> T:
         # TODO: We should have a much more detailed file handling, supporting ranges, etags, etc.
         p: Path = path if isinstance(path, Path) else Path(path)
         content_type: str = contentType(p)
@@ -141,10 +148,10 @@ class ResponseFactory(ABC, Generic[T]):
         contentType: str = "text/plain",
         *,
         status: int = 500,
-    ):
+    ) -> T:
         return self.error(status, content, contentType)
 
-    def respondEmpty(self, status, headers: dict[str, str] | None = None):
+    def respondEmpty(self, status: int, headers: dict[str, str] | None = None) -> T:
         return self.respond(content=None, status=status, headers=headers)
 
 
