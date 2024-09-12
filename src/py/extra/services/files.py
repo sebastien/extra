@@ -5,7 +5,7 @@ from ..model import Service
 from ..http.model import HTTPRequest, HTTPResponse
 from ..features.cors import cors
 from ..utils.htmpl import H, html
-import os
+import os, html
 
 
 FILE_CSS: str = """
@@ -66,14 +66,15 @@ class FileService(Service):
             path = path[:-1]
         files: list[str] = []
         dirs: list[str] = []
+        # TODO: We may want to have a strict mode to prevent resolving symlinks
         if localPath.is_dir():
             for p in sorted(localPath.iterdir()):
                 # We really want the href to be absolute
                 href = os.path.join("/", self.PREFIX or "/", path, p.name)
                 if p.is_dir():
-                    dirs.append(H.li(H.a(f"{p.name}/", href=href)))
+                    dirs.append(H.li(H.a(f"{html.escape(p.name)}/", href=href)))
                 else:
-                    files.append(H.li(H.a(p.name, href=href)))
+                    files.append(H.li(H.a(html.escape(p.name), href=href)))
         nodes = []
 
         if parent is not None:
