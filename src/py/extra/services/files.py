@@ -107,27 +107,33 @@ class FileService(Service):
             )
             breadcrumbs.append("/")
         return request.respondHTML(
-            html(
-                H.html(
-                    H.head(
-                        H.meta(charset="utf-8"),
-                        H.meta(
-                            name="viewport",
-                            content="width=device-width, initial-scale=1.0",
-                        ),
-                        H.title(path),
-                        H.style(FILE_CSS),
-                        H.body(
-                            H.h1(
-                                "Listing for ",
-                                H.a(f"{parent}/", href=f"/{parent}/") if parent else "",
-                                current,
+            "".join(
+                html(
+                    H.html(
+                        H.head(
+                            H.meta(charset="utf-8"),
+                            H.meta(
+                                name="viewport",
+                                content="width=device-width, initial-scale=1.0",
                             ),
-                            *nodes,
+                            H.title(path),
+                            H.style(FILE_CSS),
+                            H.body(
+                                H.h1(
+                                    "Listing for ",
+                                    (
+                                        H.a(f"{parent}/", href=f"/{parent}/")
+                                        if parent
+                                        else ""
+                                    ),
+                                    current,
+                                ),
+                                *nodes,
+                            ),
                         ),
                     ),
-                ),
-                doctype="html",
+                    doctype="html",
+                )
             )
         )
 

@@ -277,6 +277,7 @@ class AIOSocketServer:
                 await loop.sock_sendall(client, SERVER_ERROR)
             except Exception as e:
                 exception(e)
+
         return res
 
     @classmethod
@@ -287,6 +288,7 @@ class AIOSocketServer:
     ) -> None:
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         server.bind((options.host, options.port))
         # The argument is the backlog of connections that will be accepted before
         # they are refused.
