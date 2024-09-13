@@ -362,7 +362,11 @@ def run(
         host=host, port=port, backlog=backlog, condition=condition, timeout=timeout
     )
     app = mount(*components)
-    asyncio.run(AIOSocketServer.Serve(app, options))
+    try:
+        asyncio.run(AIOSocketServer.Serve(app, options))
+    except KeyboardInterrupt:
+        event("ManualShutdown")
+    event("EOK")
 
 
 # EOF

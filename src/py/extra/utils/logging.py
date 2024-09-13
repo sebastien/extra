@@ -213,7 +213,7 @@ def error(
 
 def event(
     event: str,
-    value: Any,
+    value: Any = None,
     *,
     origin: str | None = None,
     at: float | None = None,
@@ -235,7 +235,7 @@ def event(
 
 def notify(
     name: str,
-    value: Any,
+    value: Any = None,
     *,
     origin: str | None = None,
     at: float | None = None,
