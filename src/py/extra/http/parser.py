@@ -1,4 +1,4 @@
-from typing import Iterator, ClassVar
+from typing import Iterator, ClassVar, Literal
 from ..utils.io import LineParser, EOL
 from .model import (
     HTTPRequest,
@@ -23,7 +23,7 @@ class MessageParser:
 
     def flush(self) -> "HTTPRequestLine|HTTPResponseLine|None":
         res = self.value
-        self.value = None
+        self.reset()
         return res
 
     def reset(self) -> "MessageParser":
@@ -32,7 +32,7 @@ class MessageParser:
         return self
 
     def feed(self, chunk: bytes, start: int = 0) -> tuple[bool | None, int]:
-        line, end = self.line.feed(chunk, start)
+        line, read = self.line.feed(chunk, start)
         if line:
             # NOTE: This is safe
             l = line.decode("ascii")
@@ -51,9 +51,9 @@ class MessageParser:
                 self.value = HTTPRequestLine(
                     l[0:i], p[0], p[1] if len(p) > 1 else "", l[j + 1 :]
                 )
-            return True, end
+            return True, read
         else:
-            return None, end
+            return None, read
 
     def __str__(self) -> str:
         return f"MessageParser({self.value})"
@@ -84,14 +84,21 @@ class HeadersParser:
         self.contentLength = None
         return self
 
-    def feed(self, chunk: bytes, start: int = 0) -> tuple[bool | None, int]:
-        chunks, end = self.line.feed(chunk, start)
+    def feed(
+        self, chunk: bytes, start: int = 0
+    ) -> tuple[str | Literal[False] | None, int]:
+        """Feeds data from chunk, starting at `start` offset. Returns
+        a value and the next start offset. When the value is `None`, no
+        header has been extracted, when the value is `False` it's an empty
+        line, and when the value is `True`, a header was added."""
+        chunks, read = self.line.feed(chunk, start)
         if chunks is None:
-            return None, end
+            return None, read
         elif chunks:
             line: bytes | None = self.line.flush()
             if line is None:
-                return False, end
+                return False, read
+            # Headers are expected to be in ASCII format
             l: str = line.decode("ascii")
             i = l.find(":")
             if i != -1:
@@ -105,13 +112,15 @@ class HeadersParser:
                         self.contentLength = None
                 elif h == "content-type":
                     self.contentType = v
-                self.headers[headername(h)] = v
-                return True, end
+                n: str = headername(h)
+                self.headers[n] = v
+                # We have parsed a full header, we return True
+                return n, read
             else:
-                return None, end
+                return None, read
         else:
             # An empty line denotes the end of headers
-            return False, end
+            return False, read
 
     def __str__(self) -> str:
         return f"HeadersParser({self.headers})"
@@ -144,12 +153,12 @@ class BodyEOSParser:
         return self
 
     def feed(self, chunk: bytes, start: int = 0) -> tuple[bytes | None, int]:
-        line, end = self.line.feed(chunk, start)
+        line, read = self.line.feed(chunk, start)
         if line is None:
-            return None, end
+            return None, read
         else:
             data = self.line.flush()
-            return data, end
+            return data, read
 
 
 class BodyLengthParser:
@@ -184,6 +193,7 @@ class BodyLengthParser:
         to_read: int = min(
             left, left if self.expected is None else self.expected - self.read
         )
+        # FIXME: Is this correct?
         if to_read < left:
             self.data.append(chunk[start : start + to_read])
             self.read += to_read
@@ -197,7 +207,7 @@ class BodyLengthParser:
 class HTTPParser:
     """A stateful HTTP parser."""
 
-    HAS_BODY: ClassVar[set[str]] = {"POST", "PUT", "PATCH"}
+    METHOD_HAS_BODY: ClassVar[set[str]] = {"POST", "PUT", "PATCH"}
 
     def __init__(self) -> None:
         self.message: MessageParser = MessageParser()
@@ -207,18 +217,27 @@ class HTTPParser:
         self.parser: (
             MessageParser | HeadersParser | BodyEOSParser | BodyLengthParser
         ) = self.message
+        self.requestLine: HTTPRequestLine | HTTPResponseLine | None = None
+        self.requestHeaders: HTTPHeaders | None = None
 
     def feed(self, chunk: bytes) -> Iterator[HTTPAtom]:
+        # FIXME: Should write to a buffer
         size: int = len(chunk)
-        o: int = 0
-        line: HTTPRequestLine | HTTPResponseLine | None = None
-        headers: HTTPHeaders | None = None
-        while o < size:
-            l, n = self.parser.feed(chunk, o)
-            if l is not None:
+        offset: int = 0
+        while offset < size:
+            # The expectation here is that when we feed a chunk and it's
+            # partially read, we don't need to re-feed it again. The underlying
+            # parser will keep a buffer up until it is flushed.
+            l, read = self.parser.feed(chunk, offset)
+            if l is None:
+                # NOTE: Keeping for reference here that we
+                offset += read
+            else:
                 if self.parser is self.message:
                     # We've parsed a request line
                     line = self.message.flush()
+                    self.requestLine = line
+                    self.requestHeaders = None
                     if line is not None:
                         yield line
                         self.parser = self.headers
@@ -226,12 +245,20 @@ class HTTPParser:
                     if l is False:
                         # We've parsed the headers
                         headers = self.headers.flush()
+                        line = self.requestLine
+                        self.requestHeaders = headers
                         if headers is not None:
                             yield headers
+                        # If it's a method with no expected body, we skip the parsing
+                        # of the body.
                         if (
-                            line
-                            and isinstance(line, HTTPRequestLine)
-                            and line.method not in self.HAS_BODY
+                            self.requestLine
+                            and isinstance(self.requestLine, HTTPRequestLine)
+                            and (
+                                self.requestLine.method not in self.METHOD_HAS_BODY
+                                or headers
+                                and headers.contentLength == 0,
+                            )
                         ):
                             # That's an early exit
                             yield HTTPRequest(
@@ -285,10 +312,8 @@ class HTTPParser:
                     self.parser = self.message.reset()
                 else:
                     raise RuntimeError(f"Unsupported parser: {self.parser}")
-            o += n
-            if not n:
-                # FIXME: Not sure what this is about
-                raise NotImplementedError
+            # We increase the offset with the read bytes
+            offset += read
 
 
 def parseQuery(text: str) -> dict[str, str]:

@@ -1,6 +1,8 @@
-from typing import Callable, NamedTuple, Any, Coroutine
+from typing import Callable, NamedTuple, Any, Coroutine, Self
 import socket
 import asyncio
+import time
+from dataclasses import dataclass
 from .utils.logging import exception, info, warning, event
 from .utils.io import asWritable
 from .utils.limits import LimitType, unlimit
@@ -25,8 +27,18 @@ class ServerOptions(NamedTuple):
     backlog: int = 10_000
     timeout: float = 10.0
     readsize: int = 4_096
+    # NOTE: Make sure this matches the ALB configuration,
+    # «The target closed the connection with a TCP RST or a TCP FIN while the load
+    # balancer had an outstanding request to the target. Check whether the
+    # keep-alive duration of the target is shorter than the idle timeout value of
+    # the load balancer.»
+    # SEE: https://repost.aws/questions/QU-_rSWDtwSmOD5wBO5tsrwg/load-balancer-502-bad-gateway
+    keepalive: float = 3_600
+    logRequests: bool = True
     condition: Callable[[], bool] | None = None
 
+
+OPTIONS: ServerOptions = ServerOptions()
 
 SERVER_OK: bytes = (
     b"HTTP/1.1 200 OK\r\n"
@@ -46,6 +58,16 @@ SERVER_ERROR: bytes = (
     b"\r\n"
     b"Internal server error: Request not sent\r\n"
 )
+
+
+@dataclass(slots=True)
+class UnclosedSocket:
+    socket: socket.socket
+    updated: float
+
+    def touch(self) -> Self:
+        self.updated = time.time()
+        return self
 
 
 class AIOSocketBodyReader(HTTPBodyReader):
@@ -82,46 +104,58 @@ class AIOSocketServer:
         *,
         loop: asyncio.AbstractEventLoop,
         options: ServerOptions,
+        unclosed: dict[int, UnclosedSocket],
     ) -> None:
         """Asynchronous worker, processing a socket in the context
         of an application."""
+        size: int = options.readsize
+        # TODO: Support keep-alive
+        # TODO: We should loop and leave the connection open if we're
+        # in keep-alive mode.
+        buffer = bytearray(size)
+        # NOTE: Keepalive timeout should be relative to the time it takes
+        # to process a request, and to the backlog size as well.
+        keep_alive_timeout: float = options.keepalive
+        keep_alive: bool = True
+        iteration: int = 0
+        # --
+        # We continue reading from the socket if we have keep_alive
+        status: HTTPProcessingStatus = HTTPProcessingStatus.Processing
+        read_count: int = 0
+        res_count: int = 0
+        req_count: int = 0
         try:
             parser: HTTPParser = HTTPParser()
             reader: AIOSocketBodyReader = AIOSocketBodyReader(client, loop)
-            size: int = options.readsize
 
-            # TODO: Support keep-alive
-            # TODO: We should loop and leave the connection open if we're
-            # in keep-alive mode.
-            buffer = bytearray(size)
-            # NOTE: Keepalive timeout should be relative to the time it takes
-            # to process a request, and to the backlog size as well.
-            keep_alive_timeout: float = 2.0
-            keep_alive: bool = True
-            iteration: int = 0
+            # NOTE: Here a load balancer will sustain a single connection and
+            # all the requests will come through this loop, until there's
+            # Connection: Close, or the keepalive timeout has expired.
             # --
-            # We continue reading from the socket if we have keep_alive
-            status: HTTPProcessingStatus = HTTPProcessingStatus.Processing
-            read_count: int = 0
-            res_count: int = 0
-            req_count: int = 0
+            # SEE: https://repost.aws/knowledge-center/apache-backend-elb
+            # TODO: We should manage the Keep-Alive header
+            # Keep-Alive: timeout=5, max=1000
             while keep_alive:
                 req: HTTPRequest | None = None
                 # --
                 # We may have more than one request in each payload when
-                # HTTP Pipelininig is on.
+                # HTTP Pipelining is on.
                 try:
+                    # NOTE: THe timeout really doesn't do anything here, the
+                    # socket will return no data, instead of being blocking
                     n = await asyncio.wait_for(
                         loop.sock_recv_into(client, buffer),
                         timeout=keep_alive_timeout,
                     )
                     read_count += n
                 except TimeoutError:
+                    warning("Client timed out", Requests=req_count, Responses=res_count)
                     status = HTTPProcessingStatus.Timeout
-                    keep_alive_timeout = False
                     break
                 if not n:
+                    # A no-data means a close
                     status = HTTPProcessingStatus.NoData
+                    # We need to break here as otherwise we'll be in a hot loop.
                     break
                 # NOTE: With HTTP Pipelining, we may receive more than one
                 # request in the same payload, so we need to be prepared
@@ -137,7 +171,9 @@ class AIOSocketServer:
                     elif isinstance(atom, HTTPRequest):
                         req = atom
                         req._reader = reader
-                        event(req.method, req.path)
+                        # Logs the request method
+                        if options.logRequests:
+                            event(req.method, req.path)
                         req_count += 1
                         if (
                             req.protocol == "HTTP/1.0"
@@ -146,6 +182,7 @@ class AIOSocketServer:
                             keep_alive = False
                         if await cls.SendResponse(req, app, client, loop):
                             res_count += 1
+                # We clear what we've read from the buffer
                 del buffer[:n]
                 iteration += 1
 
@@ -193,12 +230,25 @@ class AIOSocketServer:
         except Exception as e:
             exception(e)
         finally:
-
             # FIXME: We should support keep-alive, where we don't close the
             # connection right away. However the drawback is that each worker
             # is going to linger for longer, waiting for the reader to timeout.
             # By default, connections in HTTP/1.1 are keep alive.
-            client.close()
+            # --
+            # NOTE: We've exited the keep alive loop, so here we close the client
+            # connection.
+            # DEBUG
+            if keep_alive:
+                info("Keeping connection alive")
+                print("TODO SOCKET", client)
+                # if client.fd in unclosed:
+                #     unclosed[client.fd].touch()
+                # else:
+                #     unclosed[client.fd] = UnclosedSocket(client, time.time())
+                # FIXME: We should add the socket to a queue of lingering sockets
+            else:
+                info("Closing connection")
+                client.close()
 
     @staticmethod
     async def SendResponse(
@@ -309,6 +359,7 @@ class AIOSocketServer:
             Port=options.port,
         )
 
+        unclosed: dict[int, UnclosedSocket] = {}
         # TODO: Add condition
         try:
             while True:
@@ -328,7 +379,9 @@ class AIOSocketServer:
                         client = res[0]
                     # NOTE: Should do something with the tasks
                     task = loop.create_task(
-                        cls.OnRequest(app, client, loop=loop, options=options)
+                        cls.OnRequest(
+                            app, client, loop=loop, options=options, unclosed=unclosed
+                        )
                     )
                     tasks.add(task)
                     task.add_done_callback(tasks.discard)
@@ -353,13 +406,20 @@ def run(
     *components: Application | Service,
     host: str = HOST,
     port: int = PORT,
-    backlog: int = 10_000,
+    backlog: int = OPTIONS.backlog,
     condition: Callable[[], bool] | None = None,
-    timeout: float = 10.0,
+    timeout: float = OPTIONS.timeout,
+    logRequests: bool = OPTIONS.logRequests,
+    keepalive: float = OPTIONS.keepalive,
 ) -> None:
     unlimit(LimitType.Files)
     options = ServerOptions(
-        host=host, port=port, backlog=backlog, condition=condition, timeout=timeout
+        host=host,
+        port=port,
+        backlog=backlog,
+        condition=condition,
+        timeout=timeout,
+        logRequests=logRequests,
     )
     app = mount(*components)
     try:
