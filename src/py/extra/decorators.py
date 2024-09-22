@@ -1,5 +1,7 @@
 from typing import ClassVar, Union, Callable, NamedTuple, TypeVar, Any, cast
 
+from .http.model import HTTPRequest, HTTPResponse
+
 T = TypeVar("T")
 
 
@@ -37,7 +39,7 @@ class Extra:
             return cast(dict[str, Any], getattr(scope, "__extra__"))
         else:
             if hasattr(scope, "__dict__"):
-                return scope.__dict__
+                return cast(dict[str, Any], scope.__dict__)
             elif strict:
                 raise RuntimeError(f"Metadata cannot be attached to object: {scope}")
             else:
@@ -127,10 +129,9 @@ def expose(
         meta.setdefault(Extra.ON_PRIORITY, int(priority))
         json_data: Any | None = None
         for http_method, url in list(methods.items()):
-            if type(url) not in (list, tuple):
-                url = (url,)
+            urls: list[str] | tuple[str, ...] = (url,) if isinstance(url, str) else url
             for method in http_method.upper().split("_"):
-                for _ in url:
+                for _ in urls:
                     if method == "JSON":
                         json_data = _
                     else:
@@ -174,7 +175,9 @@ def pre(transform: Callable[..., bool]) -> Callable[..., T]:
     return decorator
 
 
-def post(transform: Callable[..., bool]) -> Callable[[T], T]:
+def post(
+    transform: Callable[[HTTPRequest, HTTPResponse], HTTPResponse]
+) -> Callable[[T], T]:
     """Registers the given `transform` as a post-processing step of the
     decorated function."""
 

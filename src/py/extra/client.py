@@ -196,11 +196,12 @@ class ConnectionPool:
         """Returns a connection to the target from the pool (if the pool is available
         and has a valid connection to the target), or creates a new connection."""
         pools = cls.All.get(None)
-        return await (
+        res = await (
             pools[-1].get(target)
             if pools
             else Connection.Make(target, idle=idle, timeout=timeout, verified=verified)
         )
+        return res
 
     @classmethod
     def Release(cls, connection: Connection) -> bool:
@@ -215,9 +216,7 @@ class ConnectionPool:
             connection.close()
             return False
         elif pools:
-            # FIXME: Why are we closing the connection upon release, that
-            # should totally not be the case. We only close if expired.
-            connection.close()
+            # NOTE: We don't close the connection here, as we want to reuse it.
             pools[-1].put(connection)
             return True
         else:
@@ -243,6 +242,12 @@ class ConnectionPool:
         self.connections: dict[ConnectionTarget, list[Connection]] = {}
         self.idle: float | None = idle
 
+    def has(
+        self,
+        target: ConnectionTarget,
+    ) -> bool:
+        return any(_.isValid is True for _ in self.connections.get(target) or ())
+
     async def get(
         self,
         target: ConnectionTarget,
@@ -254,6 +259,7 @@ class ConnectionPool:
         # then we close the connection, or return a new one.
         while cxn:
             c = cxn.pop()
+            print("POOOL CONN", c, c.isValid)
             if c.isValid:
                 return c
             else:
@@ -334,6 +340,7 @@ class HTTPClient:
         timeout: float | None = 2.0,
         buffer: int = 32_000,
         streaming: bool | None = None,
+        keepalive: bool = False,
     ) -> AsyncGenerator[HTTPAtom, bool | None]:
         """Low level function to process HTTP requests with the given connection."""
         # We send the line
@@ -344,10 +351,18 @@ class HTTPClient:
         )
         if "Host" not in head:
             head["Host"] = host
-        # if "Content-Length" not in head:
-        #     head["Content-Length"] = "0"
+        if not streaming and "Content-Length" not in head:
+            head["Content-Length"] = (
+                "0"
+                if body is None
+                else (
+                    str(body.length)
+                    if isinstance(body, HTTPBodyBlob)
+                    else str(body.expected or "0")
+                )
+            )
         if "Connection" not in head:
-            head["Connection"] = "close"
+            head["Connection"] = "keep-alive" if keepalive else "close"
         cxn.writer.write(line)
         payload = "\r\n".join(f"{k}: {v}" for k, v in head.items()).encode("ascii")
         cxn.writer.write(payload)
@@ -361,7 +376,7 @@ class HTTPClient:
         read_count: int = 0
         # --
         # We may have more than one request in each payload when
-        # HTTP Pipelininig is on.
+        # HTTP Pipelining is on.
         res: HTTPResponse | None = None
         while status is HTTPProcessingStatus.Processing and res is None:
             try:
@@ -437,6 +452,7 @@ class HTTPClient:
         proxy: tuple[str, int] | bool | None = None,
         connection: Connection | None = None,
         streaming: bool | None = None,
+        keepalive: bool = False,
     ) -> AsyncGenerator[HTTPAtom, None]:
         """Somewhat high level API to perform an HTTP request."""
 
@@ -511,6 +527,7 @@ class HTTPClient:
                 cxn,
                 timeout=timeout,
                 streaming=streaming,
+                keepalive=keepalive,
             ):
                 yield atom
         finally:
@@ -521,13 +538,13 @@ class HTTPClient:
 
 
 @contextmanager
-def pooling(idle: float | None = None) -> Iterator[ConnectionPool]:
+def pooling(idle: float | int | None = None) -> Iterator[ConnectionPool]:
     """Creates a context in which connections will be pooled."""
     pool = ConnectionPool().Push(idle=idle)
     try:
         yield pool
     finally:
-        pool.pop()
+        pool.pop().release()
 
 
 if __name__ == "__main__":

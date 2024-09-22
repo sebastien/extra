@@ -245,7 +245,6 @@ class HTTPParser:
                     if l is False:
                         # We've parsed the headers
                         headers = self.headers.flush()
-                        line = self.requestLine
                         self.requestHeaders = headers
                         if headers is not None:
                             yield headers
@@ -260,6 +259,7 @@ class HTTPParser:
                                 and headers.contentLength == 0,
                             )
                         ):
+                            line = self.requestLine
                             # That's an early exit
                             yield HTTPRequest(
                                 method=line.method,
@@ -280,10 +280,11 @@ class HTTPParser:
                                 )
                                 yield HTTPProcessingStatus.Body
                 elif self.parser is self.bodyEOS or self.parser is self.bodyLength:
-                    if line is None or headers is None:
+                    if self.requestLine is None or self.requestHeaders is None:
                         yield HTTPProcessingStatus.BadFormat
                     else:
-                        headers = headers or HTTPHeaders({})
+                        headers = self.requestHeaders
+                        line = self.requestLine
                         # NOTE: This is an awkward dance around the type checker
                         body = (
                             self.bodyEOS.flush()

@@ -173,7 +173,9 @@ def nodeFactory(name: str, ns: str | None = None) -> NodeFactory:
                         v
                         if isinstance(v, list)
                         else (
-                            [_ for _ in cast(tuple, v)] if isinstance(v, tuple) else [v]
+                            [_ for _ in cast(tuple[TNodeContent], v)]
+                            if isinstance(v, tuple)
+                            else [v]
                         )
                     ),
                 )
@@ -210,7 +212,7 @@ class Markup:
 
     def __getattribute__(self, name: str) -> Callable[..., Node]:
         if name.startswith("_"):
-            return super().__getattribute__(name)
+            return cast(Callable[..., Node], super().__getattribute__(name))
         else:
             factories = self._factories
             if name not in factories:

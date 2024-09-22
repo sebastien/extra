@@ -1,8 +1,6 @@
-from typing import Callable, NamedTuple, Any, Coroutine, Self
+from typing import Callable, NamedTuple, Any, Coroutine
 import socket
 import asyncio
-import time
-from dataclasses import dataclass
 from .utils.logging import exception, info, warning, event
 from .utils.io import asWritable
 from .utils.limits import LimitType, unlimit
@@ -60,16 +58,6 @@ SERVER_ERROR: bytes = (
 )
 
 
-@dataclass(slots=True)
-class UnclosedSocket:
-    socket: socket.socket
-    updated: float
-
-    def touch(self) -> Self:
-        self.updated = time.time()
-        return self
-
-
 class AIOSocketBodyReader(HTTPBodyReader):
 
     __slots__ = ["socket", "loop", "buffer"]
@@ -104,7 +92,6 @@ class AIOSocketServer:
         *,
         loop: asyncio.AbstractEventLoop,
         options: ServerOptions,
-        unclosed: dict[int, UnclosedSocket],
     ) -> None:
         """Asynchronous worker, processing a socket in the context
         of an application."""
@@ -230,25 +217,9 @@ class AIOSocketServer:
         except Exception as e:
             exception(e)
         finally:
-            # FIXME: We should support keep-alive, where we don't close the
-            # connection right away. However the drawback is that each worker
-            # is going to linger for longer, waiting for the reader to timeout.
-            # By default, connections in HTTP/1.1 are keep alive.
-            # --
-            # NOTE: We've exited the keep alive loop, so here we close the client
-            # connection.
-            # DEBUG
-            if keep_alive:
-                info("Keeping connection alive")
-                print("TODO SOCKET", client)
-                # if client.fd in unclosed:
-                #     unclosed[client.fd].touch()
-                # else:
-                #     unclosed[client.fd] = UnclosedSocket(client, time.time())
-                # FIXME: We should add the socket to a queue of lingering sockets
-            else:
-                info("Closing connection")
-                client.close()
+            # NOTE: The above loop takes care of keep alive, so we always close
+            # the connection on exit.
+            client.close()
 
     @staticmethod
     async def SendResponse(
@@ -359,15 +330,13 @@ class AIOSocketServer:
             Port=options.port,
         )
 
-        unclosed: dict[int, UnclosedSocket] = {}
-        # TODO: Add condition
         try:
             while True:
                 if options.condition and not options.condition():
                     break
                 try:
-                    res = (
-                        await asyncio.wait_for(
+                    res = await (
+                        asyncio.wait_for(
                             loop.sock_accept(server), timeout=options.timeout
                         )
                         if options.timeout
@@ -379,9 +348,7 @@ class AIOSocketServer:
                         client = res[0]
                     # NOTE: Should do something with the tasks
                     task = loop.create_task(
-                        cls.OnRequest(
-                            app, client, loop=loop, options=options, unclosed=unclosed
-                        )
+                        cls.OnRequest(app, client, loop=loop, options=options)
                     )
                     tasks.add(task)
                     task.add_done_callback(tasks.discard)
