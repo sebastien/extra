@@ -7,6 +7,7 @@ from typing import (
     Union,
     Callable,
     AsyncGenerator,
+    TypeVar,
 )
 from abc import ABC, abstractmethod
 from functools import cached_property
@@ -23,6 +24,7 @@ from .api import ResponseFactory
 # NOTE: MyPyC doesn't support async generators. We're trying without.
 
 TControl = bool | None
+T = TypeVar("T")
 
 
 # -----------------------------------------------------------------------------
@@ -243,8 +245,14 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
     def header(self, name: str) -> str | None:
         return self._headers.headers.get(headername(name))
 
-    def param(self, name: str) -> str | None:
-        return self.query.get(name) if self.query else None
+    def param(
+        self,
+        name: str,
+        default: T | None = None,
+        processor: Callable[[str | T | None], str | T | None] | None = None,
+    ) -> str | T | None:
+        v = self.query.get(name, default) if self.query else default
+        return processor(v) if processor else v
 
     @property
     def contentType(self) -> str | None:
