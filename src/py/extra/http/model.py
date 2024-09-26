@@ -140,6 +140,10 @@ class HTTPResponseFile(NamedTuple):
     path: Path
     fd: int | None = None
 
+    @property
+    def length(self) -> int:
+        return self.path.stat().st_size
+
 
 class HTTPResponseStream(NamedTuple):
     stream: Generator[str | bytes | TPrimitive, Any, Any]
