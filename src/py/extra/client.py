@@ -16,7 +16,6 @@ from .http.model import (
     HTTPResponseFile,
     HTTPHeaders,
     HTTPRequestBody,
-    HTTPBodyBlob,
     HTTPAtom,
     HTTPProcessingStatus,
 )

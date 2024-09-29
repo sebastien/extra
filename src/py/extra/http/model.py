@@ -2,7 +2,9 @@ from typing import (
     Any,
     NamedTuple,
     Iterable,
+    Literal,
     Generator,
+    Iterator,
     TypeAlias,
     Union,
     Callable,
@@ -14,11 +16,13 @@ from functools import cached_property
 from http.cookies import SimpleCookie, Morsel
 import os.path
 import inspect
+from gzip import GzipFile
+from io import BytesIO
 from pathlib import Path
 from enum import Enum
 from ..utils.primitives import TPrimitive
 from .status import HTTP_STATUS
-from ..utils.io import DEFAULT_ENCODING
+from ..utils.io import DEFAULT_ENCODING, asWritable
 from .api import ResponseFactory
 
 # NOTE: MyPyC doesn't support async generators. We're trying without.
@@ -180,6 +184,133 @@ def headername(name: str, *, headers: dict[str, str] = {}) -> str:
         normalized: str = "-".join(_.capitalize() for _ in name.split("-"))
         headers[key] = normalized
         return normalized
+
+
+# -----------------------------------------------------------------------------
+#
+# BODY
+#
+# -----------------------------------------------------------------------------
+
+
+class BytesTransform(ABC):
+    """An abstract bytes transform."""
+
+    def open(self) -> bool:
+        return True
+
+    def close(self) -> bool:
+        return True
+
+    @abstractmethod
+    def feed(
+        self, chunk: bytes, more: bool = False
+    ) -> bytes | None | Literal[False]: ...
+
+    def __enter__(self) -> Iterator[bool]:
+        yield self.open()
+
+    def __exit__(self, *args: Any, **kwargs: Any) -> None:
+        self.close()
+
+
+class GZipEncode(BytesTransform):
+    """An encoder for gzip byte streams."""
+
+    def __init__(self) -> None:
+        self.out: BytesIO = BytesIO()
+        self.comp: GzipFile = GzipFile(mode="wb", fileobj=self.out)
+
+    def flush(self) -> bytes | None | Literal[False]:
+        return None
+
+    def feed(
+        self,
+        chunk: bytes,
+        more: bool = False,
+    ) -> bytes | None | Literal[False]:
+        self.comp.write(chunk)
+        self.comp.flush()
+        res = self.out.getvalue()
+        self.comp.seek(0)
+        self.comp.truncate()
+        return res
+
+
+class HTTPBodyWriter(ABC):
+    """ "A generic writer for bodies that supports bytes encoding and decoding."""
+
+    def __init__(self) -> None:
+        self.transform: BytesTransform | None = None
+
+    async def write(
+        self,
+        body: (
+            HTTPBodyBlob
+            | HTTPResponseFile
+            | HTTPResponseStream
+            | HTTPResponseAsyncStream
+            | None
+        ),
+    ) -> bool:
+        """Writes the given type of body."""
+        if isinstance(body, HTTPBodyBlob):
+            return await self._write(body.payload)
+        elif isinstance(body, HTTPResponseFile):
+            with open(body.path, "rb") as f:
+                while chunk := f.read(64_000):
+                    await self._write(chunk, bool(chunk))
+            return True
+        elif isinstance(body, HTTPResponseStream):
+            # No keep alive with streaming as these are long
+            # lived requests.
+            try:
+                for _ in body.stream:
+                    await self._write(asWritable(_), True)
+            finally:
+                await self._write(b"", False)
+            return True
+        elif isinstance(body, HTTPResponseAsyncStream):
+            # No keep alive with streaming as these are long
+            # lived requests.
+            try:
+                async for _ in body.stream:
+                    await self._write(asWritable(_), True)
+            finally:
+                await self._write(b"", False)
+            return True
+        elif body is None:
+            return True
+        else:
+            raise ValueError(f"Unsupported body format: {body}")
+
+    async def _write(self, chunk: bytes, more: bool = False) -> bool:
+        return await self._send(
+            self.transform.feed(chunk, more) if self.transform else chunk, more
+        )
+
+    @abstractmethod
+    async def _send(
+        self, chunk: bytes | None | Literal[False], more: bool = False
+    ) -> bool: ...
+
+
+# TODO: We need to find an abstraction that works for all writers that supports:
+# - HTTPBodyBlob
+# - HTTPResponseFile
+# - HTTPResponseStream
+
+# class GZipBodyEncoding:
+#
+#     def accept(self, request: "HTTPRequest") -> bool:
+#         return any(
+#             _
+#             for _ in request.headers.get("Accept-Encoding", "").split(",")
+#             if _.strip() == "gzip"
+#         )
+#
+#     def accept(self, request: "HTTPRequest") -> bool:
+#         pass
 
 
 # -----------------------------------------------------------------------------
