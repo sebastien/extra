@@ -434,21 +434,19 @@ class HTTPClient:
                 if atom is HTTPProcessingStatus.Complete:
                     status = atom
                 elif isinstance(atom, HTTPResponse):
+                    if atom.body:
+                        yield atom.body
                     res = atom
-                    if res.body:
-                        yield res.body
                     break
                 else:
                     yield atom
             iteration += 1
         if (
-            # We continue if we have streaming
-            streaming is True
-            or res
-            and res.body
-            and HTTPBody.HasRemaining(res.body)
-            or res
-            and res.headers.contentType in {"text/event-stream"}
+            # We continue if we have streaming or
+            status is HTTPProcessingStatus.Processing
+            or streaming is True
+            or (res and res.body and HTTPBody.HasRemaining(res.body))
+            or (res and res.headers.contentType in {"text/event-stream"})
         ):
             # TODO: We should swap out the body for a streaming body
             cxn.isStreaming = True
