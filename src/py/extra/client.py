@@ -10,12 +10,13 @@ from .utils.logging import event
 from .http.model import (
     HTTPRequest,
     HTTPResponse,
-    HTTPResponseStream,
-    HTTPResponseAsyncStream,
+    HTTPBodyStream,
+    HTTPBodyAsyncStream,
     HTTPBodyBlob,
-    HTTPResponseFile,
+    HTTPBodyFile,
     HTTPHeaders,
-    HTTPRequestBody,
+    HTTPBody,
+    HTTPReaderBody,
     HTTPAtom,
     HTTPProcessingStatus,
 )
@@ -348,15 +349,14 @@ class HTTPClient:
         head: dict[str, str] = request.headers
         if "Host" not in head:
             head["Host"] = host
-        body = request.body
+        body = request._body
         if not streaming and "Content-Length" not in head:
             head["Content-Length"] = (
                 "0"
                 if body is None
                 else (
                     str(body.length)
-                    if isinstance(body, HTTPBodyBlob)
-                    or isinstance(body, HTTPResponseFile)
+                    if isinstance(body, HTTPBodyBlob) or isinstance(body, HTTPBodyFile)
                     else str(body.expected or "0")
                 )
             )
@@ -371,7 +371,7 @@ class HTTPClient:
         # And send the request
         if isinstance(body, HTTPBodyBlob):
             cxn.writer.write(body.payload)
-        elif isinstance(body, HTTPResponseFile):
+        elif isinstance(body, HTTPBodyFile):
             fd: int = -1
             try:
                 fd = os.open(str(body.path), os.O_RDONLY)
@@ -384,13 +384,13 @@ class HTTPClient:
             finally:
                 if fd > 0:
                     os.close(fd)
-        elif isinstance(body, HTTPResponseStream):
+        elif isinstance(body, HTTPBodyStream):
             # No keep alive with streaming as these are long
             # lived requests.
             for chunk in body.stream:
                 cxn.writer.write(asWritable(chunk))
                 await cxn.writer.drain()
-        elif isinstance(body, HTTPResponseAsyncStream):
+        elif isinstance(body, HTTPBodyAsyncStream):
             # No keep alive with streaming as these are long
             # lived requests.
             async for chunk in body.stream:
@@ -435,12 +435,18 @@ class HTTPClient:
                     status = atom
                 elif isinstance(atom, HTTPResponse):
                     res = atom
+                    if res.body:
+                        yield res.body
                     break
                 else:
                     yield atom
             iteration += 1
         if (
+            # We continue if we have streaming
             streaming is True
+            or res
+            and res.body
+            and HTTPBody.HasRemaining(res.body)
             or res
             and res.headers.contentType in {"text/event-stream"}
         ):
@@ -475,7 +481,7 @@ class HTTPClient:
         *,
         port: int | None = None,
         headers: dict[str, str] | None = None,
-        body: HTTPRequestBody | HTTPBodyBlob | None = None,
+        body: HTTPReaderBody | HTTPBodyBlob | None = None,
         params: dict[str, str] | str | None = None,
         ssl: bool = True,
         verified: bool = True,
@@ -587,7 +593,7 @@ async def request(
     *,
     port: int | None = None,
     headers: dict[str, str] | None = None,
-    body: HTTPRequestBody | HTTPBodyBlob | None = None,
+    body: HTTPReaderBody | HTTPBodyBlob | None = None,
     params: dict[str, str] | str | None = None,
     ssl: bool = True,
     verified: bool = True,

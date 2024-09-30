@@ -30,6 +30,25 @@ from .api import ResponseFactory
 TControl = bool | None
 T = TypeVar("T")
 
+# -----------------------------------------------------------------------------
+#
+# HELPERS
+#
+# -----------------------------------------------------------------------------
+
+
+def headername(name: str, *, headers: dict[str, str] = {}) -> str:
+    """Normalizes the header name."""
+    if name in headers:
+        return headers[name]
+    key: str = name.lower()
+    if key in headers:
+        return headers[key]
+    else:
+        normalized: str = "-".join(_.capitalize() for _ in name.split("-"))
+        headers[key] = normalized
+        return normalized
+
 
 # -----------------------------------------------------------------------------
 #
@@ -72,10 +91,39 @@ class HTTPHeaders(NamedTuple):
     contentLength: int | None = None
 
 
+class HTTPProcessingStatus(Enum):
+    Processing = 0
+    Body = 1
+    Complete = 2
+    Timeout = 10
+    NoData = 11
+    BadFormat = 12
+
+
+HTTPAtom: TypeAlias = Union[
+    HTTPRequestLine,
+    HTTPResponseLine,
+    HTTPHeaders,
+    HTTPProcessingStatus,
+    "THTTPBody",
+    "HTTPRequest",
+    "HTTPResponse",
+]
+
+
+# -----------------------------------------------------------------------------
+#
+# BODY
+#
+# -----------------------------------------------------------------------------
+
+
 BODY_READER_TIMEOUT: float = 1.0
 
 
 class HTTPBodyReader(ABC):
+    """A based class for being able to read a request body, typically from a
+    socket."""
 
     @abstractmethod
     async def read(self, timeout: float = BODY_READER_TIMEOUT) -> bytes | None: ...
@@ -91,16 +139,27 @@ class HTTPBodyReader(ABC):
         return data
 
 
-class HTTPRequestBody:
+class HTTPReaderBody:
+    __slots__ = ("reader", "read", "expected", "remaining")
+    """Represents a body that is loaded from a reader."""
+
     def __init__(self, reader: HTTPBodyReader, expected: int | None = None):
         self.reader: HTTPBodyReader = reader
+        self.read: int = 0
         self.expected: int | None = expected
+        self.remaining: int | None = expected
 
     async def load(
         self,
     ) -> bytes | None:
         """Loads all the data and returns a list of bodies."""
-        return await self.reader.load()
+        payload = await self.reader.load()
+        if payload:
+            n = len(payload)
+            self.read += n
+            if self.remaining is not None:
+                self.remaining -= n
+        return payload
 
 
 class HTTPBodyBlob(NamedTuple):
@@ -119,28 +178,7 @@ class HTTPBodyBlob(NamedTuple):
         return self.payload
 
 
-class HTTPProcessingStatus(Enum):
-    Processing = 0
-    Body = 1
-    Complete = 2
-    Timeout = 10
-    NoData = 11
-    BadFormat = 12
-
-
-HTTPAtom: TypeAlias = Union[
-    HTTPRequestLine,
-    HTTPResponseLine,
-    HTTPHeaders,
-    HTTPBodyBlob,
-    HTTPRequestBody,
-    HTTPProcessingStatus,
-    "HTTPRequest",
-    "HTTPResponse",
-]
-
-
-class HTTPResponseFile(NamedTuple):
+class HTTPBodyFile(NamedTuple):
     path: Path
     fd: int | None = None
 
@@ -149,17 +187,34 @@ class HTTPResponseFile(NamedTuple):
         return self.path.stat().st_size
 
 
-class HTTPResponseStream(NamedTuple):
+class HTTPBodyStream(NamedTuple):
     stream: Generator[str | bytes | TPrimitive, Any, Any]
 
 
-class HTTPResponseAsyncStream(NamedTuple):
+class HTTPBodyAsyncStream(NamedTuple):
     stream: AsyncGenerator[str | bytes | TPrimitive, Any]
 
 
-HTTPResponseBody: TypeAlias = (
-    HTTPBodyBlob | HTTPResponseFile | HTTPResponseStream | HTTPResponseAsyncStream
+THTTPBody: TypeAlias = (
+    HTTPBodyBlob | HTTPBodyFile | HTTPBodyStream | HTTPBodyAsyncStream
 )
+
+
+class HTTPBody:
+    """Contains helpers to work with bodies."""
+
+    @staticmethod
+    def HasRemaining(body: THTTPBody | None) -> bool:
+        if body is None:
+            return True
+        elif isinstance(body, HTTPBodyBlob):
+            return bool(body.remaining)
+        elif isinstance(body, HTTPBodyStream) or isinstance(body, HTTPBodyAsyncStream):
+            return True
+        elif isinstance(body, HTTPReaderBody):
+            return body.remaining is not None
+        else:
+            return False
 
 
 # We do separate the body, as typically the head of the request is there
@@ -168,27 +223,7 @@ HTTPResponseBody: TypeAlias = (
 
 # -----------------------------------------------------------------------------
 #
-# HELPERS
-#
-# -----------------------------------------------------------------------------
-
-
-def headername(name: str, *, headers: dict[str, str] = {}) -> str:
-    """Normalizes the header name."""
-    if name in headers:
-        return headers[name]
-    key: str = name.lower()
-    if key in headers:
-        return headers[key]
-    else:
-        normalized: str = "-".join(_.capitalize() for _ in name.split("-"))
-        headers[key] = normalized
-        return normalized
-
-
-# -----------------------------------------------------------------------------
-#
-# BODY
+# BODY TRANSFORMS
 #
 # -----------------------------------------------------------------------------
 
@@ -245,23 +280,17 @@ class HTTPBodyWriter(ABC):
 
     async def write(
         self,
-        body: (
-            HTTPBodyBlob
-            | HTTPResponseFile
-            | HTTPResponseStream
-            | HTTPResponseAsyncStream
-            | None
-        ),
+        body: HTTPBodyBlob | HTTPBodyFile | HTTPBodyStream | HTTPBodyAsyncStream | None,
     ) -> bool:
         """Writes the given type of body."""
         if isinstance(body, HTTPBodyBlob):
             return await self._write(body.payload)
-        elif isinstance(body, HTTPResponseFile):
+        elif isinstance(body, HTTPBodyFile):
             with open(body.path, "rb") as f:
                 while chunk := f.read(64_000):
                     await self._write(chunk, bool(chunk))
             return True
-        elif isinstance(body, HTTPResponseStream):
+        elif isinstance(body, HTTPBodyStream):
             # No keep alive with streaming as these are long
             # lived requests.
             try:
@@ -270,7 +299,7 @@ class HTTPBodyWriter(ABC):
             finally:
                 await self._write(b"", False)
             return True
-        elif isinstance(body, HTTPResponseAsyncStream):
+        elif isinstance(body, HTTPBodyAsyncStream):
             # No keep alive with streaming as these are long
             # lived requests.
             try:
@@ -297,8 +326,8 @@ class HTTPBodyWriter(ABC):
 
 # TODO: We need to find an abstraction that works for all writers that supports:
 # - HTTPBodyBlob
-# - HTTPResponseFile
-# - HTTPResponseStream
+# - HTTPBodyFile
+# - HTTPBodyStream
 
 # class GZipBodyEncoding:
 #
@@ -339,7 +368,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         path: str,
         query: dict[str, str] | None,
         headers: HTTPHeaders,
-        body: HTTPRequestBody | HTTPBodyBlob | None = None,
+        body: HTTPReaderBody | HTTPBodyBlob | None = None,
         protocol: str = "HTTP/1.1",
     ):
         super().__init__()
@@ -348,7 +377,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         self.query: dict[str, str] | None = query
         self.protocol: str = protocol
         self._headers: HTTPHeaders = headers
-        self._body: HTTPRequestBody | HTTPBodyBlob | None = body
+        self._body: HTTPReaderBody | HTTPBodyBlob | None = body
         self._reader: HTTPBodyReader | None
         self._onClose: Callable[[HTTPRequest], None] | None = None
 
@@ -394,11 +423,11 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         return self._headers.contentType
 
     @property
-    def body(self) -> HTTPRequestBody | HTTPBodyBlob:
+    def body(self) -> HTTPReaderBody | HTTPBodyBlob:
         if self._body is None:
             if not self._reader:
                 raise RuntimeError("Request has no reader, can't read body")
-            self._body = HTTPRequestBody(self._reader)
+            self._body = HTTPReaderBody(self._reader)
         return self._body
 
     @property
@@ -463,11 +492,7 @@ class HTTPResponse:
 
         # We process the body
         body: (
-            HTTPBodyBlob
-            | HTTPResponseFile
-            | HTTPResponseStream
-            | HTTPResponseAsyncStream
-            | None
+            HTTPBodyBlob | HTTPBodyFile | HTTPBodyStream | HTTPBodyAsyncStream | None
         ) = None
         if content is None:
             pass
@@ -476,12 +501,12 @@ class HTTPResponse:
         elif isinstance(content, bytes):
             payload = content
         elif isinstance(content, Path):
-            body = HTTPResponseFile(content.absolute())
+            body = HTTPBodyFile(content.absolute())
             contentLength = os.path.getsize(body.path)
         elif inspect.isgenerator(content):
-            body = HTTPResponseStream(content)
+            body = HTTPBodyStream(content)
         elif inspect.isasyncgen(content):
-            body = HTTPResponseAsyncStream(content)
+            body = HTTPBodyAsyncStream(content)
         else:
             raise ValueError(f"Unsupported content {type(content)}:{content}")
         # If we have a payload then it's a Blob response
@@ -534,7 +559,7 @@ class HTTPResponse:
         status: int,
         message: str | None,
         headers: HTTPHeaders,
-        body: HTTPResponseBody | None = None,
+        body: THTTPBody | None = None,
     ):
         super().__init__()
         self.protocol: str = protocol
@@ -543,7 +568,7 @@ class HTTPResponse:
         # NOTE: Content-Disposition headers may have a non-ascii value, but we
         # don't support that.
         self.headers: HTTPHeaders = headers
-        self.body: HTTPResponseBody | None = body
+        self.body: THTTPBody | None = body
 
     # TODO: Deprecate
     def getHeader(self, name: str) -> str | None:

@@ -8,10 +8,10 @@ from .model import Application, Service, mount
 from .http.model import (
     HTTPRequest,
     HTTPResponse,
-    HTTPResponseStream,
-    HTTPResponseAsyncStream,
+    HTTPBodyStream,
+    HTTPBodyAsyncStream,
     HTTPBodyBlob,
-    HTTPResponseFile,
+    HTTPBodyFile,
     HTTPBodyReader,
     HTTPProcessingStatus,
 )
@@ -254,10 +254,10 @@ class AIOSocketServer:
                 # And send the request
                 if isinstance(res.body, HTTPBodyBlob):
                     await loop.sock_sendall(client, res.body.payload)
-                elif isinstance(res.body, HTTPResponseFile):
+                elif isinstance(res.body, HTTPBodyFile):
                     with open(res.body.path, "rb") as f:
                         await loop.sock_sendfile(client, f)
-                elif isinstance(res.body, HTTPResponseStream):
+                elif isinstance(res.body, HTTPBodyStream):
                     # No keep alive with streaming as these are long
                     # lived requests.
                     try:
@@ -265,7 +265,7 @@ class AIOSocketServer:
                             await loop.sock_sendall(client, asWritable(chunk))
                     finally:
                         res.body.stream.close()
-                elif isinstance(res.body, HTTPResponseAsyncStream):
+                elif isinstance(res.body, HTTPBodyAsyncStream):
                     # No keep alive with streaming as these are long
                     # lived requests.
                     try:
