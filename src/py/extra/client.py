@@ -436,14 +436,16 @@ class HTTPClient:
                     status = atom
                 elif isinstance(atom, HTTPResponse):
                     res = atom
+                    yield atom.body
                     break
                 else:
                     yield atom
             iteration += 1
         if (
+            status is HTTPProcessingStatus.Processing,
             streaming is True
             or res
-            and res.headers.contentType in {"text/event-stream"}
+            and res.headers.contentType in {"text/event-stream"},
         ):
             # TODO: We should swap out the body for a streaming body
             cxn.isStreaming = True
