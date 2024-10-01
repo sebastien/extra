@@ -57,6 +57,7 @@ SERVER_ERROR: bytes = (
 
 
 class AIOSocketBodyReader(HTTPBodyReader):
+    """Specialized body reader to work with AIO sockets."""
 
     __slots__ = ["socket", "loop", "buffer", "size"]
 
@@ -83,6 +84,7 @@ class AIOSocketBodyReader(HTTPBodyReader):
 
 
 class AIOSocketBodyWriter(HTTPBodyWriter):
+    """Specialized body writer to work with AIO sockets."""
 
     def __init__(
         self,
@@ -100,6 +102,8 @@ class AIOSocketBodyWriter(HTTPBodyWriter):
     ) -> bool:
         if chunk is None or chunk is False:
             pass
+        else:
+            await self.loop.sock_sendall(self.client, chunk)
         return False
 
     async def _writeFile(self, path: Path, size: int = 64_000) -> bool:
@@ -260,6 +264,7 @@ class AIOSocketServer:
         app: Application,
         writer: HTTPBodyWriter,
     ) -> HTTPResponse | None:
+        """Processes the request within the application and sends a response using the given writer."""
         req: HTTPRequest = request
         res: HTTPResponse | None = None
         sent: bool = False
@@ -314,6 +319,7 @@ class AIOSocketServer:
         app: Application,
         options: ServerOptions = ServerOptions(),
     ) -> None:
+        """Main server coroutine."""
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
