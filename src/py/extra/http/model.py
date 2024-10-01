@@ -4,7 +4,6 @@ from typing import (
     Iterable,
     Literal,
     Generator,
-    Iterator,
     TypeAlias,
     Union,
     Callable,
@@ -13,16 +12,16 @@ from typing import (
 )
 from abc import ABC, abstractmethod
 from functools import cached_property
+from tempfile import SpooledTemporaryFile
 from http.cookies import SimpleCookie, Morsel
 import os.path
 import inspect
-from gzip import GzipFile
-from io import BytesIO
 from pathlib import Path
 from enum import Enum
 from ..utils.primitives import TPrimitive
 from .status import HTTP_STATUS
 from ..utils.io import DEFAULT_ENCODING, asWritable
+from ..utils.codec import BytesTransform
 from .api import ResponseFactory
 
 # NOTE: MyPyC doesn't support async generators. We're trying without.
@@ -38,7 +37,7 @@ T = TypeVar("T")
 
 
 def headername(name: str, *, headers: dict[str, str] = {}) -> str:
-    """Normalizes the header name."""
+    """Normalizes the header name as `Kebab-Case`."""
     if name in headers:
         return headers[name]
     key: str = name.lower()
@@ -57,7 +56,63 @@ def headername(name: str, *, headers: dict[str, str] = {}) -> str:
 # -----------------------------------------------------------------------------
 
 
+class HTTPRequestLine(NamedTuple):
+    """Represents a request status line"""
+
+    method: str
+    path: str
+    query: str
+    protocol: str
+
+
+class HTTPResponseLine(NamedTuple):
+    """Represents a response status line"""
+
+    protocol: str
+    status: int
+    message: str
+
+
+class HTTPHeaders(NamedTuple):
+    """Wraps HTTP headers, keeping key information for response/request processing."""
+
+    headers: dict[str, str]
+    contentType: str | None = None
+    contentLength: int | None = None
+
+
+class HTTPProcessingStatus(Enum):
+    """Internal parser/processor state management"""
+
+    Processing = 0
+    Body = 1
+    Complete = 2
+    Timeout = 10
+    NoData = 11
+    BadFormat = 12
+
+
+# Type alias for the parser would produce
+HTTPAtom: TypeAlias = Union[
+    HTTPRequestLine,
+    HTTPResponseLine,
+    HTTPHeaders,
+    HTTPProcessingStatus,
+    "THTTPBody",
+    "HTTPRequest",
+    "HTTPResponse",
+]
+
+# -----------------------------------------------------------------------------
+#
+# ERRORS
+#
+# -----------------------------------------------------------------------------
+
+
 class HTTPRequestError(Exception):
+    """To be raised by handlers to generate a 500 error."""
+
     def __init__(
         self,
         message: str,
@@ -72,45 +127,6 @@ class HTTPRequestError(Exception):
         self.payload: TPrimitive | bytes | None = payload
 
 
-class HTTPRequestLine(NamedTuple):
-    method: str
-    path: str
-    query: str
-    protocol: str
-
-
-class HTTPResponseLine(NamedTuple):
-    protocol: str
-    status: int
-    message: str
-
-
-class HTTPHeaders(NamedTuple):
-    headers: dict[str, str]
-    contentType: str | None = None
-    contentLength: int | None = None
-
-
-class HTTPProcessingStatus(Enum):
-    Processing = 0
-    Body = 1
-    Complete = 2
-    Timeout = 10
-    NoData = 11
-    BadFormat = 12
-
-
-HTTPAtom: TypeAlias = Union[
-    HTTPRequestLine,
-    HTTPResponseLine,
-    HTTPHeaders,
-    HTTPProcessingStatus,
-    "THTTPBody",
-    "HTTPRequest",
-    "HTTPResponse",
-]
-
-
 # -----------------------------------------------------------------------------
 #
 # BODY
@@ -121,29 +137,11 @@ HTTPAtom: TypeAlias = Union[
 BODY_READER_TIMEOUT: float = 1.0
 
 
-class HTTPBodyReader(ABC):
-    """A based class for being able to read a request body, typically from a
-    socket."""
+class HTTPBodyIO:
+    __slots__ = ["reader", "read", "expected", "remaining"]
+    """Represents a body that is loaded from a reader IO."""
 
-    @abstractmethod
-    async def read(self, timeout: float = BODY_READER_TIMEOUT) -> bytes | None: ...
-
-    async def load(self, timeout: float = BODY_READER_TIMEOUT) -> bytes:
-        data = bytearray()
-        while True:
-            chunk = await self.read(timeout)
-            if not chunk:
-                break
-            else:
-                data += chunk
-        return data
-
-
-class HTTPReaderBody:
-    __slots__ = ("reader", "read", "expected", "remaining")
-    """Represents a body that is loaded from a reader."""
-
-    def __init__(self, reader: HTTPBodyReader, expected: int | None = None):
+    def __init__(self, reader: "HTTPBodyReader", expected: int | None = None):
         self.reader: HTTPBodyReader = reader
         self.read: int = 0
         self.expected: int | None = expected
@@ -163,6 +161,8 @@ class HTTPReaderBody:
 
 
 class HTTPBodyBlob(NamedTuple):
+    """Represents a part (or a whole) body as bytes."""
+
     payload: bytes = b""
     length: int = 0
     # NOTE: We don't know how many is remaining
@@ -179,6 +179,8 @@ class HTTPBodyBlob(NamedTuple):
 
 
 class HTTPBodyFile(NamedTuple):
+    """Represents an HTTP body from a file, potentially with a file descriptor."""
+
     path: Path
     fd: int | None = None
 
@@ -188,13 +190,18 @@ class HTTPBodyFile(NamedTuple):
 
 
 class HTTPBodyStream(NamedTuple):
+    """An HTTP body that is generated from a stream."""
+
     stream: Generator[str | bytes | TPrimitive, Any, Any]
 
 
 class HTTPBodyAsyncStream(NamedTuple):
+    """An HTTP body that is generated from an asynchronous stream."""
+
     stream: AsyncGenerator[str | bytes | TPrimitive, Any]
 
 
+# The different types of bodies that are managed
 THTTPBody: TypeAlias = (
     HTTPBodyBlob | HTTPBodyFile | HTTPBodyStream | HTTPBodyAsyncStream
 )
@@ -211,85 +218,89 @@ class HTTPBody:
             return bool(body.remaining)
         elif isinstance(body, HTTPBodyStream) or isinstance(body, HTTPBodyAsyncStream):
             return True
-        elif isinstance(body, HTTPReaderBody):
+        elif isinstance(body, HTTPBodyIO):
             return body.remaining is not None
         else:
             return False
 
-
-# We do separate the body, as typically the head of the request is there
-# as a whole, and the body can be loaded through different loaders based
-# on use case.
 
 # -----------------------------------------------------------------------------
 #
 # BODY TRANSFORMS
 #
 # -----------------------------------------------------------------------------
+# We do separate the body, as typically the head of the request is there
+# as a whole, and the body can be loaded through different loaders based
+# on use case.
 
 
-class BytesTransform(ABC):
-    """An abstract bytes transform."""
+class HTTPBodyReader(ABC):
+    """A base class for being able to read a request body, typically from a
+    socket."""
 
-    def open(self) -> bool:
-        return True
+    __slots__ = ["transform"]
 
-    def close(self) -> bool:
-        return True
+    def __init__(self, transform: BytesTransform | None = None) -> None:
+        self.transform: BytesTransform | None = transform
+
+    async def read(
+        self, timeout: float = BODY_READER_TIMEOUT, size: int | None = None
+    ) -> bytes | None:
+        chunk = await self._read(timeout)
+        if chunk is not None and self.transform:
+            res = self.transform.feed(chunk)
+            return res if res else None
+        else:
+            return chunk
 
     @abstractmethod
-    def feed(
-        self, chunk: bytes, more: bool = False
-    ) -> bytes | None | Literal[False]: ...
+    async def _read(
+        self, timeout: float = BODY_READER_TIMEOUT, size: int | None = None
+    ) -> bytes | None: ...
 
-    def __enter__(self) -> Iterator[bool]:
-        yield self.open()
+    # NOTE: This is a dangerous operation, as this way bloat the whole memory.
+    # Instead, loading should spool the file.
+    async def load(self, timeout: float = BODY_READER_TIMEOUT) -> bytes:
+        """Loads the entire body into a bytes array."""
+        data = bytearray()
+        while True:
+            chunk = await self.read(timeout)
+            if not chunk:
+                break
+            else:
+                data += chunk
+        return data
 
-    def __exit__(self, *args: Any, **kwargs: Any) -> None:
-        self.close()
-
-
-class GZipEncode(BytesTransform):
-    """An encoder for gzip byte streams."""
-
-    def __init__(self) -> None:
-        self.out: BytesIO = BytesIO()
-        self.comp: GzipFile = GzipFile(mode="wb", fileobj=self.out)
-
-    def flush(self) -> bytes | None | Literal[False]:
-        return None
-
-    def feed(
-        self,
-        chunk: bytes,
-        more: bool = False,
-    ) -> bytes | None | Literal[False]:
-        self.comp.write(chunk)
-        self.comp.flush()
-        res = self.out.getvalue()
-        self.comp.seek(0)
-        self.comp.truncate()
-        return res
+    async def spool(
+        self, timeout: float = BODY_READER_TIMEOUT
+    ) -> SpooledTemporaryFile[bytes]:
+        """The safer way to load a body especially if the file exceeds a given size."""
+        with SpooledTemporaryFile(prefix="extra", suffix="raw") as f:
+            while True:
+                chunk = await self.read(timeout)
+                if not chunk:
+                    break
+                else:
+                    f.write(chunk)
+            return f
 
 
 class HTTPBodyWriter(ABC):
-    """ "A generic writer for bodies that supports bytes encoding and decoding."""
+    """A generic writer for bodies that supports bytes encoding and decoding."""
 
-    def __init__(self) -> None:
-        self.transform: BytesTransform | None = None
+    __slots__ = ["transform"]
 
-    async def write(
-        self,
-        body: HTTPBodyBlob | HTTPBodyFile | HTTPBodyStream | HTTPBodyAsyncStream | None,
-    ) -> bool:
+    def __init__(self, transform: BytesTransform | None) -> None:
+        self.transform: BytesTransform | None = transform
+
+    async def write(self, body: THTTPBody | bytes | None) -> bool:
         """Writes the given type of body."""
-        if isinstance(body, HTTPBodyBlob):
+        if isinstance(body, bytes):
+            return await self._writeBytes(body)
+        elif isinstance(body, HTTPBodyBlob):
             return await self._write(body.payload)
         elif isinstance(body, HTTPBodyFile):
-            with open(body.path, "rb") as f:
-                while chunk := f.read(64_000):
-                    await self._write(chunk, bool(chunk))
-            return True
+            return await self._writeFile(body.path)
         elif isinstance(body, HTTPBodyStream):
             # No keep alive with streaming as these are long
             # lived requests.
@@ -313,33 +324,28 @@ class HTTPBodyWriter(ABC):
         else:
             raise ValueError(f"Unsupported body format: {body}")
 
+    async def flush(self) -> bool:
+        if self.transform:
+            chunk = self.transform.flush()
+            if chunk:
+                await self._writeBytes(chunk)
+        return True
+
+    async def _writeFile(self, path: Path, size: int = 64_000) -> bool:
+        with open(path, "rb") as f:
+            while chunk := f.read(size):
+                await self._write(chunk, bool(chunk))
+        return True
+
     async def _write(self, chunk: bytes, more: bool = False) -> bool:
-        return await self._send(
+        return await self._writeBytes(
             self.transform.feed(chunk, more) if self.transform else chunk, more
         )
 
     @abstractmethod
-    async def _send(
+    async def _writeBytes(
         self, chunk: bytes | None | Literal[False], more: bool = False
     ) -> bool: ...
-
-
-# TODO: We need to find an abstraction that works for all writers that supports:
-# - HTTPBodyBlob
-# - HTTPBodyFile
-# - HTTPBodyStream
-
-# class GZipBodyEncoding:
-#
-#     def accept(self, request: "HTTPRequest") -> bool:
-#         return any(
-#             _
-#             for _ in request.headers.get("Accept-Encoding", "").split(",")
-#             if _.strip() == "gzip"
-#         )
-#
-#     def accept(self, request: "HTTPRequest") -> bool:
-#         pass
 
 
 # -----------------------------------------------------------------------------
@@ -350,6 +356,8 @@ class HTTPBodyWriter(ABC):
 
 
 class HTTPRequest(ResponseFactory["HTTPResponse"]):
+    """Represents an HTTP requests, which also acts as a factory for
+    responses."""
 
     __slots__ = [
         "protocol",
@@ -368,7 +376,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         path: str,
         query: dict[str, str] | None,
         headers: HTTPHeaders,
-        body: HTTPReaderBody | HTTPBodyBlob | None = None,
+        body: HTTPBodyIO | HTTPBodyBlob | None = None,
         protocol: str = "HTTP/1.1",
     ):
         super().__init__()
@@ -377,7 +385,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         self.query: dict[str, str] | None = query
         self.protocol: str = protocol
         self._headers: HTTPHeaders = headers
-        self._body: HTTPReaderBody | HTTPBodyBlob | None = body
+        self._body: HTTPBodyIO | HTTPBodyBlob | None = body
         self._reader: HTTPBodyReader | None
         self._onClose: Callable[[HTTPRequest], None] | None = None
 
@@ -423,11 +431,11 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
         return self._headers.contentType
 
     @property
-    def body(self) -> HTTPReaderBody | HTTPBodyBlob:
+    def body(self) -> HTTPBodyIO | HTTPBodyBlob:
         if self._body is None:
             if not self._reader:
                 raise RuntimeError("Request has no reader, can't read body")
-            self._body = HTTPReaderBody(self._reader)
+            self._body = HTTPBodyIO(self._reader)
         return self._body
 
     @property
@@ -475,6 +483,9 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
 
 
 class HTTPResponse:
+    """An HTTP response."""
+
+    __slots__ = ["protocol", "status", "message", "headers", "body"]
 
     @staticmethod
     def Create(
@@ -550,8 +561,6 @@ class HTTPResponse:
             body=body,
             protocol=protocol,
         )
-
-    __slots__ = ["protocol", "status", "message", "headers", "body"]
 
     def __init__(
         self,

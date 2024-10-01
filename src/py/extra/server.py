@@ -1,18 +1,16 @@
-from typing import Callable, NamedTuple, Any, Coroutine
+from typing import Callable, NamedTuple, Any, Coroutine, Literal
+from pathlib import Path
 import socket
 import asyncio
 from .utils.logging import exception, info, warning, event
-from .utils.io import asWritable
+from .utils.codec import BytesTransform
 from .utils.limits import LimitType, unlimit
 from .model import Application, Service, mount
 from .http.model import (
     HTTPRequest,
     HTTPResponse,
-    HTTPBodyStream,
-    HTTPBodyAsyncStream,
-    HTTPBodyBlob,
-    HTTPBodyFile,
     HTTPBodyReader,
+    HTTPBodyWriter,
     HTTPProcessingStatus,
 )
 from .http.parser import HTTPParser
@@ -60,22 +58,54 @@ SERVER_ERROR: bytes = (
 
 class AIOSocketBodyReader(HTTPBodyReader):
 
-    __slots__ = ["socket", "loop", "buffer"]
+    __slots__ = ["socket", "loop", "buffer", "size"]
 
     def __init__(
         self,
         socket: "socket.socket",
         loop: asyncio.AbstractEventLoop,
         size: int = 64_000,
+        *,
+        transform: BytesTransform | None = None,
     ) -> None:
+        super().__init__(transform)
         self.socket = socket
         self.loop = loop
+        self.size: int = size
 
-    async def read(self, timeout: float = 1.0, size: int = 64_000) -> bytes | None:
+    async def _read(
+        self, timeout: float = 1.0, size: int | None = None
+    ) -> bytes | None:
         return await asyncio.wait_for(
-            self.loop.sock_recv(self.socket, size),
+            self.loop.sock_recv(self.socket, size or self.size),
             timeout=timeout,
         )
+
+
+class AIOSocketBodyWriter(HTTPBodyWriter):
+
+    def __init__(
+        self,
+        client: "socket.socket",
+        loop: asyncio.AbstractEventLoop,
+        *,
+        transform: BytesTransform | None = None,
+    ) -> None:
+        super().__init__(transform)
+        self.client: socket.socket = client
+        self.loop: asyncio.AbstractEventLoop = loop
+
+    async def _writeBytes(
+        self, chunk: bytes | None | Literal[False], more: bool = False
+    ) -> bool:
+        if chunk is None or chunk is False:
+            pass
+        return False
+
+    async def _writeFile(self, path: Path, size: int = 64_000) -> bool:
+        with open(path, "rb") as f:
+            await self.loop.sock_sendfile(self.client, f)
+        return True
 
 
 # NOTE: Based on benchmarks, this gave the best performance.
@@ -112,8 +142,11 @@ class AIOSocketServer:
         res_count: int = 0
         req_count: int = 0
         try:
+            # TODO: Should reuse parser, reader, writer as these will be on the
+            # hotpath for requests. These should all be recyclable.
             parser: HTTPParser = HTTPParser()
             reader: AIOSocketBodyReader = AIOSocketBodyReader(client, loop)
+            writer: AIOSocketBodyWriter = AIOSocketBodyWriter(client, loop)
 
             # NOTE: Here a load balancer will sustain a single connection and
             # all the requests will come through this loop, until there's
@@ -128,7 +161,7 @@ class AIOSocketServer:
                 # We may have more than one request in each payload when
                 # HTTP Pipelining is on.
                 try:
-                    # NOTE: THe timeout really doesn't do anything here, the
+                    # NOTE: The timeout really doesn't do anything here, the
                     # socket will return no data, instead of being blocking
                     n = await asyncio.wait_for(
                         loop.sock_recv_into(client, buffer),
@@ -167,7 +200,7 @@ class AIOSocketServer:
                             or req.headers.get("Connection") == "close"
                         ):
                             keep_alive = False
-                        if await cls.SendResponse(req, app, client, loop):
+                        if await cls.SendResponse(req, app, writer):
                             res_count += 1
                 # We clear what we've read from the buffer
                 del buffer[:n]
@@ -225,8 +258,7 @@ class AIOSocketServer:
     async def SendResponse(
         request: HTTPRequest,
         app: Application,
-        client: socket.socket,
-        loop: asyncio.AbstractEventLoop,
+        writer: HTTPBodyWriter,
     ) -> HTTPResponse | None:
         req: HTTPRequest = request
         res: HTTPResponse | None = None
@@ -244,39 +276,14 @@ class AIOSocketServer:
                 Method=req.method,
                 Path=req.path,
             )
-            await loop.sock_sendall(client, SERVER_NOCONTENT)
+            await writer.write(SERVER_NOCONTENT)
             sent = True
         else:
             try:
                 # We send the request head
-                await loop.sock_sendall(client, res.head())
+                await writer.write(res.head())
                 sent = True
-                # And send the request
-                if isinstance(res.body, HTTPBodyBlob):
-                    await loop.sock_sendall(client, res.body.payload)
-                elif isinstance(res.body, HTTPBodyFile):
-                    with open(res.body.path, "rb") as f:
-                        await loop.sock_sendfile(client, f)
-                elif isinstance(res.body, HTTPBodyStream):
-                    # No keep alive with streaming as these are long
-                    # lived requests.
-                    try:
-                        for chunk in res.body.stream:
-                            await loop.sock_sendall(client, asWritable(chunk))
-                    finally:
-                        res.body.stream.close()
-                elif isinstance(res.body, HTTPBodyAsyncStream):
-                    # No keep alive with streaming as these are long
-                    # lived requests.
-                    try:
-                        async for chunk in res.body.stream:
-                            await loop.sock_sendall(client, asWritable(chunk))
-                    finally:
-                        await res.body.stream.aclose()
-                elif res.body is None:
-                    pass
-                else:
-                    raise ValueError(f"Unsupported body format: {res.body}")
+                await writer.write(res.body)
             except BrokenPipeError:
                 # Client did an early close
                 sent = True
@@ -295,7 +302,7 @@ class AIOSocketServer:
                     Method=req.method,
                     Path=req.path,
                 )
-                await loop.sock_sendall(client, SERVER_ERROR)
+                await writer.write(SERVER_ERROR)
             except Exception as e:
                 exception(e)
 
