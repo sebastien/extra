@@ -288,6 +288,12 @@ class AIOSocketServer:
             except Exception as e:
                 # NOTE: close handler failed
                 exception(e)
+        if res and res._onClose:
+            try:
+                res._onClose(res)
+            except Exception as e:
+                # NOTE: close handler failed
+                exception(e)
         if req and not sent:
             try:
                 warning(

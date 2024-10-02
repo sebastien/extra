@@ -551,7 +551,7 @@ class HTTPResponse:
             protocol=protocol,
         )
 
-    __slots__ = ["protocol", "status", "message", "headers", "body"]
+    __slots__ = ["protocol", "status", "message", "headers", "body", "_onClose"]
 
     def __init__(
         self,
@@ -569,6 +569,7 @@ class HTTPResponse:
         # don't support that.
         self.headers: HTTPHeaders = headers
         self.body: THTTPBody | None = body
+        self._onClose: Callable[[HTTPResponse], None] | None = None
 
     # TODO: Deprecate
     def getHeader(self, name: str) -> str | None:
@@ -599,6 +600,12 @@ class HTTPResponse:
         lines.append("")
         # TODO: UTF8 maybe? Why ASCII?
         return "\r\n".join(lines).encode("ascii")
+
+    def onClose(
+        self, callback: Callable[["HTTPResponse"], None] | None
+    ) -> "HTTPResponse":
+        self._onClose = callback
+        return self
 
     def __str__(self) -> str:
         return f"Response({self.protocol} {self.status} {self.message} {self.headers} {self.body})"
