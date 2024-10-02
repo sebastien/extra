@@ -16,6 +16,7 @@ from tempfile import SpooledTemporaryFile
 from http.cookies import SimpleCookie, Morsel
 import os.path
 import inspect
+from dataclasses import dataclass
 from pathlib import Path
 from enum import Enum
 from ..utils.primitives import TPrimitive
@@ -234,6 +235,16 @@ class HTTPBody:
 # on use case.
 
 
+@dataclass(slots=True, frozen=True)
+class StreamControl:
+    """Directives to be used to control a stream."""
+
+    name: str
+
+
+CLOSE_STREAM: StreamControl = StreamControl("close")
+
+
 class HTTPBodyReader(ABC):
     """A base class for being able to read a request body, typically from a
     socket."""
@@ -288,15 +299,19 @@ class HTTPBodyReader(ABC):
 class HTTPBodyWriter(ABC):
     """A generic writer for bodies that supports bytes encoding and decoding."""
 
-    __slots__ = ["transform"]
+    __slots__ = ["transform", "shouldClose"]
 
     def __init__(self, transform: BytesTransform | None) -> None:
         self.transform: BytesTransform | None = transform
+        self.shouldClose: bool = False
 
-    async def write(self, body: THTTPBody | bytes | None) -> bool:
+    async def write(self, body: THTTPBody | StreamControl | bytes | None) -> bool:
         """Writes the given type of body."""
         if isinstance(body, bytes):
             return await self._writeBytes(body)
+        elif isinstance(body, StreamControl):
+            self.processControl(body)
+            return True
         elif isinstance(body, HTTPBodyBlob):
             return await self._write(body.payload)
         elif isinstance(body, HTTPBodyFile):
@@ -306,7 +321,10 @@ class HTTPBodyWriter(ABC):
             # lived requests.
             try:
                 for _ in body.stream:
-                    await self._write(asWritable(_), True)
+                    if isinstance(_, StreamControl):
+                        self.processControl(_)
+                    else:
+                        await self._write(asWritable(_), True)
             finally:
                 await self._write(b"", False)
             return True
@@ -315,7 +333,10 @@ class HTTPBodyWriter(ABC):
             # lived requests.
             try:
                 async for _ in body.stream:
-                    await self._write(asWritable(_), True)
+                    if isinstance(_, StreamControl):
+                        self.processControl(_)
+                    else:
+                        await self._write(asWritable(_), True)
             finally:
                 await self._write(b"", False)
             return True
@@ -330,6 +351,10 @@ class HTTPBodyWriter(ABC):
             if chunk:
                 await self._writeBytes(chunk)
         return True
+
+    def processControl(self, atom: StreamControl):
+        if atom is CLOSE_STREAM:
+            self.shouldClose = True
 
     async def _writeFile(self, path: Path, size: int = 64_000) -> bool:
         with open(path, "rb") as f:

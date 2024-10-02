@@ -24,6 +24,7 @@ class ServerState:
     isRunning: bool = True
 
     def stop(self) -> None:
+        info("Server stopping…")
         self.isRunning = False
 
     def onException(
@@ -39,6 +40,9 @@ class ServerOptions(NamedTuple):
     port: int = 8000
     backlog: int = 10_000
     timeout: float = 10.0
+    # This is the polling timeout for accepting new requests. Every second is
+    # good
+    polling: float = 1.0
     readsize: int = 4_096
     # NOTE: Make sure this matches the ALB configuration,
     # «The target closed the connection with a TCP RST or a TCP FIN while the load
@@ -176,7 +180,12 @@ class AIOSocketServer:
             # SEE: https://repost.aws/knowledge-center/apache-backend-elb
             # TODO: We should manage the Keep-Alive header
             # Keep-Alive: timeout=5, max=1000
-            while keep_alive:
+            # --
+            # NOTE: The response can notify through StreamControl if the
+            # connection should be closed. When it is, we proceed. This
+            # typically happen when there's an underlying error with
+            # a response that returns a stream.
+            while keep_alive and not writer.shouldClose:
                 req: HTTPRequest | None = None
                 # --
                 # We may have more than one request in each payload when
@@ -333,6 +342,7 @@ class AIOSocketServer:
                 await writer.write(SERVER_ERROR)
             except Exception as e:
                 exception(e)
+                # TODO: Should close?
 
         return res
 
@@ -378,12 +388,8 @@ class AIOSocketServer:
                 if options.condition and not options.condition():
                     break
                 try:
-                    res = await (
-                        asyncio.wait_for(
-                            loop.sock_accept(server), timeout=options.timeout
-                        )
-                        if options.timeout
-                        else loop.sock_accept(server)
+                    res = await asyncio.wait_for(
+                        loop.sock_accept(server), timeout=options.polling or 1.0
                     )
                     if res is None:
                         continue
@@ -419,9 +425,11 @@ def run(
     backlog: int = OPTIONS.backlog,
     condition: Callable[[], bool] | None = None,
     timeout: float = OPTIONS.timeout,
+    polling: float = OPTIONS.polling,
     logRequests: bool = OPTIONS.logRequests,
     keepalive: float = OPTIONS.keepalive,
 ) -> None:
+    """High level function to run the server."""
     unlimit(LimitType.Files)
     options = ServerOptions(
         host=host,
@@ -429,7 +437,9 @@ def run(
         backlog=backlog,
         condition=condition,
         timeout=timeout,
+        polling=polling,
         logRequests=logRequests,
+        keepalive=keepalive,
     )
     app = mount(*components)
     try:
