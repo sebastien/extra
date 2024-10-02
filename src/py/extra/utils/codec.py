@@ -15,23 +15,47 @@ class BytesTransform(ABC):
         """Ensures that the bytes transform is flushed, for chunked encodings this will produce a new chunk."""
 
 
-class GZipDecoder(BytesTransform):
-    __slots__ = ["decompressor"]
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.decompressor = zlib.decompressobj(wbits=zlib.MAX_WBITS | 32)
+class IdemCodec(BytesTransform):
+    """A codec that doesn't change anything, can be used when you need to swap in another codec."""
 
     def feed(self, chunk: bytes, more: bool = False) -> bytes | None | Literal[False]:
-        return self.decompressor.decompress(chunk)
+        return chunk
 
     def flush(
         self,
     ) -> bytes | None | Literal[False]:
-        return self.decompressor.flush()
+        return None
+
+
+class PipelineCodec(BytesTransform):
+    """A way to compose transforms together."""
+
+    def __init__(self, transforms: list[BytesTransform]):
+        super().__init__()
+        self.transforms: list[BytesTransform] = transforms
+
+    def decoder(self) -> "PipelineCodec":
+        """Returns the decoder/coder pipeline for this codec"""
+        return PipelineCodec(reversed(self.transforms))
+
+    def feed(self, chunk: bytes, more: bool = False) -> bytes | None | Literal[False]:
+        res: bytes | Literal[False] | None = chunk
+        for t in self.transforms:
+            if not res:
+                return res
+            else:
+                res = t.feed(res)
+        return res
+
+    def flush(
+        self,
+    ) -> bytes | None | Literal[False]:
+        return None
 
 
 class GZipEncoder(BytesTransform):
+    """Encode bytes as Gzip"""
+
     __slots__ = ["compressor"]
 
     def __init__(self, compression_level: int = 6) -> None:
@@ -47,8 +71,28 @@ class GZipEncoder(BytesTransform):
         return self.compressor.flush()
 
 
+class GZipDecoder(BytesTransform):
+    """Decodes bytes as Gzip"""
+
+    __slots__ = ["decompressor"]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.decompressor = zlib.decompressobj(wbits=zlib.MAX_WBITS | 32)
+
+    def feed(self, chunk: bytes, more: bool = False) -> bytes | None | Literal[False]:
+        return self.decompressor.decompress(chunk)
+
+    def flush(
+        self,
+    ) -> bytes | None | Literal[False]:
+        return self.decompressor.flush()
+
+
 # SEE: https://httpwg.org/specs/rfc9112.html#chunked.encoding
 class ChunkedEncoder(BytesTransform):
+    """Encodes as chunks"""
+
     __slots__ = ["buffer"]
 
     def __init__(self) -> None:
@@ -70,6 +114,8 @@ class ChunkedEncoder(BytesTransform):
 
 
 class ChunkedDecoder(BytesTransform):
+    """Decodes as chunks"""
+
     __slots__ = ["buffer", "chunkSize", "readingSize"]
 
     def __init__(self) -> None:
