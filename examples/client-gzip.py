@@ -1,25 +1,12 @@
 import asyncio
 from extra.client import HTTPClient
 from extra.http.model import HTTPBodyBlob
-
-import zlib
-
-
-class GzipDecoder:
-    def __init__(self):
-        self.decompressor = zlib.decompressobj(wbits=zlib.MAX_WBITS | 32)
-        self.buffer = io.BytesIO()
-
-    def feed(self, chunk: bytes) -> bytes | None:
-        return self.decompressor.decompress(chunk)
-
-    def flush(self) -> bytes | None:
-        return self.decompressor.flush()
+from extra.utils.codec import GZipDecoder
 
 
 # NOTE: Start "examples/sse.py"
 async def main(path: str, host: str = "127.0.0.1", port: int = 443, ssl: bool = True):
-    transform = GzipDecoder()
+    transform = GZipDecoder()
 
     with open("/dev/stdout", "wb") as f:
         async for atom in HTTPClient.Request(

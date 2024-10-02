@@ -3,6 +3,8 @@ from .json import json
 from .primitives import TPrimitive
 
 DEFAULT_ENCODING: str = "utf8"
+EOL: bytes = b"\r\n"
+END: int = 1
 
 
 class Control(NamedTuple):
@@ -30,10 +32,6 @@ def asWritable(value: str | bytes | TPrimitive) -> bytes:
         return value.encode(DEFAULT_ENCODING)
     else:
         return json(value)
-
-
-EOL: bytes = b"\r\n"
-END: int = 1
 
 
 class LineParser:
