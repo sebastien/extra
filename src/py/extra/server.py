@@ -1,5 +1,7 @@
 from typing import Callable, NamedTuple, Any, Coroutine, Literal
 from pathlib import Path
+from signal import SIGINT, SIGTERM
+from dataclasses import dataclass
 import socket
 import asyncio
 from .utils.logging import exception, info, warning, event
@@ -15,6 +17,21 @@ from .http.model import (
 )
 from .http.parser import HTTPParser
 from .config import HOST, PORT
+
+
+@dataclass(slots=True)
+class ServerState:
+    isRunning: bool = True
+
+    def stop(self) -> None:
+        self.isRunning = False
+
+    def onException(
+        self, loop: asyncio.AbstractEventLoop, context: dict[str, Any]
+    ) -> None:
+        e = context.get("exception")
+        if e:
+            exception(e)
 
 
 class ServerOptions(NamedTuple):
@@ -336,6 +353,13 @@ class AIOSocketServer:
         except RuntimeError:
             loop = asyncio.new_event_loop()
 
+        # Manage server state
+        state = ServerState()
+        # Registers handlers for signals and exception (so that we log them)
+        loop.add_signal_handler(SIGINT, lambda: state.stop())
+        loop.add_signal_handler(SIGTERM, lambda: state.stop())
+        loop.set_exception_handler(state.onException)
+
         info(
             "Extra AIO Server listening",
             icon="🚀",
@@ -344,7 +368,7 @@ class AIOSocketServer:
         )
 
         try:
-            while True:
+            while state.isRunning:
                 if options.condition and not options.condition():
                     break
                 try:
