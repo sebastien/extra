@@ -24,6 +24,7 @@ from .api import ResponseFactory
 
 TControl = bool | None
 
+T = TypeVar("T")
 
 # -----------------------------------------------------------------------------
 #
@@ -243,8 +244,14 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
     def header(self, name: str) -> str | None:
         return self._headers.headers.get(headername(name))
 
-    def param(self, name: str) -> str | None:
-        return self.query.get(name) if self.query else None
+    def param(
+        self,
+        name: str,
+        default: T | None = None,
+        processor: Callable[[str | None], T | None] | None = None,
+    ) -> str | T | None:
+        v = self.query.get(name, default)
+        return processor(v) if processor else v
 
     @property
     def contentType(self) -> str | None:
