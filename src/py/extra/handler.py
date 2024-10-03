@@ -11,9 +11,9 @@ from .model import Application, Service, mount
 from .http.model import (
     HTTPRequest,
     HTTPHeaders,
-    HTTPResponseFile,
-    HTTPResponseStream,
-    HTTPResponseAsyncStream,
+    HTTPBodyFile,
+    HTTPBodyStream,
+    HTTPBodyAsyncStream,
     HTTPBodyBlob,
     HTTPResponse,
     headername,
@@ -144,18 +144,18 @@ class AWSLambdaEvent:
             pass
         elif isinstance(response.body, HTTPBodyBlob):
             buffer.write(response.body.payload or b"")
-        elif isinstance(response.body, HTTPResponseFile):
+        elif isinstance(response.body, HTTPBodyFile):
             with open(response.body.path, "rb") as f:
                 while data := f.read(32_000):
                     buffer.write(data)
-        elif isinstance(response.body, HTTPResponseStream):
+        elif isinstance(response.body, HTTPBodyStream):
             # TODO: Should handle exception
             try:
                 for chunk in response.body.stream:
                     buffer.write(asWritable(chunk))
             finally:
                 response.body.stream.close()
-        elif isinstance(response.body, HTTPResponseAsyncStream):
+        elif isinstance(response.body, HTTPBodyAsyncStream):
             # No keep alive with streaming as these are long
             # lived requests.
             try:

@@ -127,6 +127,7 @@ class HeadersParser:
 
 
 class BodyEOSParser:
+    """Looks for an End-Of-Strem (EOS) delimiter in the body."""
 
     __slots__ = ["line", "data"]
 
@@ -159,6 +160,33 @@ class BodyEOSParser:
         else:
             data = self.line.flush()
             return data, read
+
+
+class BodyRestParser:
+    """Consumes everything that is given to it."""
+
+    __slots__ = ["buffer"]
+
+    def __init__(self) -> None:
+        self.buffer: bytearray = bytearray()
+
+    def flush(self) -> HTTPBodyBlob:
+        # TODO: We should check it's expected
+        res: HTTPBodyBlob = HTTPBodyBlob(
+            self.buffer[:],
+            len(self.buffer),
+        )
+        self.reset()
+        return res
+
+    def reset(self) -> "BodyRestParser":
+        self.buffer.clear()
+        return self
+
+    def feed(self, chunk: bytes, start: int = 0) -> tuple[bool | None, int]:
+        self.buffer += chunk[start:]
+        # We read everything and put it in the bugger
+        return True, len(chunk) - start
 
 
 class BodyLengthParser:
@@ -212,8 +240,10 @@ class HTTPParser:
     def __init__(self) -> None:
         self.message: MessageParser = MessageParser()
         self.headers: HeadersParser = HeadersParser()
+        # FIXME: Not sure we need body EOS parser anymore.
         self.bodyEOS: BodyEOSParser = BodyEOSParser()
         self.bodyLength: BodyLengthParser = BodyLengthParser()
+        self.bodyRest: BodyRestParser = BodyRestParser()
         self.parser: (
             MessageParser | HeadersParser | BodyEOSParser | BodyLengthParser
         ) = self.message
@@ -267,30 +297,36 @@ class HTTPParser:
                                 query=parseQuery(line.query),
                                 headers=headers or HTTPHeaders({}),
                                 protocol=line.protocol,
+                                # FIXME: Is there remaining content?
                                 body=HTTPBodyBlob(b"", 0),
                             )
                             self.parser = self.message.reset()
                         elif headers is not None:
                             if headers.contentLength is None:
-                                self.parser = self.bodyEOS.reset(b"\n")
+                                # FIXME: Not sure what the EOS parser was for
+                                # self.parser = self.bodyEOS.reset(b"\n")
+                                self.parser = self.bodyRest.reset()
                                 yield HTTPProcessingStatus.Body
                             else:
                                 self.parser = self.bodyLength.reset(
                                     headers.contentLength
                                 )
                                 yield HTTPProcessingStatus.Body
-                elif self.parser is self.bodyEOS or self.parser is self.bodyLength:
+                elif (
+                    self.parser is self.bodyEOS
+                    or self.parser is self.bodyLength
+                    or self.parser is self.bodyRest
+                ):
                     if self.requestLine is None or self.requestHeaders is None:
                         yield HTTPProcessingStatus.BadFormat
                     else:
                         headers = self.requestHeaders
                         line = self.requestLine
                         # NOTE: This is an awkward dance around the type checker
-                        body = (
-                            self.bodyEOS.flush()
-                            if self.parser is self.bodyEOS
-                            else self.bodyLength.flush()
-                        )
+                        if self.parser is self.bodyRest:
+                            self.parser.feed(chunk[offset:])
+                            offset = len(chunk)
+                        body = self.parser.flush()
                         yield (
                             HTTPRequest(
                                 method=line.method,
@@ -313,8 +349,9 @@ class HTTPParser:
                     self.parser = self.message.reset()
                 else:
                     raise RuntimeError(f"Unsupported parser: {self.parser}")
-            # We increase the offset with the read bytes
-            offset += read
+                # NOTE: Need to make sure the indentation is correct here
+                # We increase the offset with the read bytes
+                offset += read
 
 
 def parseQuery(text: str) -> dict[str, str]:
