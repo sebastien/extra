@@ -6,7 +6,7 @@ from base64 import b64encode
 
 from .status import HTTP_STATUS
 from ..utils.json import json
-from ..utils.files import contentType
+from ..utils.files import contentType as getContentType
 
 T = TypeVar("T")
 
@@ -130,10 +130,11 @@ class ResponseFactory(ABC, Generic[T]):
         path: Path | str,
         headers: dict[str, str] | None = None,
         status: int = 200,
+        contentType:str|None = None
     ) -> T:
         # TODO: We should have a much more detailed file handling, supporting ranges, etags, etc.
         p: Path = path if isinstance(path, Path) else Path(path)
-        content_type: str = contentType(p)
+        content_type: str = contentType or getContentType(p)
         content_length: str = str(p.stat().st_size)
         base_headers = {"Content-Type": content_type, "Content-Length": content_length}
         return self.respond(

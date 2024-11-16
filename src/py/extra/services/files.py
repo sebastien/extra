@@ -56,7 +56,13 @@ class FileService(Service):
         if localPath.is_dir():
             return self.renderDir(request, path, localPath)
         else:
-            return request.respondFile(localPath)
+            return request.respondFile(localPath, contentType=self.guessContentType(localPath))
+
+    def guessContentType(self, path:Path) -> str|None:
+        if path.name == "importmap.json":
+            return "application/importmap+json"
+        else:
+            return None
 
     def renderDir(
         self, request: HTTPRequest, path: str, localPath: Path
@@ -155,6 +161,7 @@ class FileService(Service):
         if not (local_path and self.canRead(request, local_path)):
             return request.notAuthorized(f"Not authorized to access path: {path}")
         else:
+            # FIXME: This should include the headers, type, etc, and it does not
             return request.respond("")
 
     @cors
