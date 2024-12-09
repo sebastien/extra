@@ -8,6 +8,7 @@ from .utils.logging import exception, info, warning, event
 from .utils.codec import BytesTransform
 from .utils.limits import LimitType, unlimit
 from .model import Application, Service, mount
+import threading
 from .http.model import (
     HTTPRequest,
     HTTPResponse,
@@ -52,6 +53,7 @@ class ServerOptions(NamedTuple):
     # SEE: https://repost.aws/questions/QU-_rSWDtwSmOD5wBO5tsrwg/load-balancer-502-bad-gateway
     keepalive: float = 3_600
     logRequests: bool = True
+    stopSignals: bool = True
     condition: Callable[[], bool] | None = None
 
 
@@ -371,9 +373,15 @@ class AIOSocketServer:
 
         # Manage server state
         state = ServerState()
-        # Registers handlers for signals and exception (so that we log them)
-        loop.add_signal_handler(SIGINT, lambda: state.stop())
-        loop.add_signal_handler(SIGTERM, lambda: state.stop())
+        # Registers handlers for signals and exception (so that we log them). Note
+        # that we'll get a `set_wakeup_fd only works in main thread of the main interpreter`
+        # when this is not run out of the main thread.
+        if (
+            options.stopSignals
+            and threading.current_thread() is threading.main_thread()
+        ):
+            loop.add_signal_handler(SIGINT, lambda: state.stop())
+            loop.add_signal_handler(SIGTERM, lambda: state.stop())
         loop.set_exception_handler(state.onException)
 
         info(
