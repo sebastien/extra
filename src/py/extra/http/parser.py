@@ -14,6 +14,7 @@ from .model import (
 
 
 class MessageParser:
+    """Parses an HTTP request or response line."""
 
     __slots__ = ["line", "value"]
 
@@ -286,7 +287,7 @@ class HTTPParser:
                             and (
                                 self.requestLine.method not in self.METHOD_HAS_BODY
                                 or headers
-                                and headers.contentLength == 0,
+                                and headers.contentLength == 0
                             )
                         ):
                             line = self.requestLine
@@ -312,6 +313,9 @@ class HTTPParser:
                                     headers.contentLength
                                 )
                                 yield HTTPProcessingStatus.Body
+                    else:
+                        # `l` is going to be the header name as a string there.
+                        pass
                 elif (
                     self.parser is self.bodyEOS
                     or self.parser is self.bodyLength

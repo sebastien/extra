@@ -249,6 +249,7 @@ class AIOSocketServer:
                     # This is a regular connection close
                     pass
                 else:
+                    # TODO: We should extract the client IP
                     warning(
                         "Client did not send any data",
                         ReadCount=read_count,
@@ -257,6 +258,7 @@ class AIOSocketServer:
                         Responses=res_count,
                     )
             elif status is HTTPProcessingStatus.NoData and not res_count:
+                # TODO: We should extract the client IP
                 warning(
                     "Client did not feed a complete request",
                     ReadCount=read_count,
@@ -266,6 +268,7 @@ class AIOSocketServer:
                 )
             elif status is HTTPProcessingStatus.Timeout:
                 if not req_count or req_count != res_count:
+                    # TODO: We should extract the client IP
                     warning(
                         "Client timed out",
                         ReadCount=read_count,

@@ -125,12 +125,14 @@ class ResponseFactory(ABC, Generic[T]):
     ) -> T:
         return self.respond(content=html, contentType="text/html", status=status)
 
+    # TODO: Support (req) Range: bytes=100-200
+    # TODO: Support (res) Content-Range: bytes 100-200/1000 (start-end/size)
     def respondFile(
         self,
         path: Path | str,
         headers: dict[str, str] | None = None,
         status: int = 200,
-        contentType:str|None = None
+        contentType: str | None = None,
     ) -> T:
         # TODO: We should have a much more detailed file handling, supporting ranges, etags, etc.
         p: Path = path if isinstance(path, Path) else Path(path)
