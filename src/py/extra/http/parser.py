@@ -324,6 +324,9 @@ class HTTPParser:
                     if self.requestLine is None or self.requestHeaders is None:
                         yield HTTPProcessingStatus.BadFormat
                     else:
+                        # FIXME: In some circumstances (for POST requests),
+                        # reading the body will time out, and then the request
+                        # will be duplicated.
                         headers = self.requestHeaders
                         line = self.requestLine
                         # NOTE: This is an awkward dance around the type checker
@@ -331,6 +334,9 @@ class HTTPParser:
                             self.parser.feed(chunk[offset:])
                             offset = len(chunk)
                         body = self.parser.flush()
+                        # NOTE: Careful here as we may create a request that has
+                        # a body with remaining data. The HTTP request will need
+                        # to make sure it can continue reading the body.
                         yield (
                             HTTPRequest(
                                 method=line.method,

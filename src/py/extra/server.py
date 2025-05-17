@@ -100,6 +100,12 @@ class AIOSocketBodyReader(HTTPBodyReader):
     async def _read(
         self, timeout: float = 1.0, size: int | None = None
     ) -> bytes | None:
+        info(
+            "Reading Body",
+            Client=f"{id(self.socket):x}",
+            Size=size,
+            Timeout=timeout,
+        )
         return await asyncio.wait_for(
             self.loop.sock_recv(self.socket, size or self.size),
             timeout=timeout,
@@ -213,15 +219,31 @@ class AIOSocketServer:
                 # request in the same payload, so we need to be prepared
                 # to answer more than one request.
                 stream = parser.feed(buffer[:n] if n != size else buffer)
+                # TODO: Should be debug
+                info(
+                    "Reading Requests(s)",
+                    Client=f"{id(client):x}",
+                    Read=n,
+                    Iteration=iteration,
+                    Count=req_count,
+                )
                 while True:
+
                     try:
                         atom = next(stream)
+                        # TODO: Should be debug
+                        info("Request Atom", Atom=atom.__class__.__name__)
                     except StopIteration:
+                        # TODO: Should be debug
+                        info("Request End")
                         break
                     if atom is HTTPProcessingStatus.Complete:
                         status = atom
                     elif isinstance(atom, HTTPRequest):
                         req = atom
+                        # We pass the reader to the request, as for instance
+                        # the request may need more than what was available
+                        # from the socket.
                         req._reader = reader
                         # Logs the request method
                         if options.logRequests:
@@ -234,8 +256,19 @@ class AIOSocketServer:
                             keep_alive = False
                         if await cls.SendResponse(req, app, writer):
                             res_count += 1
+                            info("Request Sent", Iteration=iteration, Count=res_count)
+                        else:
+                            warning(
+                                "Sending Response Failed",
+                                Iteration=iteration,
+                                Count=res_count,
+                            )
                 # We clear what we've read from the buffer
-                del buffer[:n]
+                if n != size:
+                    del buffer[:n]
+                else:
+                    # FIXME: Or is it buffer.clear()?
+                    del buffer[:]
                 iteration += 1
 
             # NOTE: We'll need to think about the loading of the body, which

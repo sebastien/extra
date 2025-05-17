@@ -19,6 +19,7 @@ import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from enum import Enum
+from ..utils.logging import warning
 from ..utils.primitives import TPrimitive
 from .status import HTTP_STATUS
 from ..utils.io import DEFAULT_ENCODING, asWritable
@@ -139,26 +140,58 @@ BODY_READER_TIMEOUT: float = 1.0
 
 
 class HTTPBodyIO:
-    __slots__ = ["reader", "read", "expected", "remaining"]
+    __slots__ = ["reader", "read", "expected", "remaining", "existing"]
     """Represents a body that is loaded from a reader IO."""
 
-    def __init__(self, reader: "HTTPBodyReader", expected: int | None = None):
+    def __init__(
+        self,
+        reader: "HTTPBodyReader",
+        expected: int | None = None,
+        existing: bytes | None = None,
+    ):
         self.reader: HTTPBodyReader = reader
         self.read: int = 0
         self.expected: int | None = expected
         self.remaining: int | None = expected
+        self.existing: bytes | None = existing
 
-    async def load(
+    async def _read(
         self,
     ) -> bytes | None:
-        """Loads all the data and returns a list of bodies."""
-        payload = await self.reader.load()
-        if payload:
-            n = len(payload)
-            self.read += n
-            if self.remaining is not None:
+        """Reads the next available bytes"""
+        if self.existing and self.read == 0:
+            self.read += len(self.existing)
+            return self.existing
+        elif self.remaining:
+            # FIXME: We should probably have a timeout there
+            try:
+                payload = await self.reader.load()
+            except TimeoutError:
+                warning(
+                    "Request body loading timed out",
+                    Remaining=self.remaining,
+                    Read=self.read,
+                )
+                return None
+            if payload:
+                n = len(payload)
+                self.read += n
                 self.remaining -= n
-        return payload
+            return payload
+        else:
+            return None
+
+    async def load(self) -> bytes:
+        """Fully loads the body."""
+        res = bytearray()
+        # FIXME: This would read other requests as well if there is no
+        # remaining -- there should be at least a delimiter.
+        while True:
+            chunk = await self._read()
+            if chunk:
+                res += chunk
+            else:
+                return bytes(res)
 
 
 class HTTPBodyBlob(NamedTuple):
@@ -457,10 +490,17 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
 
     @property
     def body(self) -> HTTPBodyIO | HTTPBodyBlob:
+        b = self._body
         if self._body is None:
             if not self._reader:
                 raise RuntimeError("Request has no reader, can't read body")
             self._body = HTTPBodyIO(self._reader)
+        elif isinstance(self._body, HTTPBodyBlob) and self._body.remaining:
+            if not self._reader:
+                raise RuntimeError("Request has no reader, can't read body")
+            self._body = HTTPBodyIO(
+                self._reader, expected=self._body.remaining, existing=self._body.payload
+            )
         return self._body
 
     @property
