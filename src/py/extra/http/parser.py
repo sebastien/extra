@@ -9,6 +9,7 @@ from .model import (
     HTTPBodyBlob,
     HTTPAtom,
     HTTPProcessingStatus,
+    TLSHandshake,
     headername,
 )
 
@@ -16,11 +17,12 @@ from .model import (
 class MessageParser:
     """Parses an HTTP request or response line."""
 
-    __slots__ = ["line", "value"]
+    __slots__ = ["line", "value", "skipping"]
 
     def __init__(self) -> None:
         self.line: LineParser = LineParser()
-        self.value: HTTPRequestLine | HTTPResponseLine | None = None
+        self.value: HTTPRequestLine | HTTPResponseLine | TLSHandshake | None = None
+        self.skipping: int = 0
 
     def flush(self) -> "HTTPRequestLine|HTTPResponseLine|None":
         res = self.value
@@ -30,31 +32,50 @@ class MessageParser:
     def reset(self) -> "MessageParser":
         self.line.reset()
         self.value = None
+        self.skipping = 0
         return self
 
     def feed(self, chunk: bytes, start: int = 0) -> tuple[bool | None, int]:
-        line, read = self.line.feed(chunk, start)
-        if line:
-            # NOTE: This is safe
-            l = line.decode("ascii")
-            if l.startswith("HTTP/"):
-                protocol, status, message = l.split(" ", 2)
-                self.value = HTTPResponseLine(
-                    protocol,
-                    int(status),
-                    message,
-                )
-            else:
-                i = l.find(" ")
-                j = l.rfind(" ")
-                p: list[str] = l[i + 1 : j].split("?", 1)
-                # NOTE: There may be junk before the method name
-                self.value = HTTPRequestLine(
-                    l[0:i], p[0], p[1] if len(p) > 1 else "", l[j + 1 :]
-                )
-            return True, read
-        else:
+        n = len(chunk)
+        available = n - start
+        # FIXME: In the future, we may want to do something with the TLS
+        # handshake. This is something you can trigger with Firefox.
+        if self.skipping:
+            # We have reamining data to read/skip, so we do that
+            read = min(available, self.skipping)
+            self.skipping -= read
             return None, read
+        elif (n - start) >= 5 and chunk[start] == 0x16:
+            # This is a TLS Handshake, we parse the length
+            size = 5 + (chunk[start + 3] << 8) + chunk[start + 4]
+            if available >= size:
+                return None, size
+            else:
+                self.skipping = size - available
+                return None, available
+        else:
+            line, read = self.line.feed(chunk, start)
+            if line:
+                # NOTE: This is safe
+                l = line.decode("ascii")
+                if l.startswith("HTTP/"):
+                    protocol, status, message = l.split(" ", 2)
+                    self.value = HTTPResponseLine(
+                        protocol,
+                        int(status),
+                        message,
+                    )
+                else:
+                    i = l.find(" ")
+                    j = l.rfind(" ")
+                    p: list[str] = l[i + 1 : j].split("?", 1)
+                    # NOTE: There may be junk before the method name
+                    self.value = HTTPRequestLine(
+                        l[0:i], p[0], p[1] if len(p) > 1 else "", l[j + 1 :]
+                    )
+                return True, read
+            else:
+                return None, read
 
     def __str__(self) -> str:
         return f"MessageParser({self.value})"

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import socket
 import asyncio
 import threading
-from .utils.logging import exception, info, warning, event
+from .utils.logging import exception, info, warning, event, debug, logged
 from .utils.codec import BytesTransform
 from .utils.limits import LimitType, unlimit
 from .model import Application, Service, mount
@@ -100,10 +100,10 @@ class AIOSocketBodyReader(HTTPBodyReader):
     async def _read(
         self, timeout: float = 1.0, size: int | None = None
     ) -> bytes | None:
-        info(
+        logged(debug) and debug(
             "Reading Body",
             Client=f"{id(self.socket):x}",
-            Size=size,
+            Size=size or self.size,
             Timeout=timeout,
         )
         return await asyncio.wait_for(
@@ -218,9 +218,9 @@ class AIOSocketServer:
                 # NOTE: With HTTP Pipelining, we may receive more than one
                 # request in the same payload, so we need to be prepared
                 # to answer more than one request.
-                stream = parser.feed(buffer[:n] if n != size else buffer)
-                # TODO: Should be debug
-                info(
+                chunk = buffer[:n] if n != size else buffer
+                stream = parser.feed(chunk)
+                debug(
                     "Reading Requests(s)",
                     Client=f"{id(client):x}",
                     Read=n,
@@ -231,11 +231,10 @@ class AIOSocketServer:
 
                     try:
                         atom = next(stream)
-                        # TODO: Should be debug
-                        info("Request Atom", Atom=atom.__class__.__name__)
+                        debug("Request Atom", Atom=atom.__class__.__name__)
                     except StopIteration:
                         # TODO: Should be debug
-                        info("Request End")
+                        debug("Requests End", Iteration=iteration, Count=res_count)
                         break
                     if atom is HTTPProcessingStatus.Complete:
                         status = atom

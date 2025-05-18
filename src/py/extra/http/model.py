@@ -58,6 +58,13 @@ def headername(name: str, *, headers: dict[str, str] = {}) -> str:
 # -----------------------------------------------------------------------------
 
 
+class TLSHandshake(NamedTuple):
+    """Represents a TLS handshake"""
+
+    # Empty for now
+    pass
+
+
 class HTTPRequestLine(NamedTuple):
     """Represents a request status line"""
 
@@ -165,7 +172,7 @@ class HTTPBodyIO:
         elif self.remaining:
             # FIXME: We should probably have a timeout there
             try:
-                payload = await self.reader.load()
+                payload = await self.reader.load(size=self.remaining)
             except TimeoutError:
                 warning(
                     "Request body loading timed out",
@@ -290,7 +297,7 @@ class HTTPBodyReader(ABC):
     async def read(
         self, timeout: float = BODY_READER_TIMEOUT, size: int | None = None
     ) -> bytes | None:
-        chunk = await self._read(timeout)
+        chunk = await self._read(timeout=timeout, size=size)
         if chunk is not None and self.transform:
             res = self.transform.feed(chunk)
             return res if res else None
@@ -304,15 +311,24 @@ class HTTPBodyReader(ABC):
 
     # NOTE: This is a dangerous operation, as this way bloat the whole memory.
     # Instead, loading should spool the file.
-    async def load(self, timeout: float = BODY_READER_TIMEOUT) -> bytes:
+    async def load(
+        self, timeout: float = BODY_READER_TIMEOUT, size: int | None = None
+    ) -> bytes:
         """Loads the entire body into a bytes array."""
         data = bytearray()
+        # We may have an expected size to read
+        left = size
         while True:
-            chunk = await self.read(timeout)
+            chunk = await self.read(timeout=timeout, size=left)
             if not chunk:
                 break
             else:
                 data += chunk
+            # If we had a size to read, then we update it
+            if size is not None:
+                left = size - len(chunk)
+                if left <= 0:
+                    break
         return data
 
     async def spool(

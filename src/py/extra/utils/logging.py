@@ -144,6 +144,28 @@ def entry(
     )
 
 
+def debug(
+    message: str,
+    *,
+    origin: str | None = None,
+    at: float | None = None,
+    icon: str | None = None,
+    stack: TStack | bool | None = None,
+    **context: TPrimitive,
+) -> LogEntry:
+    return send(
+        entry(
+            message=message,
+            level=LogLevel.Debug,
+            origin=origin,
+            at=at,
+            context=context,
+            icon=icon,
+            stack=callstack(1) if stack is True else stack if stack else None,
+        )
+    )
+
+
 def info(
     message: str,
     *,
@@ -276,6 +298,14 @@ def exception(
     # Return the exception so that this function can be called like:
     #   raise onException(exception)
     return exception
+
+
+def logged(item) -> bool:
+    """Takes one of the logging function, and tells if it is currently
+    supported. This is used to guard against running the whole entry
+    building when not necessary."""
+    # TODO: Implement based on log level
+    return True
 
 
 # EOF
