@@ -1,6 +1,5 @@
 import bz2
 from pathlib import Path
-from io import BytesIO
 from extra.protocols.http import HTTPParser
 
 BASE = Path(__file__).absolute().parent.parent

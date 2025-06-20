@@ -1,8 +1,6 @@
 #!/usr/bin/python
 import os
 import socket
-import select
-import time
 
 RESPONSE = b"""HTTP/1.1 200 OK\r
 Content-Type: text/plain\r

@@ -9,14 +9,14 @@ from .utils.io import asWritable
 from .utils.logging import exception
 from .model import Application, Service, mount
 from .http.model import (
-    HTTPRequest,
-    HTTPHeaders,
-    HTTPBodyFile,
-    HTTPBodyStream,
-    HTTPBodyAsyncStream,
-    HTTPBodyBlob,
-    HTTPResponse,
-    headername,
+	HTTPRequest,
+	HTTPHeaders,
+	HTTPBodyFile,
+	HTTPBodyStream,
+	HTTPBodyAsyncStream,
+	HTTPBodyBlob,
+	HTTPResponse,
+	headername,
 )
 
 
@@ -78,204 +78,203 @@ from .http.model import (
 
 TAWSRequestContext = dict[str, str | bytes | int | float | bool | dict[str, str] | None]
 TAWSEvent = dict[
-    str, str | bytes | int | float | bool | dict[str, str] | TAWSRequestContext | None
+	str, str | bytes | int | float | bool | dict[str, str] | TAWSRequestContext | None
 ]
 
 
 class AWSLambdaEvent:
-    @staticmethod
-    def Create(
-        method: str,
-        uri: str,
-        headers: dict[str, str] | None = None,
-        body: str | bytes | None = None,
-    ) -> TAWSEvent:
-        """Creates an AWS Lambda API Gateway event from the given parameters."""
-        url = urlparse(uri)
-        params = {k: v[0] for k, v in parse_qs(url.query).items()}
-        payload: TAWSEvent = {
-            "httpMethod": method,
-            "path": url.path,
-            "queryStringParameters": params,
-            "headers": {k.lower(): v for k, v in (headers or {}).items()},
-            "host": "localhost",
-        }
-        if body:
-            payload["body"] = b64encode(body) if isinstance(body, bytes) else body
-            payload["isBase64Encoded"] = isinstance(body, bytes)
-        if headers:
-            payload["headers"] = headers
-        return payload
+	@staticmethod
+	def Create(
+		method: str,
+		uri: str,
+		headers: dict[str, str] | None = None,
+		body: str | bytes | None = None,
+	) -> TAWSEvent:
+		"""Creates an AWS Lambda API Gateway event from the given parameters."""
+		url = urlparse(uri)
+		params = {k: v[0] for k, v in parse_qs(url.query).items()}
+		payload: TAWSEvent = {
+			"httpMethod": method,
+			"path": url.path,
+			"queryStringParameters": params,
+			"headers": {k.lower(): v for k, v in (headers or {}).items()},
+			"host": "localhost",
+		}
+		if body:
+			payload["body"] = b64encode(body) if isinstance(body, bytes) else body
+			payload["isBase64Encoded"] = isinstance(body, bytes)
+		if headers:
+			payload["headers"] = headers
+		return payload
 
-    @staticmethod
-    def AsRequest(event: dict[str, Any]) -> HTTPRequest:
-        body: bytes = (
-            (
-                b64decode(event["body"].encode())
-                if event.get("isBase64Encoded")
-                else event["body"].encode()
-            )
-            if "body" in event
-            else b""
-        )
-        raw_headers: dict[str, str] = {
-            headername(k): v
-            for k, v in cast(dict[str, str], event.get("headers", {})).items()
-        }
-        # TODO: Should do params
-        return HTTPRequest(
-            method=event.get("httpMethod", "GET"),
-            path=event.get("path", "/"),
-            query=cast(dict[str, str], event.get("queryStringParameters", {})),
-            headers=HTTPHeaders(
-                raw_headers,
-                raw_headers.get("Content-Type"),
-                int(raw_headers.get("Content-Length", len(body))),
-            ),
-            body=HTTPBodyBlob(body),
-            # host=raw_headers.get("Host", "aws"),
-        )
+	@staticmethod
+	def AsRequest(event: dict[str, Any]) -> HTTPRequest:
+		body: bytes = (
+			(
+				b64decode(event["body"].encode())
+				if event.get("isBase64Encoded")
+				else event["body"].encode()
+			)
+			if "body" in event
+			else b""
+		)
+		raw_headers: dict[str, str] = {
+			headername(k): v
+			for k, v in cast(dict[str, str], event.get("headers", {})).items()
+		}
+		# TODO: Should do params
+		return HTTPRequest(
+			method=event.get("httpMethod", "GET"),
+			path=event.get("path", "/"),
+			query=cast(dict[str, str], event.get("queryStringParameters", {})),
+			headers=HTTPHeaders(
+				raw_headers,
+				raw_headers.get("Content-Type"),
+				int(raw_headers.get("Content-Length", len(body))),
+			),
+			body=HTTPBodyBlob(body),
+			# host=raw_headers.get("Host", "aws"),
+		)
 
-    @staticmethod
-    async def FromResponse(response: HTTPResponse) -> dict[str, Any]:
-        """Returns an AWS Lambda event corresponding to the given response."""
-        buffer = BytesIO()
-        if response.body is None:
-            pass
-        elif isinstance(response.body, HTTPBodyBlob):
-            buffer.write(response.body.payload or b"")
-        elif isinstance(response.body, HTTPBodyFile):
-            with open(response.body.path, "rb") as f:
-                while data := f.read(32_000):
-                    buffer.write(data)
-        elif isinstance(response.body, HTTPBodyStream):
-            # TODO: Should handle exception
-            try:
-                for chunk in response.body.stream:
-                    buffer.write(asWritable(chunk))
-            finally:
-                response.body.stream.close()
-        elif isinstance(response.body, HTTPBodyAsyncStream):
-            # No keep alive with streaming as these are long
-            # lived requests.
-            try:
-                async for chunk in response.body.stream:
-                    buffer.write(asWritable(chunk))
-            # TODO: Should handle exception
-            finally:
-                await response.body.stream.aclose()
-        elif response.body is None:
-            pass
-        else:
-            raise ValueError(f"Unsupported body format: {response.body}")
-        size = buffer.tell()
-        buffer.seek(0)
-        # We force the content length
-        response.setHeader("Content-Length", size)
-        content_type = response.getHeader("Content-Type") or "text/plain"
-        is_binary = (
-            False
-            if "text/" in content_type or content_type.startswith("application/json")
-            else True
-        )
-        body = buffer.read(size)
-        return {
-            "statusCode": response.status,
-            "headers": {headername(k): v for k, v in response.headers.headers.items()},
-            # FIXME: Ensure it's properly encoded
-            "body": b64encode(body) if is_binary else body.decode("utf8"),
-        }
+	@staticmethod
+	async def FromResponse(response: HTTPResponse) -> dict[str, Any]:
+		"""Returns an AWS Lambda event corresponding to the given response."""
+		buffer = BytesIO()
+		if response.body is None:
+			pass
+		elif isinstance(response.body, HTTPBodyBlob):
+			buffer.write(response.body.payload or b"")
+		elif isinstance(response.body, HTTPBodyFile):
+			with open(response.body.path, "rb") as f:
+				while data := f.read(32_000):
+					buffer.write(data)
+		elif isinstance(response.body, HTTPBodyStream):
+			# TODO: Should handle exception
+			try:
+				for chunk in response.body.stream:
+					buffer.write(asWritable(chunk))
+			finally:
+				response.body.stream.close()
+		elif isinstance(response.body, HTTPBodyAsyncStream):
+			# No keep alive with streaming as these are long
+			# lived requests.
+			try:
+				async for chunk in response.body.stream:
+					buffer.write(asWritable(chunk))
+			# TODO: Should handle exception
+			finally:
+				await response.body.stream.aclose()
+		elif response.body is None:
+			pass
+		else:
+			raise ValueError(f"Unsupported body format: {response.body}")
+		size = buffer.tell()
+		buffer.seek(0)
+		# We force the content length
+		response.setHeader("Content-Length", size)
+		content_type = response.getHeader("Content-Type") or "text/plain"
+		is_binary = (
+			False
+			if "text/" in content_type or content_type.startswith("application/json")
+			else True
+		)
+		body = buffer.read(size)
+		return {
+			"statusCode": response.status,
+			"headers": {headername(k): v for k, v in response.headers.headers.items()},
+			# FIXME: Ensure it's properly encoded
+			"body": b64encode(body) if is_binary else body.decode("utf8"),
+		}
 
 
 class AWSLambdaHandler:
+	def __init__(self, app: Application):
+		self.app: Application = app
 
-    def __init__(self, app: Application):
-        self.app: Application = app
-
-    async def handle(
-        self, event: dict[str, Any], context: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        req: HTTPRequest = AWSLambdaEvent.AsRequest(event)
-        r: HTTPResponse | Coroutine[Any, HTTPResponse, Any] = self.app.process(req)
-        if isinstance(r, HTTPResponse):
-            res: HTTPResponse = r
-        else:
-            res = await r
-        return await AWSLambdaEvent.FromResponse(res)
+	async def handle(
+		self, event: dict[str, Any], context: dict[str, Any] | None = None
+	) -> dict[str, Any]:
+		req: HTTPRequest = AWSLambdaEvent.AsRequest(event)
+		r: HTTPResponse | Coroutine[Any, HTTPResponse, Any] = self.app.process(req)
+		if isinstance(r, HTTPResponse):
+			res: HTTPResponse = r
+		else:
+			res = await r
+		return await AWSLambdaEvent.FromResponse(res)
 
 
 def request(event: dict[str, Any]) -> HTTPRequest:
-    return AWSLambdaEvent.AsRequest(event)
+	return AWSLambdaEvent.AsRequest(event)
 
 
 async def aresponse(
-    response: HTTPResponse | Coroutine[Any, HTTPResponse, Any]
+	response: HTTPResponse | Coroutine[Any, HTTPResponse, Any],
 ) -> dict[str, Any]:
-    if isinstance(response, HTTPResponse):
-        res: HTTPResponse = response
-    else:
-        res = await response
-    return await AWSLambdaEvent.FromResponse(res)
+	if isinstance(response, HTTPResponse):
+		res: HTTPResponse = response
+	else:
+		res = await response
+	return await AWSLambdaEvent.FromResponse(res)
 
 
 def response(
-    response: HTTPResponse | Coroutine[Any, HTTPResponse, Any]
+	response: HTTPResponse | Coroutine[Any, HTTPResponse, Any],
 ) -> dict[str, Any]:
-    return asyncio.run(aresponse(response))
+	return asyncio.run(aresponse(response))
 
 
 def handler(
-    *components: Application | Service,
+	*components: Application | Service,
 ) -> AWSLambdaHandler:
-    """Returns an AWS Lambda Handler function"""
-    app = mount(*components)
-    return AWSLambdaHandler(app)
+	"""Returns an AWS Lambda Handler function"""
+	app = mount(*components)
+	return AWSLambdaHandler(app)
 
 
 def event(
-    method: str,
-    uri: str,
-    headers: dict[str, str] | None = None,
-    body: str | bytes | None = None,
+	method: str,
+	uri: str,
+	headers: dict[str, str] | None = None,
+	body: str | bytes | None = None,
 ) -> dict[str, Any]:
-    return AWSLambdaEvent.Create(method=method, uri=uri, headers=headers, body=body)
+	return AWSLambdaEvent.Create(method=method, uri=uri, headers=headers, body=body)
 
 
 def awslambda(
-    handler: Callable[[HTTPRequest], HTTPResponse | Coroutine[Any, HTTPResponse, Any]]
+	handler: Callable[[HTTPRequest], HTTPResponse | Coroutine[Any, HTTPResponse, Any]],
 ) -> Callable[[dict[str, Any], dict[str, Any] | None], dict[str, Any]]:
-    def wrapper(
-        event: dict[str, Any], context: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        # TODO: Supports looking at pre/post, etc, registered in the `wrapper`.
-        # Event is like:
-        # ```
-        # {'requestContext': {'elb': {'targetGroupArn': 'arn:aws:elasticloadbalancing:…'}},
-        # 'httpMethod': 'GET', 'path': '/path/to/request-retractions',
-        # 'queryStringParameters': {}, 'headers': {'accept-encoding': 'gzip',
-        # 'cache-control': 'no-cache, max-age=0', 'connection': 'keep-alive',
-        # 'host': 'host.name', 'pragma':
-        # 'no-cache', 'te': 'chunked;q=1.0', 'true-client-ip': '103.103.41.59',
-        #  'x-forwarded-port':
-        # '443', 'x-forwarded-proto': 'https'}, 'body': '', 'isBase64Encoded': False}
-        # ```
-        # Context is like:
-        # ```
-        # LambdaContext([aws_request_id=…,log_group_name=/aws/lambda/…,log_stream_name=YYYY/MM/DD/[$LATEST]…,function_name=…,memory_limit_in_mb=128,function_version=$LATEST,invoked_function_arn=…,identity=CognitoIdentity([cognito_identity_id=None,cognito_identity_pool_id=None])])
-        # ``
-        try:
-            req = request(event)
-        except Exception as e:
-            exception(e, "Failed to parse AWS Lambda event")
-            raise e from e
-        try:
-            res = handler(req)
-        except Exception as e:
-            exception(e, "Failed to handle AWS Lambda event")
-            raise e from e
-        return response(res)
+	def wrapper(
+		event: dict[str, Any], context: dict[str, Any] | None = None
+	) -> dict[str, Any]:
+		# TODO: Supports looking at pre/post, etc, registered in the `wrapper`.
+		# Event is like:
+		# ```
+		# {'requestContext': {'elb': {'targetGroupArn': 'arn:aws:elasticloadbalancing:…'}},
+		# 'httpMethod': 'GET', 'path': '/path/to/request-retractions',
+		# 'queryStringParameters': {}, 'headers': {'accept-encoding': 'gzip',
+		# 'cache-control': 'no-cache, max-age=0', 'connection': 'keep-alive',
+		# 'host': 'host.name', 'pragma':
+		# 'no-cache', 'te': 'chunked;q=1.0', 'true-client-ip': '103.103.41.59',
+		#  'x-forwarded-port':
+		# '443', 'x-forwarded-proto': 'https'}, 'body': '', 'isBase64Encoded': False}
+		# ```
+		# Context is like:
+		# ```
+		# LambdaContext([aws_request_id=…,log_group_name=/aws/lambda/…,log_stream_name=YYYY/MM/DD/[$LATEST]…,function_name=…,memory_limit_in_mb=128,function_version=$LATEST,invoked_function_arn=…,identity=CognitoIdentity([cognito_identity_id=None,cognito_identity_pool_id=None])])
+		# ``
+		try:
+			req = request(event)
+		except Exception as e:
+			exception(e, "Failed to parse AWS Lambda event")
+			raise e from e
+		try:
+			res = handler(req)
+		except Exception as e:
+			exception(e, "Failed to handle AWS Lambda event")
+			raise e from e
+		return response(res)
 
-    return update_wrapper(wrapper, handler)
+	return update_wrapper(wrapper, handler)
 
 
 # EOF

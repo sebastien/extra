@@ -1,5 +1,4 @@
 from extra import Service, HTTPRequest, HTTPResponse, on, expose, run
-from pathlib import Path
 
 __doc__ = """\
 An example of a development web server where local filesystem assets are

@@ -1,5 +1,4 @@
 from extra.routing import Route
-import re
 
 ROUTES = {
     "post": (["post"], ["", "/post", "post/", "/post", "poster"]),

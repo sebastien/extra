@@ -9,7 +9,7 @@ CHUNK_SIZE = 1024
 
 
 def log(*message):
-    print(f"[async] ", *(str(_) for _ in message))
+    print("[async] ", *(str(_) for _ in message))
 
 
 async def handle_client(reader, writer):

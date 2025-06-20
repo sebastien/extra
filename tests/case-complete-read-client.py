@@ -11,7 +11,7 @@ def sha(data: bytes) -> str:
 
 
 def log(*message):
-    print(f"[client]", *(str(_) for _ in message))
+    print("[client]", *(str(_) for _ in message))
 
 
 random.seed(512)

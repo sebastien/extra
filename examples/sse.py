@@ -24,7 +24,7 @@ class SSE(Service):
         # We register the `onClose` handler that will be called when the
         # client disconnects, or when the iteration stops.
         # FIXME: Should be request.respond().then(XX)
-        return request.onClose(lambda _: info(f"SSE stream stopped")).respond(
+        return request.onClose(lambda _: info("SSE stream stopped")).respond(
             stream(), contentType="text/event-stream"
         )
 

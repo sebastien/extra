@@ -1,5 +1,4 @@
 from extra.routing import Prefix, Routes
-import re
 
 # --
 # The prefix trees are what makes Extra's dispatching fast, as the prefix

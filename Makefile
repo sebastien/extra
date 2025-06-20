@@ -113,7 +113,7 @@ lint: check-flakes
 
 .PHONY: format
 format:
-	@black $(SOURCES_PY)
+	@ruff $(SOURCES_PY)
 
 .PHONY: install
 install:
