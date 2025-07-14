@@ -481,7 +481,7 @@ class HTTPClient:
 		*,
 		port: int | None = None,
 		headers: dict[str, str] | None = None,
-		body: HTTPBodyIO | HTTPBodyBlob | None = None,
+		body: HTTPBodyIO | HTTPBodyBlob | bytes | None = None,
 		params: dict[str, str] | str | None = None,
 		ssl: bool = True,
 		verified: bool = True,
@@ -560,7 +560,9 @@ class HTTPClient:
 					path,
 					query=None,
 					headers=HTTPHeaders(headers or {}),
-					body=body,
+					body=HTTPBodyBlob.FromBytes(body)
+					if isinstance(body, bytes)
+					else body,
 				),
 				host,
 				cxn,

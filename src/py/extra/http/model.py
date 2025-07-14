@@ -210,6 +210,10 @@ class HTTPBodyBlob(NamedTuple):
 	# NOTE: We don't know how many is remaining
 	remaining: int | None = None
 
+	@staticmethod
+	def FromBytes(data: bytes) -> "HTTPBodyBlob":
+		return HTTPBodyBlob(payload=data, length=len(data))
+
 	@property
 	def raw(self) -> bytes:
 		return self.payload
@@ -682,7 +686,7 @@ class HTTPResponse:
 		self._onClose: Callable[[HTTPResponse], None] | None = None
 		self.shouldClose: bool = shouldClose
 
-	# TODO: Deprecate
+	# TODO: Deprecate (in favour fo what?)
 	def getHeader(self, name: str) -> str | None:
 		return self.headers.headers.get(headername(name))
 

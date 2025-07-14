@@ -42,9 +42,11 @@ li {
 class FileService(Service):
 	"""A service to serve files from the local filesystem"""
 
-	def __init__(self, root: Path | None = None):
+	def __init__(self, root: str | Path | None = None):
 		super().__init__()
-		self.root: Path = (Path(".") if not root else root).absolute()
+		self.root: Path = (
+			root if isinstance(root, Path) else Path(root or ".")
+		).absolute()
 		self.canWrite: Callable[[HTTPRequest, Path], bool] = lambda r, p: False
 		self.canRead: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
 		self.canDelete: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
