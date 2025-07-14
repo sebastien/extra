@@ -50,11 +50,29 @@ class FileService(Service):
 		self.canDelete: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
 
 	def renderPath(
-		self, request: HTTPRequest, path: str, localPath: Path
+		self,
+		request: HTTPRequest,
+		path: str,
+		localPath: Path,
+		format: str,
 	) -> HTTPResponse:
 		path = path.strip("/")
 		if localPath.is_dir():
-			return self.renderDir(request, path, localPath)
+			match format:
+				# We support the JSON format to list the contents of a diretory
+				case "json":
+					root = os.path.abspath(path)
+					return request.returns(
+						[
+							{
+								"path": _.relative_to(root),
+								"type": "directory" if _.is_dir() else "file",
+							}
+							for _ in localPath.iterdir()
+						]
+					)
+				case _:
+					return self.renderDir(request, path, localPath)
 		else:
 			return request.respondFile(
 				localPath, contentType=self.guessContentType(localPath)
@@ -169,13 +187,14 @@ class FileService(Service):
 	@cors
 	@on(GET=("/", "/{path:any}"))
 	def read(self, request: HTTPRequest, path: str = ".") -> HTTPResponse:
+		format: str = request.param("format", "html")
 		local_path = self.resolvePath(path)
 		if not (local_path and self.canRead(request, local_path)):
 			return request.notAuthorized(f"Not authorized to access path: {path}")
 		elif not local_path.exists():
 			return request.notFound()
 		else:
-			return self.renderPath(request, path, local_path)
+			return self.renderPath(request, path, local_path, format=format)
 
 	@on(PUT_PATCH="/{path:any}")
 	def write(self, request: HTTPRequest, path: str = ".") -> HTTPResponse:
