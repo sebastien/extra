@@ -1,4 +1,4 @@
-from typing import Iterator, ClassVar, Literal
+from typing import Iterator, Iterable, ClassVar, Literal, NamedTuple
 from ..utils.io import LineParser, EOL
 from .model import (
 	HTTPRequest,
@@ -399,6 +399,41 @@ class HTTPParser:
 				# NOTE: Need to make sure the indentation is correct here
 				# We increase the offset with the read bytes
 				offset += read
+
+
+class CookieValue(NamedTuple):
+	key: str
+	value: str | None
+	start: int
+	end: int
+
+
+def iparseCookie(text: str) -> Iterator[CookieValue]:
+	o = 0
+	n = len(text)
+	while o < n:
+		# We look for a `;` field separator
+		i = text.find(";", o)
+		if i == -1:
+			i = n
+		# We look for a `=` value separator separator
+		j = text.find("=", o)
+		if j == -1 or j > i:
+			# We don't have a value
+			yield CookieValue(text[o:i].strip(), None, o, i)
+		else:
+			yield CookieValue(text[o:j].strip(), text[j + 1 : i].strip(), o, i)
+		o = i + 1
+
+
+def parseCookie(text: str) -> list[CookieValue]:
+	return list(iparseCookie(text))
+
+
+def formatCookie(cookie: Iterable[CookieValue]) -> str:
+	return "; ".join(
+		_.key if _.value is None else f"{_.key}=${_.value}" for _ in cookie
+	)
 
 
 def parseQuery(text: str) -> dict[str, str]:
