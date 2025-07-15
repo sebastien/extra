@@ -106,6 +106,7 @@ class HTTPProcessingStatus(Enum):
 HTTPAtom: TypeAlias = Union[
 	HTTPRequestLine,
 	HTTPResponseLine,
+	TLSHandshake,
 	HTTPHeaders,
 	HTTPProcessingStatus,
 	"THTTPBody",
@@ -335,7 +336,7 @@ class HTTPBodyReader(ABC):
 				left = size - len(chunk)
 				if left <= 0:
 					break
-		return data
+		return bytes(data)
 
 	async def spool(
 		self, timeout: float = BODY_READER_TIMEOUT
@@ -407,7 +408,7 @@ class HTTPBodyWriter(ABC):
 				await self._writeBytes(chunk)
 		return True
 
-	def processControl(self, atom: StreamControl):
+	def processControl(self, atom: StreamControl) -> None:
 		if atom is CLOSE_STREAM:
 			self.shouldClose = True
 

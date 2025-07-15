@@ -26,8 +26,10 @@ def asBytes(value: str | bytes) -> bytes:
 
 
 def asWritable(value: str | bytes | bytearray | TPrimitive) -> bytes:
-	if isinstance(value, bytes) or isinstance(value, bytearray):
+	if isinstance(value, bytes):
 		return value
+	elif isinstance(value, bytearray):
+		return bytes(value)
 	elif isinstance(value, str):
 		return value.encode(DEFAULT_ENCODING)
 	else:
@@ -68,7 +70,7 @@ class LineParser:
 			self.offset = max(0, len(self.buffer) - self.eolsize + 1)
 			return None, len(chunk) - start
 		else:
-			self.line = self.buffer[:end]
+			self.line = bytes(self.buffer[:end])
 			# FIXME: It may not be .clear()?
 			self.buffer.clear()
 			self.offset = 0

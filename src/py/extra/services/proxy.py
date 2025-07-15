@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-from extra import Service, HTTPRequest, HTTPResponse, on, run
-from extra.client import HTTPClient
-from extra.features.cors import setCORSHeaders
-from extra.services.files import FileService
-from extra.utils.uri import URI
-from extra.utils.logging import info
+from ..model import Service
+from ..http.model import HTTPRequest, HTTPResponse
+from ..decorators import on
+from ..server import run
+from ..client import HTTPClient
+from ..features.cors import setCORSHeaders
+from .files import FileService
+from ..utils.uri import URI
+from ..utils.logging import info
 from typing import NamedTuple
 import argparse
 import os
@@ -109,7 +112,7 @@ class ProxyService(Service):
 			if isinstance(atom, HTTPResponse):
 				res = atom
 		if not res:
-			return request.fail(f"Did not get a response for: {host} {path}")
+			return request.fail(f"Did not get a response for: {uri / req_path}")
 		else:
 			# TODO: We should have a postProcessHeaders method
 			# We stripped some headers from the response
@@ -136,7 +139,7 @@ class ProxyService(Service):
 			)
 
 
-def main(args: list[str]):
+def main(args: list[str]) -> None:
 	# Create the parser
 	parser = argparse.ArgumentParser(
 		description="Retro[+proxy]",
@@ -196,13 +199,12 @@ def main(args: list[str]):
 	# around parse_args or check options.url after parsing.
 	# For now, we assume argparse's default error handling is sufficient.
 
-	components: list[ProxyService] = []
+	components: list[Service] = []
 	for url in options.url:
 		lc = url.split("=", 1)
 		prefix, target = (None, url) if len(lc) == 1 else lc
 		uri = URI.Parse(target)
 		print(uri.asDict())
-		ssl = True if uri.port == 443 or uri.scheme in ("https", None) else False
 		if not uri.host:
 			raise RuntimeError(f"URI has no host: {url}")
 		components.append(

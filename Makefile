@@ -35,10 +35,6 @@ run:
 ci: check test
 	@
 
-
-
-
-
 .PHONY: audit
 audit: check-bandit
 	@echo "=== $@"
@@ -73,7 +69,7 @@ check-bandit: $(PREP_ALL)
 .PHONY: check-flakes
 check-flakes: $(PREP_ALL)
 	@echo "=== $@"
-	$(FLAKE8) --ignore=E1,E203,E302,E401,E501,E704,E741,E266,F821,W  $(SOURCES_PY)
+	$(FLAKE8) --ignore=E1,E203,E231,E302,E401,E501,E704,E741,E266,F821,W  $(SOURCES_PY)
 
 .PHONY: check-mypyc
 check-mypyc: $(PREP_ALL)

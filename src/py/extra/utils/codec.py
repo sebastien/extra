@@ -36,7 +36,7 @@ class PipelineCodec(BytesTransform):
 
 	def decoder(self) -> "PipelineCodec":
 		"""Returns the decoder/coder pipeline for this codec"""
-		return PipelineCodec(reversed(self.transforms))
+		return PipelineCodec(list(reversed(self.transforms)))
 
 	def feed(self, chunk: bytes, more: bool = False) -> bytes | None | Literal[False]:
 		res: bytes | Literal[False] | None = chunk

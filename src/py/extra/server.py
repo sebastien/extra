@@ -220,7 +220,8 @@ class AIOSocketServer:
 				# request in the same payload, so we need to be prepared
 				# to answer more than one request.
 				chunk = buffer[:n] if n != size else buffer
-				stream = parser.feed(chunk)
+				# TODO: We're converting a bytearray to bytes, check if that's performant.
+				stream = parser.feed(bytes(chunk))
 				debug(
 					"Reading Requests(s)",
 					Client=f"{id(client):x}",

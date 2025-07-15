@@ -2,8 +2,7 @@ from ..utils.shell import shellstream
 
 
 # FIXME: Does not detect when saved
-def watch(paths: list[str]):
-	print("Watch", paths)
+def watch(paths: list[str]) -> None:
 	for atom in shellstream(
 		[
 			"inotifywait",

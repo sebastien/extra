@@ -1,2 +1,6 @@
-attic
 .data/*.txt
+*.pyc
+/attic
+/.pyre
+/.opencode
+/build

@@ -24,7 +24,7 @@ class MessageParser:
 		self.value: HTTPRequestLine | HTTPResponseLine | TLSHandshake | None = None
 		self.skipping: int = 0
 
-	def flush(self) -> "HTTPRequestLine|HTTPResponseLine|None":
+	def flush(self) -> "HTTPRequestLine|HTTPResponseLine|TLSHandshake|None":
 		res = self.value
 		self.reset()
 		return res
@@ -194,7 +194,7 @@ class BodyRestParser:
 	def flush(self) -> HTTPBodyBlob:
 		# TODO: We should check it's expected
 		res: HTTPBodyBlob = HTTPBodyBlob(
-			self.buffer[:],
+			bytes(self.buffer[:]),
 			len(self.buffer),
 		)
 		self.reset()
@@ -266,9 +266,15 @@ class HTTPParser:
 		self.bodyLength: BodyLengthParser = BodyLengthParser()
 		self.bodyRest: BodyRestParser = BodyRestParser()
 		self.parser: (
-			MessageParser | HeadersParser | BodyEOSParser | BodyLengthParser
+			MessageParser
+			| HeadersParser
+			| BodyEOSParser
+			| BodyLengthParser
+			| BodyRestParser
 		) = self.message
-		self.requestLine: HTTPRequestLine | HTTPResponseLine | None = None
+		self.requestLine: HTTPRequestLine | HTTPResponseLine | TLSHandshake | None = (
+			None
+		)
 		self.requestHeaders: HTTPHeaders | None = None
 
 	def feed(self, chunk: bytes) -> Iterator[HTTPAtom]:
@@ -353,29 +359,40 @@ class HTTPParser:
 						if self.parser is self.bodyRest:
 							self.parser.feed(chunk[offset:])
 							offset = len(chunk)
-						body = self.parser.flush()
+						# All body parsers return HTTPBodyBlob
+						body: HTTPBodyBlob
+						if self.parser is self.bodyEOS:
+							body = self.bodyEOS.flush()
+						elif self.parser is self.bodyLength:
+							body = self.bodyLength.flush()
+						elif self.parser is self.bodyRest:
+							body = self.bodyRest.flush()
+						else:
+							# Should not happen
+							body = HTTPBodyBlob()
 						# NOTE: Careful here as we may create a request that has
 						# a body with remaining data. The HTTP request will need
 						# to make sure it can continue reading the body.
-						yield (
-							HTTPRequest(
+						if isinstance(line, TLSHandshake):
+							# Skip TLS handshake for now
+							pass
+						elif isinstance(line, HTTPRequestLine):
+							yield HTTPRequest(
 								method=line.method,
 								protocol=line.protocol,
 								path=line.path,
 								query=parseQuery(line.query),
 								headers=headers,
-								# NOTE: This is an awkward dance around the type checker
 								body=body,
 							)
-							if isinstance(line, HTTPRequestLine)
-							else HTTPResponse(
+						elif isinstance(line, HTTPResponseLine):
+							yield HTTPResponse(
 								protocol=line.protocol,
 								status=line.status,
 								message=line.message,
 								headers=headers,
 								body=body,
 							)
-						)
 					self.parser = self.message.reset()
 				else:
 					raise RuntimeError(f"Unsupported parser: {self.parser}")

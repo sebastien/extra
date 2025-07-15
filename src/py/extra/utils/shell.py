@@ -8,6 +8,7 @@ from fcntl import F_GETFL, F_SETFL, fcntl
 from pathlib import Path
 from select import select
 from typing import ContextManager, Iterator, Optional, Union
+from typing import Any
 
 # --
 # # Shell Utils
@@ -32,7 +33,7 @@ class ShellCommandError(RuntimeError):
 
 
 @contextmanager
-def cd(path: str):
+def cd(path: str) -> Iterator[str]:
 	"""Temporarily changes the current directory to the given `path`, and changes
 	it back to the origin upon exit. Note that this makes this function
 	not thread or async safe without locking."""
@@ -51,25 +52,25 @@ def cd(path: str):
 		os.chdir(cwd_path)
 
 
-class mkdtemp(ContextManager):
+class mkdtemp(ContextManager[Path]):
 	"""Crates a temporary the given contents."""
 
-	def __init__(self):
+	def __init__(self) -> None:
 		super().__init__()
 		self.path = Path(tempfile.mkdtemp(prefix="ss-", suffix=".cry"))
 
-	def cleanup(self):
+	def cleanup(self) -> None:
 		if self.path and self.path.exists():
 			shutil.rmtree(self.path)
 
-	def __enter__(self):
+	def __enter__(self) -> Path:
 		return self.path
 
-	def __exit__(self, type, value, traceback):
+	def __exit__(self, type: Any, value: Any, traceback: Any) -> None:
 		self.cleanup()
 
 
-class mkstemp(ContextManager):
+class mkstemp(ContextManager[Path]):
 	"""Crates a secure temporary file with the given contents."""
 
 	def __init__(
@@ -90,10 +91,10 @@ class mkstemp(ContextManager):
 			os.close(fd)
 		self.path: Path = Path(path)
 
-	def __enter__(self):
+	def __enter__(self) -> Path:
 		return self.path
 
-	def __exit__(self, *_):
+	def __exit__(self, *_: Any) -> None:
 		if self.path and self.path.exists():
 			self.path.unlink()
 
@@ -161,7 +162,7 @@ def shellstream(
 		waiting.append(fderr)
 		channels[fderr] = 2
 
-	closed: list = []
+	closed: list[int] = []
 	while waiting:
 		for fd in select(waiting, [], [], period)[0]:
 			try:

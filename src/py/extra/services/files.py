@@ -189,7 +189,7 @@ class FileService(Service):
 	@cors
 	@on(GET=("/", "/{path:any}"))
 	def read(self, request: HTTPRequest, path: str = ".") -> HTTPResponse:
-		format: str = request.param("format", "html")
+		format: str = request.param("format", "html") or "html"
 		local_path = self.resolvePath(path)
 		if not (local_path and self.canRead(request, local_path)):
 			return request.notAuthorized(f"Not authorized to access path: {path}")

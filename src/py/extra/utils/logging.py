@@ -302,7 +302,7 @@ def exception(
 	return exception
 
 
-def logged(item) -> bool:
+def logged(item: Any) -> bool:
 	"""Takes one of the logging function, and tells if it is currently
 	supported. This is used to guard against running the whole entry
 	building when not necessary."""
