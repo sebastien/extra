@@ -99,7 +99,7 @@ class ProxyService(Service):
 		# Now we do the request
 		res: HTTPResponse | None = None
 		req_path: str = f"{uri.path or ""}{path}" if self.prefix else path
-		info(f"Proxying {path} to {uri.host}{req_path}")
+		info(f"Proxying {request.method} {path} to {uri / req_path}")
 		async for atom in HTTPClient.Request(
 			host=uri.host or "localhost",
 			path=req_path,
@@ -133,6 +133,8 @@ class ProxyService(Service):
 								continue
 							elif cookie.value == "Secure":
 								cookies.append(cookie._replace(value="Lax"))
+							else:
+								cookies.append(cookie)
 						updated_headers[name] = formatCookie(cookies)
 			res.headers.headers.update(updated_headers)
 			return (

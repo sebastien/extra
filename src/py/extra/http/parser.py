@@ -430,9 +430,9 @@ def parseCookie(text: str) -> list[CookieValue]:
 	return list(iparseCookie(text))
 
 
-def formatCookie(cookie: Iterable[CookieValue]) -> str:
+def formatCookie(cookies: Iterable[CookieValue]) -> str:
 	return "; ".join(
-		_.key if _.value is None else f"{_.key}=${_.value}" for _ in cookie
+		_.key if _.value is None else f"{_.key}={_.value}" for _ in cookies
 	)
 
 
