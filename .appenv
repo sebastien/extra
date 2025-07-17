@@ -1,7 +1,7 @@
 #!/usr/bin/bash
 # See: <https://github.com/sebastien/appenv>
 # To install appenv: `curl https://raw.githubusercontent.com/sebastien/appenv/master/install.sh | bash`
-appenv_name $(basename $APPENV_DIR)
+appenv_name $(basename "$APPENV_DIR")
 appenv_prepend PATH "$APPENV_DIR/deps/multiplex/bin"
 appenv_prepend PATH "$APPENV_DIR/tests"
 appenv_prepend PATH "$APPENV_DIR/bin"
@@ -9,4 +9,5 @@ appenv_prepend PYTHONPATH "$APPENV_DIR/examples"
 appenv_prepend PYTHONPATH "$APPENV_DIR/tests"
 appenv_prepend PYTHONPATH "$APPENV_DIR/deps/multiplex/src/py"
 appenv_prepend PYTHONPATH "$APPENV_DIR/src/py"
+appenv_set DEEPSOURCE_DSN "$(littlesecrets get deepsource.dsn.extra)"
 # EOF
