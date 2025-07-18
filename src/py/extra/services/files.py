@@ -1,10 +1,12 @@
 from pathlib import Path
 from typing import Union, Callable
+from abc import abstractmethod
 from ..decorators import on
 from ..model import Service
 from ..http.model import HTTPRequest, HTTPResponse
 from ..features.cors import cors
 from ..utils.htmpl import Node, H, html
+from ..utils.shell import shell
 from html import escape
 import os
 
@@ -39,8 +41,39 @@ li {
 """
 
 
+# TODO: Support caching
+class FileTranslator:
+	@abstractmethod
+	def match(self, base: Path, path: str) -> Path | None:
+		...
+
+	@abstractmethod
+	def translate(self, path: Path) -> tuple[str, bytes | str]:
+		...
+
+
+class TypeScriptTranslator(FileTranslator):
+	"""Transpiles TypeScript using bun."""
+
+	def match(self, base: Path, path: str) -> Path | None:
+		# TODO: Should check if Bun is there
+		p: Path = base / path
+		s = p.suffix
+		return p if s == ".ts" else None
+
+	def translate(self, path: Path) -> tuple[str, bytes | str]:
+		# TODO: This is fully blocking, we should support streaming or
+		# async instead.
+		return (
+			"text/javascript",
+			shell(["bun", "build", "--external", "*", str(path.absolute())]),
+		)
+
+
 class FileService(Service):
 	"""A service to serve files from the local filesystem"""
+
+	TRANSLATORS: list[FileTranslator] = [TypeScriptTranslator()]
 
 	def __init__(self, root: str | Path | None = None):
 		super().__init__()
@@ -75,6 +108,11 @@ class FileService(Service):
 			else:
 				return self.renderDir(request, path, localPath)
 		else:
+			for t in self.TRANSLATORS:
+				p = t.match(self.root, path)
+				if p:
+					c, b = t.translate(p)
+					return request.respond(b, contentType=c)
 			return request.respondFile(
 				localPath, contentType=self.guessContentType(localPath)
 			)
