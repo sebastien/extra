@@ -1,7 +1,9 @@
-SHELL := bash
-.SHELLFLAGS := -eu -o pipefail -c
-MAKEFLAGS += --warn-undefined-variables
-MAKEFLAGS += --no-builtin-rules
+SHELL:= bash
+.SHELLFLAGS:= -eu -o pipefail -c
+MAKEFLAGS+= --warn-undefined-variables
+MAKEFLAGS+= --no-builtin-rules
+PROJECT:=retro
+VERSION:=$(shell grep version setup.py  | cut -d '"' -f2)
 
 PYTHON=python
 PATH_SOURCES_PY=src/py
@@ -100,9 +102,6 @@ check-strict: $(PREP_ALL)
 		echo "EOS OK $$summary"
 	fi
 
-
-
-
 .PHONY: lint
 lint: check-flakes
 	@
@@ -110,6 +109,13 @@ lint: check-flakes
 .PHONY: format
 format:
 	@ruff $(SOURCES_PY)
+
+.PHONY: release
+release:
+	@git commit -a -m "[Release] $(PROJECT): $(VERSION)"
+	git tag $(VERSION)
+	git push --all
+	$(PYTHON) setup.py clean sdist register upload
 
 .PHONY: install
 install:
@@ -159,5 +165,5 @@ print-%:
 	$(info $*=$($*))
 
 .ONESHELL:
+
 # EOF
-#
