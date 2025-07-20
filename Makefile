@@ -4,7 +4,7 @@ MAKEFLAGS+= --warn-undefined-variables
 MAKEFLAGS+= --no-builtin-rules
 PROJECT:=extra
 PYPY_PROJECT=extra-http
-VERSION:=$(shell grep version setup.py  | cut -d '"' -f2)
+VERSION:=$(shell grep VERSION setup.py  | head -n1 | cut -d '"' -f2)
 
 PYTHON=python
 PATH_SOURCES_PY=src/py
