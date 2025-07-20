@@ -1,6 +1,15 @@
 from setuptools import setup, find_packages
-from mypyc.build import mypycify
 import os
+import sys
+
+VERSION = "1.0.1"
+# Try to import mypyc, make it optional
+try:
+	from mypyc.build import mypycify
+
+	MYPYC_AVAILABLE = True
+except ImportError:
+	MYPYC_AVAILABLE = False
 
 
 def readme():
@@ -17,9 +26,30 @@ def list_ext_modules(base_path="src/py/extra"):
 	return python_files
 
 
+# Determine if we should use mypyc compilation
+USE_MYPYC = MYPYC_AVAILABLE and "--use-mypyc" in sys.argv and "sdist" not in sys.argv
+
+# Remove our custom flag from sys.argv to avoid confusing setuptools
+if "--use-mypyc" in sys.argv:
+	sys.argv.remove("--use-mypyc")
+
+# Prepare ext_modules
+ext_modules = []
+if USE_MYPYC:
+	print("=" * 60)
+	print("MyPyC compilation is enabled.")
+	print("This may take a few minutes to compile all Python files...")
+	print("=" * 60)
+	ext_modules = mypycify(list_ext_modules())
+elif MYPYC_AVAILABLE and "sdist" not in sys.argv:
+	print(
+		"Note: Use --use-mypyc flag to enable MyPyC compilation for better performance."
+	)
+
+
 setup(
-	name="extra",
-	version="1.0.0",
+	name="extra-http",
+	version=VERSION,
 	author="Sébastien Pierre",
 	author_email="sebastien.pierre@gmail.com",
 	description="A toolkit to write HTTP/1.1 web services and applications, with first class support for streaming",
@@ -66,6 +96,6 @@ setup(
 	},
 	include_package_data=True,
 	zip_safe=False,
-	# NOTE: mypyc compilation is experimental
-	ext_modules=mypycify(list_ext_modules()),
+	# NOTE: mypyc compilation is optional and experimental
+	ext_modules=ext_modules,
 )

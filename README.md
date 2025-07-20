@@ -55,6 +55,7 @@ course, [FastAPI](https://fastapi.tiangolo.com/).
 Here is `helloworld.py`:
 
 ``` python
+#!/usr/bin/env uv run --with extra-http
 from extra import Service, HTTPRequest, HTTPResponse, on, run
 
 class HelloWorld(Service):

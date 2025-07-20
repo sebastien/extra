@@ -2,7 +2,8 @@ SHELL:= bash
 .SHELLFLAGS:= -eu -o pipefail -c
 MAKEFLAGS+= --warn-undefined-variables
 MAKEFLAGS+= --no-builtin-rules
-PROJECT:=retro
+PROJECT:=extra
+PYPY_PROJECT=extra-http
 VERSION:=$(shell grep version setup.py  | cut -d '"' -f2)
 
 PYTHON=python
@@ -15,12 +16,13 @@ MODULES_PY:=$(filter-out %/__main__,$(filter-out %/__init__,$(SOURCES_PY:$(PATH_
 PATH_LOCAL_PY=$(firstword $(shell python -c "import sys,pathlib;sys.stdout.write(' '.join([_ for _ in sys.path if _.startswith(str(pathlib.Path.home()))] ))"))
 PATH_LOCAL_BIN=$(HOME)/.local/bin
 
-REQUIRE_PY=flake8 bandit mypy
+REQUIRE_PY=flake8 bandit mypy twine
 PREP_ALL=$(REQUIRE_PY:%=build/require-py-%.task)
 # Commands
-BANDIT=python -m bandit
-FLAKE8=python -m flake8
-MYPY=python -m mypy
+BANDIT=$(PYTHON) -m bandit
+FLAKE8=$(PYTHON) -m flake8
+MYPY=$(PYTHON) -m mypy
+TWINE=$(PYTHON) -m twine
 MYPYC=mypyc
 
 cmd-check=if ! $$(which $1 &> /dev/null ); then echo "ERR Could not find command $1"; exit 1; fi; $1
@@ -111,11 +113,12 @@ format:
 	@ruff $(SOURCES_PY)
 
 .PHONY: release
-release:
+release: $(PREP_ALL)
 	@git commit -a -m "[Release] $(PROJECT): $(VERSION)"
 	git tag $(VERSION)
 	git push --all
-	$(PYTHON) setup.py clean sdist register upload
+	$(PYTHON) setup.py clean sdist bdist_wheel
+	$(TWINE) upload dist/$(PYPI_PROJECT)-$(VERSION)*
 
 .PHONY: install
 install:
