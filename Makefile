@@ -115,8 +115,8 @@ format:
 .PHONY: release
 release: $(PREP_ALL)
 	@git commit -a -m "[Release] $(PROJECT): $(VERSION)"
-	git tag $(VERSION)
-	git push --all
+	git tag $(VERSION); true
+	git push --all; true
 	$(PYTHON) setup.py clean sdist bdist_wheel
 	$(TWINE) upload dist/$(PYPI_PROJECT)-$(VERSION)*
 
