@@ -3,7 +3,7 @@ SHELL:= bash
 MAKEFLAGS+= --warn-undefined-variables
 MAKEFLAGS+= --no-builtin-rules
 PROJECT:=extra
-PYPY_PROJECT=extra-http
+PYPI_PROJECT=extra-http
 VERSION:=$(shell grep VERSION setup.py  | head -n1 | cut -d '"' -f2)
 
 PYTHON=python
