@@ -112,13 +112,18 @@ lint: check-flakes
 format:
 	@ruff $(SOURCES_PY)
 
+.PHONY: release-prep
+release-prep: $(PREP_ALL)
+	@
+	# git commit -a -m "[Release] $(PROJECT): $(VERSION)"; true
+	# git tag $(VERSION); true
+	# git push --all; true
+
 .PHONY: release
 release: $(PREP_ALL)
-	@git commit -a -m "[Release] $(PROJECT): $(VERSION)"; true
-	git tag $(VERSION); true
-	git push --all; true
+	@
 	$(PYTHON) setup.py clean sdist bdist_wheel
-	$(TWINE) upload dist/$(PYPI_PROJECT)-$(VERSION)*
+	$(TWINE) upload dist/$(subst -,_,$(PYPI_PROJECT))-$(VERSION)*
 
 .PHONY: install
 install:

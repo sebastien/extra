@@ -18,7 +18,7 @@ from .http.parser import HTTPParser
 from .model import Application, Service, mount
 from .utils.codec import BytesTransform
 from .utils.limits import LimitType, unlimit
-from .utils.logging import debug, event, exception, info, logged, warning
+from .utils.logging import debug, event, exception, info, logged, warning, error
 
 
 @dataclass(slots=True)
@@ -398,7 +398,27 @@ class AIOSocketServer:
 		server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		server.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-		server.bind((options.host, options.port))
+		port: int = options.port
+		try:
+			server.bind((options.host, port))
+		except OSError as e:
+			warning(f"Could not bind to {options.host}:{port}, trying other ports.")
+			bound: bool = False
+			for p in range(options.port + 1, options.port + 5):
+				try:
+					server.bind((options.host, p))
+					bound = True
+					port = p
+					info(f"Found alternate available port: {port}")
+				except OSError:
+					pass
+			if not bound:
+				error(
+					f"Unable to bind to {options.host}:{options.port}, aborting.",
+					"HOSTPORTERR",
+				)
+				raise e from e
+
 		# The argument is the backlog of connections that will be accepted before
 		# they are refused.
 		server.listen(options.backlog)
@@ -428,7 +448,7 @@ class AIOSocketServer:
 			"Extra AIO Server listening",
 			icon="🚀",
 			Host=options.host,
-			Port=options.port,
+			Port=port,
 		)
 
 		try:

@@ -536,6 +536,17 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
 		self._onClose = callback
 		return self
 
+	async def read(self) -> AsyncGenerator[bytes | None]:
+		body = self.body
+		if isinstance(body, HTTPBodyBlob):
+			yield body.raw
+			yield None
+		else:
+			chunk = b""
+			while chunk is not None:
+				chunk = await body.read()
+				yield chunk
+
 	def respond(
 		self,
 		content: Any = None,
