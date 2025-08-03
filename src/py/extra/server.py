@@ -4,7 +4,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from signal import SIGINT, SIGTERM
-from typing import Any, Callable, Coroutine, Literal, NamedTuple
+from typing import Any, Callable, Coroutine, Literal, NamedTuple, Union
 
 from .config import HOST, PORT
 from .http.model import (
@@ -21,7 +21,7 @@ from .utils.limits import LimitType, unlimit
 from .utils.logging import debug, event, exception, info, logged, warning, error
 
 
-@dataclass(slots=True)
+@dataclass
 class ServerState:
 	isRunning: bool = True
 
@@ -54,7 +54,7 @@ class ServerOptions(NamedTuple):
 	# SEE: https://repost.aws/questions/QU-_rSWDtwSmOD5wBO5tsrwg/load-balancer-502-bad-gateway
 	keepalive: float = 3_600
 	logRequests: bool = True
-	condition: Callable[[], bool] | None = None
+	condition: Union[Callable[[], bool], None] = None
 	stopSignals: bool = True
 
 
@@ -91,7 +91,7 @@ class AIOSocketBodyReader(HTTPBodyReader):
 		loop: asyncio.AbstractEventLoop,
 		size: int = 64_000,
 		*,
-		transform: BytesTransform | None = None,
+		transform: Union[BytesTransform, None] = None,
 	) -> None:
 		super().__init__(transform)
 		self.socket = socket
@@ -99,8 +99,8 @@ class AIOSocketBodyReader(HTTPBodyReader):
 		self.size: int = size
 
 	async def _read(
-		self, timeout: float = 1.0, size: int | None = None
-	) -> bytes | None:
+		self, timeout: float = 1.0, size: Union[int, None] = None
+	) -> Union[bytes, None]:
 		logged(debug) and debug(
 			"Reading Body",
 			Client=f"{id(self.socket):x}",
@@ -121,14 +121,14 @@ class AIOSocketBodyWriter(HTTPBodyWriter):
 		client: "socket.socket",
 		loop: asyncio.AbstractEventLoop,
 		*,
-		transform: BytesTransform | None = None,
+		transform: Union[BytesTransform, None] = None,
 	) -> None:
 		super().__init__(transform)
 		self.client: socket.socket = client
 		self.loop: asyncio.AbstractEventLoop = loop
 
 	async def _writeBytes(
-		self, chunk: bytes | None | Literal[False], more: bool = False
+		self, chunk: Union[bytes, None, Literal[False]], more: bool = False
 	) -> bool:
 		if chunk is None or chunk is False:
 			pass
@@ -195,7 +195,7 @@ class AIOSocketServer:
 			# typically happen when there's an underlying error with
 			# a response that returns a stream.
 			while keep_alive and not writer.shouldClose:
-				req: HTTPRequest | None = None
+				req: Union[HTTPRequest, None] = None
 				# --
 				# We may have more than one request in each payload when
 				# HTTP Pipelining is on.
@@ -331,14 +331,14 @@ class AIOSocketServer:
 		request: HTTPRequest,
 		app: Application,
 		writer: HTTPBodyWriter,
-	) -> HTTPResponse | None:
+	) -> Union[HTTPResponse, None]:
 		"""Processes the request within the application and sends a response using the given writer."""
 		req: HTTPRequest = request
-		res: HTTPResponse | None = None
+		res: Union[HTTPResponse, None] = None
 		sent: bool = False
 		# --
 		# We process the response from the application
-		r: HTTPResponse | Coroutine[Any, HTTPResponse, Any] = app.process(req)
+		r: Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]] = app.process(req)
 		if isinstance(r, HTTPResponse):
 			res = r
 		else:
@@ -487,11 +487,11 @@ class AIOSocketServer:
 
 
 def run(
-	*components: Application | Service,
+	*components: Union[Application, Service],
 	host: str = HOST,
 	port: int = PORT,
 	backlog: int = OPTIONS.backlog,
-	condition: Callable[[], bool] | None = None,
+	condition: Union[Callable[[], bool], None] = None,
 	timeout: float = OPTIONS.timeout,
 	polling: float = OPTIONS.polling,
 	logRequests: bool = OPTIONS.logRequests,

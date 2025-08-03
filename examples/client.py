@@ -1,3 +1,8 @@
+import asyncio
+from extra.client import HTTPClient, pooling
+from extra.utils.logging import info
+from extra.utils.uri import URI
+
 """
 HTTP Client Example
 
@@ -16,12 +21,6 @@ Usage:
 
 Default: https://google.com/
 """
-
-import asyncio
-from extra.client import HTTPClient, pooling
-from extra.utils.logging import info
-from extra.utils.uri import URI
-
 
 async def make_requests(url_str: str, num_requests: int = 3):
 	"""Make multiple HTTP requests to demonstrate connection pooling."""

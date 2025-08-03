@@ -1,15 +1,14 @@
-from typing import NamedTuple, ClassVar, AsyncGenerator, Self, Any, Iterator
+from typing import NamedTuple, ClassVar, AsyncGenerator, Any, Iterator, Union, TypeVar
 from urllib.parse import quote_plus, urlparse
 from contextvars import ContextVar
-from .utils.io import asWritable
 from contextlib import contextmanager
 from dataclasses import dataclass
 import asyncio
 import ssl
 import time
 import os
+from .utils.io import asWritable
 from .utils.logging import event
-
 from .http.model import (
 	HTTPRequest,
 	HTTPResponse,
@@ -24,6 +23,10 @@ from .http.model import (
 	HTTPProcessingStatus,
 )
 from .http.parser import HTTPParser
+
+# For Python 3.8 compatibility
+ConnectionT = TypeVar('ConnectionT', bound='Connection')
+ConnectionPoolT = TypeVar('ConnectionPoolT', bound='ConnectionPool')
 
 
 # --
@@ -42,7 +45,7 @@ SSL_CLIENT_UNVERIFIED_CONTEXT: ssl.SSLContext = (
 	ssl._create_unverified_context()  # nosec: B323
 )
 try:
-	import certifi
+	import certifi  # type: ignore[import-not-found]
 
 	SSL_CLIENT_CONTEXT.load_verify_locations(certifi.where())
 except FileNotFoundError:
@@ -72,18 +75,18 @@ class ConnectionTarget(NamedTuple):
 
 	host: Target
 	ssl: bool
-	proxy: Target | None = None
+	proxy: Union[Target, None] = None
 	verified: bool = True
 
 	@staticmethod
 	def Make(
 		host: str,
-		port: int | None = None,
+		port: Union[int, None] = None,
 		ssl: bool = True,
 		*,
-		timeout: float | None = None,
-		proxy: str | None = None,
-		proxyPort: int | None = None,
+		timeout: Union[float, None] = None,
+		proxy: Union[str, None] = None,
+		proxyPort: Union[int, None] = None,
 		verified: bool = True,
 	) -> "ConnectionTarget":
 		"""Convenience wrapper to create a connection target."""
@@ -98,7 +101,7 @@ class ConnectionTarget(NamedTuple):
 CONNECTION_IDLE: float = 30.0
 
 
-@dataclass(slots=True)
+@dataclass
 class Connection:
 	"""Wraps an underlying HTTP(S) connection with its target
 	information."""
@@ -107,24 +110,24 @@ class Connection:
 	reader: asyncio.StreamReader
 	writer: asyncio.StreamWriter
 	idle: float
-	until: float | None
+	until: Union[float, None]
 	# NOTE: We put parsers here as they're typically per connection
 	parser: HTTPParser
 	# A streaming connection won't be reused
 	isStreaming: bool = False
 
-	def close(self) -> Self:
+	def close(self: ConnectionT) -> ConnectionT:
 		"""Closes the writer."""
 		self.writer.close()
 		self.until = None
 		return self
 
 	@property
-	def isValid(self) -> bool | None:
+	def isValid(self) -> Union[bool, None]:
 		"""Tells if the connection is still valid."""
 		return (time.monotonic() <= self.until) if self.until else None
 
-	def touch(self) -> Self:
+	def touch(self: ConnectionT) -> ConnectionT:
 		"""Touches the connection, bumping its `until` time."""
 		self.until = time.monotonic() + self.idle
 		return self
@@ -133,8 +136,8 @@ class Connection:
 	async def Make(
 		target: ConnectionTarget,
 		*,
-		timeout: float | None = None,
-		idle: float | None,
+		timeout: Union[float, None] = None,
+		idle: Union[float, None],
 		verified: bool = True,
 	) -> "Connection":
 		"""Makes a connection to the given target, this sets up the proxy
@@ -179,7 +182,7 @@ class ConnectionPool:
 	)
 
 	@classmethod
-	def Get(cls, *, idle: float | None = None) -> "ConnectionPool":
+	def Get(cls, *, idle: Union[float, None] = None) -> "ConnectionPool":
 		"""Ensures that there's at least one connection pool in the current
 		context."""
 
@@ -196,8 +199,8 @@ class ConnectionPool:
 		cls,
 		target: ConnectionTarget,
 		*,
-		idle: float | None = None,
-		timeout: float | None = None,
+		idle: Union[float, None] = None,
+		timeout: Union[float, None] = None,
 		verified: bool = True,
 	) -> Connection:
 		"""Returns a connection to the target from the pool (if the pool is available
@@ -231,7 +234,7 @@ class ConnectionPool:
 			return False
 
 	@classmethod
-	def Push(cls, *, idle: float | None = None) -> "ConnectionPool":
+	def Push(cls, *, idle: Union[float, None] = None) -> "ConnectionPool":
 		pools = cls.All.get(None)
 		if pools is None:
 			pools = []
@@ -245,9 +248,9 @@ class ConnectionPool:
 		pools = cls.All.get(None)
 		return pools.pop().release() if pools else None
 
-	def __init__(self, idle: float | None = None):
+	def __init__(self, idle: Union[float, None] = None):
 		self.connections: dict[ConnectionTarget, list[Connection]] = {}
-		self.idle: float | None = idle
+		self.idle: Union[float, None] = idle
 
 	def has(
 		self,
@@ -259,7 +262,7 @@ class ConnectionPool:
 		self,
 		target: ConnectionTarget,
 		*,
-		idle: float | None = None,
+		idle: Union[float, None] = None,
 	) -> Connection:
 		cxn = self.connections.get(target)
 		# We look for connections, which must be valid. If not valid,
@@ -277,7 +280,7 @@ class ConnectionPool:
 		as long as it is valid."""
 		self.connections.setdefault(connection.target, []).append(connection)
 
-	def clean(self) -> Self:
+	def clean(self: ConnectionPoolT) -> ConnectionPoolT:
 		"""Cleans idle connections by closing them and removing them
 		from available connections."""
 		to_remove = []
@@ -293,7 +296,7 @@ class ConnectionPool:
 				del self.connections[k]
 		return self
 
-	def release(self) -> Self:
+	def release(self: ConnectionPoolT) -> ConnectionPoolT:
 		"""Releases all the connections registered"""
 		for cl in self.connections.values():
 			while cl:
@@ -301,7 +304,7 @@ class ConnectionPool:
 		self.connections.clear()
 		return self
 
-	def pop(self) -> Self:
+	def pop(self: ConnectionPoolT) -> ConnectionPoolT:
 		"""Pops this pool from the connection pool context and release
 		all its connections."""
 		pools = ConnectionPool.All.get(None)
@@ -310,7 +313,7 @@ class ConnectionPool:
 		self.release()
 		return self
 
-	def __enter__(self) -> Self:
+	def __enter__(self: ConnectionPoolT) -> ConnectionPoolT:
 		return self
 
 	def __exit__(self, type: Any, value: Any, traceback: Any) -> None:
@@ -340,11 +343,11 @@ class HTTPClient:
 		host: str,
 		cxn: Connection,
 		*,
-		timeout: float | None = 2.0,
+		timeout: Union[float, None] = 2.0,
 		buffer: int = 32_000,
-		streaming: bool | None = None,
+		streaming: Union[bool, None] = None,
 		keepalive: bool = False,
-	) -> AsyncGenerator[HTTPAtom, bool | None]:
+	) -> AsyncGenerator[HTTPAtom, Union[bool, None]]:
 		"""Low level function to process HTTP requests with the given connection."""
 		# We send the line
 		line = f"{request.method} {request.path} HTTP/1.1\r\n".encode()
@@ -411,7 +414,7 @@ class HTTPClient:
 		# --
 		# We may have more than one request in each payload when
 		# HTTP Pipelining is on.
-		res: HTTPResponse | None = None
+		res: Union[HTTPResponse, None] = None
 		while status is HTTPProcessingStatus.Processing and res is None:
 			try:
 				chunk = await asyncio.wait_for(
@@ -452,7 +455,7 @@ class HTTPClient:
 		):
 			# TODO: We should swap out the body for a streaming body
 			cxn.isStreaming = True
-			should_continue: bool | None = True
+			should_continue: Union[bool, None] = True
 			while should_continue is not False:
 				try:
 					chunk = await asyncio.wait_for(
@@ -479,25 +482,25 @@ class HTTPClient:
 		host: str,
 		path: str,
 		*,
-		port: int | None = None,
-		headers: dict[str, str] | None = None,
-		body: HTTPBodyIO | HTTPBodyBlob | bytes | None = None,
-		params: dict[str, str] | str | None = None,
+		port: Union[int, None] = None,
+		headers: Union[dict[str, str], None] = None,
+		body: Union[HTTPBodyIO, HTTPBodyBlob, bytes, None] = None,
+		params: Union[dict[str, str], str, None] = None,
 		ssl: bool = True,
 		verified: bool = True,
 		timeout: float = 10.0,
 		follow: bool = True,
-		proxy: tuple[str, int] | bool | None = None,
-		connection: Connection | None = None,
-		streaming: bool | None = None,
+		proxy: Union[tuple[str, int], bool, None] = None,
+		connection: Union[Connection, None] = None,
+		streaming: Union[bool, None] = None,
 		keepalive: bool = False,
 	) -> AsyncGenerator[HTTPAtom, None]:
 		"""Somewhat high level API to perform an HTTP request."""
 
 		# There's much work to get proxy support to work
 		actual_port = port if port else 443 if ssl else 80
-		proxy_host: str | None = None
-		proxy_port: int | None = None
+		proxy_host: Union[str, None] = None
+		proxy_port: Union[int, None] = None
 
 		# Detects if a proxy has been specified in environment variables, and configures the connection accordingly
 		if proxy is True or proxy is None:
@@ -579,7 +582,7 @@ class HTTPClient:
 
 
 @contextmanager
-def pooling(idle: float | int | None = None) -> Iterator[ConnectionPool]:
+def pooling(idle: Union[float, int, None] = None) -> Iterator[ConnectionPool]:
 	"""Creates a context in which connections will be pooled."""
 	pool = ConnectionPool().Push(idle=idle)
 	try:
@@ -593,17 +596,17 @@ async def request(
 	host: str,
 	path: str,
 	*,
-	port: int | None = None,
-	headers: dict[str, str] | None = None,
-	body: HTTPBodyIO | HTTPBodyBlob | None = None,
-	params: dict[str, str] | str | None = None,
+	port: Union[int, None] = None,
+	headers: Union[dict[str, str], None] = None,
+	body: Union[HTTPBodyIO, HTTPBodyBlob, None] = None,
+	params: Union[dict[str, str], str, None] = None,
 	ssl: bool = True,
 	verified: bool = True,
 	timeout: float = 10.0,
 	follow: bool = True,
-	proxy: tuple[str, int] | bool | None = None,
-	connection: Connection | None = None,
-	streaming: bool | None = None,
+	proxy: Union[tuple[str, int], bool, None] = None,
+	connection: Union[Connection, None] = None,
+	streaming: Union[bool, None] = None,
 	keepalive: bool = False,
 ) -> AsyncGenerator[HTTPAtom, None]:
 	async for atom in HTTPClient.Request(

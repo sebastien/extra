@@ -15,10 +15,10 @@ def sha(data: bytes) -> str:
 class BodyLengthService(Service):
 	@on(GET_POST="/{path:any}")
 	async def read(self, request: HTTPRequest, path: str) -> HTTPResponse:
-		chunk = await request.load() or b""
-		print(f"[extra]  Server received body: {sha(chunk)} {len(chunk)}")
+		body = await request.body.load()
+		print(f"[extra]  Server received body: {sha(body)} {len(body)}")
 		return request.respond(
-			b"Read:%s %d" % (sha(chunk).encode(), len(chunk)), b"text/plain"
+			b"Read:%s %d" % (sha(body).encode(), len(body)), b"text/plain"
 		)
 
 

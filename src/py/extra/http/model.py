@@ -540,10 +540,11 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
 			yield body.raw
 			yield None
 		else:
-			chunk = b""
-			while chunk is not None:
-				chunk = await body.read()
+			while True:
+				chunk = await body._read()
 				yield chunk
+				if chunk is None:
+					break
 
 	def respond(
 		self,

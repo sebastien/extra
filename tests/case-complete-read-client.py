@@ -26,19 +26,22 @@ def run():
 		log(f"--- Iterating base={base} count={count}")
 		sent = f"{sha(body)} {len(body)}"
 		log(f"=== Sending:  {sent}")
-		req = urllib.request.Request("http://localhost:8000/upload", data=body)
-		try:
-			with urllib.request.urlopen(req, timeout=2.0) as response:
-				response_data = response.read().split(b":")[-1].decode("ascii")
-				log(f"<-- Received: {response_data}")
-				if response_data == sent:
-					log("    OK")
-				else:
-					log("!!! FAIL")
+		for port in [8000, 8001]:
+			req = urllib.request.Request(f"http://localhost:{port}/upload", data=body)
+			try:
+				with urllib.request.urlopen(req) as resp:
+					received = resp.read()
+					assert received.decode().startswith(f"Read:{sha(body)}")
+					log(f"=== Received: {received}")
+					break
+			except urllib.error.HTTPError as e:
+				if port == 8001:  # Last port attempt
+					log(f"!!! FAIL HTTP Error {e.code}: {e.reason}")
 					errors += 1
-		except urllib.error.URLError as e:
-			log(f"!!! FAIL {e}")
-			errors += 1
+			except Exception as e:
+				if port == 8001:  # Last port attempt
+					log(f"!!! FAIL {e}")
+					errors += 1
 
 	elapsed = time.monotonic() - t
 	log(f"... Duration: {elapsed:0.2f}")

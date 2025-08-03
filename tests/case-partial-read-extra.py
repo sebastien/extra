@@ -5,7 +5,7 @@ class PartialService(Service):
 	@on(GET_POST="/{path:any}")
 	async def read(self, request: HTTPRequest, path: str) -> HTTPResponse:
 		# chunk = await request.read(1024)
-		chunk = await request.load()
+		chunk = await request.body.load()
 		return request.respond(b"Read: %d" % (len(chunk)), b"text/plain")
 
 

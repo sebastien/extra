@@ -124,18 +124,17 @@ class ProxyService(Service):
 			updated_headers: dict[str, str] = {}
 			# SEE: https://stackoverflow.com/questions/46288437/set-cookies-for-cross-origin-requests
 			for name, value in res.headers.headers.items():
-				match name:
+				if name == "Set-Cookie":
 					# We loosen the cookies so that they flow
-					case "Set-Cookie":
-						cookies = []
-						for cookie in iparseCookie(value):
-							if cookie.key in ("Secure", "HTTPOnly"):
-								continue
-							elif cookie.value == "Secure":
-								cookies.append(cookie._replace(value="Lax"))
-							else:
-								cookies.append(cookie)
-						updated_headers[name] = formatCookie(cookies)
+					cookies = []
+					for cookie in iparseCookie(value):
+						if cookie.key in ("Secure", "HTTPOnly"):
+							continue
+						elif cookie.value == "Secure":
+							cookies.append(cookie._replace(value="Lax"))
+						else:
+							cookies.append(cookie)
+					updated_headers[name] = formatCookie(cookies)
 			res.headers.headers.update(updated_headers)
 			return (
 				setCORSHeaders(res, origin=request.getHeader("Origin"))

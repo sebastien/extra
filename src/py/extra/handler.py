@@ -1,4 +1,4 @@
-from typing import Any, Coroutine, Callable, cast
+from typing import Any, Coroutine, Callable, cast, Union
 from base64 import b64encode, b64decode
 from urllib.parse import urlparse, parse_qs
 from functools import update_wrapper
@@ -76,9 +76,9 @@ from .http.model import (
 # - `authorizer`: (If applicable) Information from a custom authorizer (e.g., Lambda authorizer) that you've configured for your API Gateway API.
 
 
-TAWSRequestContext = dict[str, str | bytes | int | float | bool | dict[str, str] | None]
+TAWSRequestContext = dict[str, Union[str, bytes, int, float, bool, dict[str, str], None]]
 TAWSEvent = dict[
-	str, str | bytes | int | float | bool | dict[str, str] | TAWSRequestContext | None
+	str, Union[str, bytes, int, float, bool, dict[str, str], TAWSRequestContext, None]
 ]
 
 
@@ -87,8 +87,8 @@ class AWSLambdaEvent:
 	def Create(
 		method: str,
 		uri: str,
-		headers: dict[str, str] | None = None,
-		body: str | bytes | None = None,
+		headers: Union[dict[str, str], None] = None,
+		body: Union[str, bytes, None] = None,
 	) -> TAWSEvent:
 		"""Creates an AWS Lambda API Gateway event from the given parameters."""
 		url = urlparse(uri)
@@ -192,10 +192,10 @@ class AWSLambdaHandler:
 		self.app: Application = app
 
 	async def handle(
-		self, event: dict[str, Any], context: dict[str, Any] | None = None
+		self, event: dict[str, Any], context: Union[dict[str, Any], None] = None
 	) -> dict[str, Any]:
 		req: HTTPRequest = AWSLambdaEvent.AsRequest(event)
-		r: HTTPResponse | Coroutine[Any, HTTPResponse, Any] = self.app.process(req)
+		r: Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]] = self.app.process(req)
 		if isinstance(r, HTTPResponse):
 			res: HTTPResponse = r
 		else:
@@ -208,7 +208,7 @@ def request(event: dict[str, Any]) -> HTTPRequest:
 
 
 async def aresponse(
-	response: HTTPResponse | Coroutine[Any, HTTPResponse, Any],
+	response: Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]],
 ) -> dict[str, Any]:
 	if isinstance(response, HTTPResponse):
 		res: HTTPResponse = response
@@ -218,13 +218,13 @@ async def aresponse(
 
 
 def response(
-	response: HTTPResponse | Coroutine[Any, HTTPResponse, Any],
+	response: Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]],
 ) -> dict[str, Any]:
 	return asyncio.run(aresponse(response))
 
 
 def handler(
-	*components: Application | Service,
+	*components: Union[Application, Service],
 ) -> AWSLambdaHandler:
 	"""Returns an AWS Lambda Handler function"""
 	app = mount(*components)
@@ -234,17 +234,17 @@ def handler(
 def event(
 	method: str,
 	uri: str,
-	headers: dict[str, str] | None = None,
-	body: str | bytes | None = None,
+	headers: Union[dict[str, str], None] = None,
+	body: Union[str, bytes, None] = None,
 ) -> dict[str, Any]:
 	return AWSLambdaEvent.Create(method=method, uri=uri, headers=headers, body=body)
 
 
 def awslambda(
-	handler: Callable[[HTTPRequest], HTTPResponse | Coroutine[Any, HTTPResponse, Any]],
-) -> Callable[[dict[str, Any], dict[str, Any] | None], dict[str, Any]]:
+	handler: Callable[[HTTPRequest], Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]]],
+) -> Callable[[dict[str, Any], Union[dict[str, Any], None]], dict[str, Any]]:
 	def wrapper(
-		event: dict[str, Any], context: dict[str, Any] | None = None
+		event: dict[str, Any], context: Union[dict[str, Any], None] = None
 	) -> dict[str, Any]:
 		# TODO: Supports looking at pre/post, etc, registered in the `wrapper`.
 		# Event is like:

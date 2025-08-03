@@ -60,21 +60,20 @@ class FileService(Service):
 	) -> HTTPResponse:
 		path = path.strip("/")
 		if localPath.is_dir():
-			match format:
+			if format == "json":
 				# We support the JSON format to list the contents of a diretory
-				case "json":
-					root = os.path.abspath(path)
-					return request.returns(
-						[
-							{
-								"path": _.relative_to(root),
-								"type": "directory" if _.is_dir() else "file",
-							}
-							for _ in localPath.iterdir()
-						]
-					)
-				case _:
-					return self.renderDir(request, path, localPath)
+				root = os.path.abspath(path)
+				return request.returns(
+					[
+						{
+							"path": _.relative_to(root),
+							"type": "directory" if _.is_dir() else "file",
+						}
+						for _ in localPath.iterdir()
+					]
+				)
+			else:
+				return self.renderDir(request, path, localPath)
 		else:
 			return request.respondFile(
 				localPath, contentType=self.guessContentType(localPath)

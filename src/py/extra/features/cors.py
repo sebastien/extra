@@ -1,3 +1,4 @@
+from typing import Union
 from ..http.model import HTTPRequest, HTTPResponse
 from ..decorators import post
 
@@ -15,10 +16,10 @@ def cors(
 
 
 def setCORSHeaders(
-	request: HTTPRequest | HTTPResponse,
+	request: Union[HTTPRequest, HTTPResponse],
 	*,
-	origin: str | None = None,
-	headers: list[str] | None = None,
+	origin: Union[str, None] = None,
+	headers: Union[list[str], None] = None,
 	allowAll: bool = False,
 ) -> HTTPResponse:
 	"""Takes the given request or response, and return (a response) with the CORS headers set properly.

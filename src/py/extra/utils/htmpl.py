@@ -1,14 +1,17 @@
+import sys
 from typing import (
-	LiteralString,
 	Optional,
 	Iterable,
 	Iterator,
 	Union,
 	Callable,
-	Self,
 	cast,
-	Any,
 )
+
+if sys.version_info >= (3, 11):
+	from typing import LiteralString, Self
+else:
+	from typing_extensions import LiteralString, Self
 
 # TODO: Define a Chunk to define a way to pre-rendere chunks of a Node, so that
 # we get fast serialization when writing to. The key thing, just like with JSON
