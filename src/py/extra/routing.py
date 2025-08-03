@@ -224,7 +224,7 @@ class Route:
 		)
 
 	def __repr__(self) -> str:
-		return f"(Route \"{self.toRegExp()}\" ({' '.join(_ for _ in self.params)}))"
+		return f'(Route "{self.toRegExp()}" ({" ".join(_ for _ in self.params)}))'
 
 
 # -----------------------------------------------------------------------------
@@ -540,7 +540,7 @@ class Handler:
 
 	def __repr__(self) -> str:
 		methods = " ".join(
-			f'({k} {" ".join(repr(_) for _ in v)})' for k, v in self.methods.items()
+			f"({k} {' '.join(repr(_) for _ in v)})" for k, v in self.methods.items()
 		)
 		attrs = []
 		if self.expose:

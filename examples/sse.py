@@ -1,3 +1,23 @@
+"""
+Server-Sent Events (SSE) Example
+
+This demonstrates real-time streaming with Server-Sent Events.
+Features shown:
+- SSE event streaming with proper format
+- Route parameters with type conversion
+- Async generators for streaming responses
+- Client disconnect handling
+- Both SSE and chunked transfer encoding
+
+Usage:
+    python sse.py
+
+Test with:
+    curl http://localhost:8000/time
+    curl http://localhost:8000/time/2  # 2 second delay
+    curl http://localhost:8000/chunks
+"""
+
 from extra import Service, on, run
 from extra.utils.logging import info
 from typing import AsyncIterator
@@ -6,47 +26,69 @@ import asyncio
 
 
 class SSE(Service):
+	@on(GET="/time")
+	@on(GET="/time/{delay:int}")
+	def time(self, request, delay: float | int = 1) -> AsyncIterator[str]:
+		"""Streams current time every `delay` seconds via Server-Sent Events."""
 
-    @on(GET="/time")
-    @on(GET="/time/{delay:int}")
-    def time(self, request, delay: float | int = 1) -> AsyncIterator[str]:
-        async def stream():
-            """The main streaming function, this is returned as a response
-            and will be automatically stopped if the client disconnects."""
-            counter = 0
-            while counter < 10:
-                info(f"SSE stream iteration {counter}")
-                yield "event: message\n"
-                yield f"date: {time.time()}\n\n"
-                await asyncio.sleep(delay)
-                counter += 1
+		async def stream():
+			counter = 0
+			max_events = 10
 
-        # We register the `onClose` handler that will be called when the
-        # client disconnects, or when the iteration stops.
-        # FIXME: Should be request.respond().then(XX)
-        return request.onClose(lambda _: info("SSE stream stopped")).respond(
-            stream(), contentType="text/event-stream"
-        )
+			info(
+				"Starting SSE time stream",
+				Delay=delay,
+				MaxEvents=max_events,
+				Client=request.peer,
+			)
+			while counter < max_events:
+				info(
+					"SSE event sent",
+					Event=f"{counter + 1}/{max_events}",
+					Timestamp=time.time(),
+				)
 
-    @on(GET="/chunks")
-    def chunks(self, request) -> AsyncIterator[str]:
-        # TODO: We should use chunked  encoding for performance, otherwise
-        # with the keepalive this will take some time to close.
-        def stream():
-            """The main streaming function, this is returned as a response
-            and will be automatically stopped if the client disconnects."""
-            yield "["
-            for i in range(10):
-                yield str(i)
-                yield ","
-            yield "10]"
+				# SSE format: event line, data line, blank line
+				yield "event: time\n"
+				yield f"data: {{'timestamp': {time.time()}, 'counter': {counter + 1}, 'readable': '{time.ctime()}'}}\n\n"
 
-        return request.respond(
-            stream(),
-            contentType="application/json",
-        )
+				await asyncio.sleep(delay)
+				counter += 1
+
+			# Send completion event
+			info("SSE stream completing")
+			yield "event: complete\n"
+			yield "data: Stream finished\n\n"
+
+		return request.onClose(lambda _: info("SSE stream stopped by client")).respond(
+			stream(), contentType="text/event-stream"
+		)
+
+	@on(GET="/chunks")
+	def chunks(self, request) -> AsyncIterator[str]:
+		"""Demonstrates chunked transfer encoding with JSON array."""
+		info("Starting chunked JSON stream", Client=request.peer)
+
+		def stream():
+			yield "["
+			for i in range(10):
+				if i > 0:
+					yield ","
+				yield f"{{'item': {i}, 'value': {i * i}}}"
+			yield "]"
+
+		return request.respond(
+			stream(),
+			contentType="application/json",
+		)
 
 
-# NOTE: You can start this with `uvicorn sse:app`
-app = run(SSE())
+if __name__ == "__main__":
+	info("Starting Server-Sent Events service")
+	info("Test commands:")
+	info("  curl http://localhost:8000/time")
+	info("  curl http://localhost:8000/time/2")
+	info("  curl http://localhost:8000/chunks")
+	run(SSE())
+
 # EOF

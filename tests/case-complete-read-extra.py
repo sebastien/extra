@@ -9,19 +9,19 @@ from hashlib import sha256
 
 
 def sha(data: bytes) -> str:
-    return sha256(data).hexdigest()
+	return sha256(data).hexdigest()
 
 
 class BodyLengthService(Service):
-    @on(GET_POST="/{path:any}")
-    async def read(self, request: HTTPRequest, path: str) -> HTTPResponse:
-        chunk = await request.load() or b""
-        print(f"[extra]  Server received body: {sha(chunk)} {len(chunk)}")
-        return request.respond(
-            b"Read:%s %d" % (sha(chunk).encode(), len(chunk)), b"text/plain"
-        )
+	@on(GET_POST="/{path:any}")
+	async def read(self, request: HTTPRequest, path: str) -> HTTPResponse:
+		chunk = await request.load() or b""
+		print(f"[extra]  Server received body: {sha(chunk)} {len(chunk)}")
+		return request.respond(
+			b"Read:%s %d" % (sha(chunk).encode(), len(chunk)), b"text/plain"
+		)
 
 
 if __name__ == "__main__":
-    run(BodyLengthService())
+	run(BodyLengthService())
 # EOF

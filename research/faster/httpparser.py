@@ -323,7 +323,7 @@ if __name__ == "__main__":
 			while o < size:
 				ln, n = parser.feed(chunk, o)
 				print(
-					f"Chunk {repr(chunk[o:o+n])}={ln} from {parser.__class__.__name__}"
+					f"Chunk {repr(chunk[o : o + n])}={ln} from {parser.__class__.__name__}"
 				)
 				# FIXME: That doesn't quite work yet
 				if ln is not None:
@@ -364,7 +364,7 @@ if __name__ == "__main__":
 		# - 86.96Mb/s (PyPy)
 
 		print(
-			f"Elapsed: {count}/{elapsed:0.2f}s through={(total/1_000_000)/elapsed:0.2f}Mb/s size={size} count={count}"
+			f"Elapsed: {count}/{elapsed:0.2f}s through={(total / 1_000_000) / elapsed:0.2f}Mb/s size={size} count={count}"
 		)
 
 # EOF

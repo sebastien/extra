@@ -8,14 +8,14 @@ from extra.routing import Prefix, Routes
 # At the very core, a prefix tree will take a list of strings, and
 # group them by common prefix. It's pretty straighforward.
 prefix = Prefix.Make(
-    (
-        "post",
-        "post/",
-        "post/pouet",
-        "post/something-like-that",
-        "post/query",
-        "posts/query",
-    )
+	(
+		"post",
+		"post/",
+		"post/pouet",
+		"post/something-like-that",
+		"post/query",
+		"posts/query",
+	)
 )
 
 expected: str = """\
@@ -37,28 +37,28 @@ assert str(prefix.simplify()) == expected
 # We add a trailing '?' to our list of strings so that
 # we get proper splits
 routes = Routes(
-    "users",
-    "user/{id}",
-    "user/{id}/posts",
-    "posts",
-    "posts/query",
-    "post/{id}",
-    "post/{id}/query",
+	"users",
+	"user/{id}",
+	"user/{id}/posts",
+	"posts",
+	"posts/query",
+	"post/{id}",
+	"post/{id}/query",
 )
 
 # # TODO: We need to find a workaround to the duplicate ids
 for path in [
-    "users",
-    "user/john",
-    "user/john/posts",
-    "posts",
-    "posts/query",
-    "posts/query",
-    "post/hello",
-    "post/hello/query",
+	"users",
+	"user/john",
+	"user/john/posts",
+	"posts",
+	"posts/query",
+	"posts/query",
+	"post/hello",
+	"post/hello/query",
 ]:
-    if match := routes.match(path):
-        print(f"... OK '{path}' matched: {match} with '{routes.paths[match[0]]}'")
-    else:
-        print(f"... FAIL '{path}' did not match")
+	if match := routes.match(path):
+		print(f"... OK '{path}' matched: {match} with '{routes.paths[match[0]]}'")
+	else:
+		print(f"... FAIL '{path}' did not match")
 # EOF

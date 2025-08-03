@@ -60,7 +60,7 @@ class ProxyService(Service):
 	def __init__(self, target: ProxyTarget, *, prefix: str | None = None):
 		super().__init__(prefix=prefix)
 		self.target: ProxyTarget = target
-		info(f"Proxy service {self.prefix or "/"} to {target.uri}")
+		info(f"Proxy service {self.prefix or '/'} to {target.uri}")
 
 	@on(
 		GET="{path:any}",
@@ -98,7 +98,7 @@ class ProxyService(Service):
 		headers["Host"] = uri.host or "localhost"
 		# Now we do the request
 		res: HTTPResponse | None = None
-		req_path: str = f"{uri.path or ""}{path}" if self.prefix else path
+		req_path: str = f"{uri.path or ''}{path}" if self.prefix else path
 		info(f"Proxying {request.method} {path} to {uri / req_path}")
 		async for atom in HTTPClient.Request(
 			host=uri.host or "localhost",

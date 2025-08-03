@@ -10,16 +10,15 @@ from extra.http.parser import HTTPParser
 
 parser = HTTPParser()
 for i, chunk in enumerate(
-    [
-        b"GET /time/5 ",
-        b"HTTP/1.1\r\nHost: ",
-        b"127.0.0.1\r",
-        b"\nConn",
-        b"ection: close\r\n",
-        b"\r",
-        b"\n",
-    ]
+	[
+		b"GET /time/5 ",
+		b"HTTP/1.1\r\nHost: ",
+		b"127.0.0.1\r",
+		b"\nConn",
+		b"ection: close\r\n",
+		b"\r",
+		b"\n",
+	]
 ):
-
-    for atom in parser.feed(chunk):
-        print(i, atom)
+	for atom in parser.feed(chunk):
+		print(i, atom)

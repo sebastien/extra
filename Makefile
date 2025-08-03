@@ -108,9 +108,9 @@ check-strict: $(PREP_ALL)
 lint: check-flakes
 	@
 
-.PHONY: format
-format:
-	@ruff $(SOURCES_PY)
+.PHONY: fmt
+fmt:
+	@ruff format $(SOURCES_PY) $(wildcard examples/*.py tests/*.py)
 
 .PHONY: release-prep
 release-prep: $(PREP_ALL)
