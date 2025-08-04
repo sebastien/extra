@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 import os
 import sys
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 # Try to import mypyc, make it optional
 try:
 	from mypyc.build import mypycify

@@ -194,8 +194,11 @@ wheels = [
 
 [[package]]
 name = "extra-http"
-version = "1.0.1"
+version = "1.0.2"
 source = { editable = "." }
+dependencies = [
+    { name = "mypy-extensions" },
+]
 
 [package.optional-dependencies]
 dev = [
@@ -211,6 +214,7 @@ requires-dist = [
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7.0" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
+    { name = "mypy-extensions" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "twine", marker = "extra == 'dev'", specifier = ">=4.0.0" },
 ]

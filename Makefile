@@ -170,7 +170,7 @@ release-prep: setup
 .PHONY: release
 release: setup
 	@echo "=== Creating release ==="
-	$(PYTHON) setup.py clean sdist bdist_wheel
+	$(UV) run python setup.py clean sdist bdist_wheel
 	$(TWINE) upload dist/$(subst -,_,$(PYPI_PROJECT))-$(VERSION)*
 
 .PHONY: install
