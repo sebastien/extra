@@ -5,6 +5,7 @@ from ..model import Service
 from ..http.model import HTTPRequest, HTTPResponse
 from ..features.cors import cors
 from ..utils.htmpl import Node, H, html
+from ..utils.files import FileEntry
 from html import escape
 import os
 
@@ -63,15 +64,8 @@ class FileService(Service):
 			match format:
 				# We support the JSON format to list the contents of a diretory
 				case "json":
-					root = os.path.abspath(path)
 					return request.returns(
-						[
-							{
-								"path": _.relative_to(root),
-								"type": "directory" if _.is_dir() else "file",
-							}
-							for _ in localPath.iterdir()
-						]
+						[FileEntry.FromPath(_) for _ in localPath.iterdir()]
 					)
 				case _:
 					return self.renderDir(request, path, localPath)
