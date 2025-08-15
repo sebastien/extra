@@ -313,8 +313,7 @@ class HTTPBodyReader(ABC):
 	@abstractmethod
 	async def _read(
 		self, timeout: float = BODY_READER_TIMEOUT, size: int | None = None
-	) -> bytes | None:
-		...
+	) -> bytes | None: ...
 
 	# NOTE: This is a dangerous operation, as this way bloat the whole memory.
 	# Instead, loading should spool the file.
@@ -426,8 +425,7 @@ class HTTPBodyWriter(ABC):
 	@abstractmethod
 	async def _writeBytes(
 		self, chunk: bytes | None | Literal[False], more: bool = False
-	) -> bool:
-		...
+	) -> bool: ...
 
 
 # -----------------------------------------------------------------------------
@@ -535,6 +533,18 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
 	) -> "HTTPRequest":
 		self._onClose = callback
 		return self
+
+	async def read(self) -> AsyncGenerator[bytes | None]:
+		body = self.body
+		if isinstance(body, HTTPBodyBlob):
+			yield body.raw
+			yield None
+		else:
+			while True:
+				chunk = await body._read()
+				yield chunk
+				if chunk is None:
+					break
 
 	def respond(
 		self,

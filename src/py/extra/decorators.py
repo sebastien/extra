@@ -99,16 +99,16 @@ def on(
 
 
 class Expose(NamedTuple):
-	json: Any | None = None
+	json: Union[Any, None] = None
 	raw: bool = False
 	compress: bool = False
-	contentType: str | None = None
+	contentType: Union[str, None] = None
 
 
 def expose(
 	priority: int = 0,
 	compress: bool = False,
-	contentType: str | None = None,
+	contentType: Union[str, None] = None,
 	raw: bool = False,
 	**methods: str,
 ) -> Callable[[T], T]:
@@ -127,9 +127,9 @@ def expose(
 		# This is copy and paste of the @on body
 		v = meta.setdefault(Extra.ON, [])
 		meta.setdefault(Extra.ON_PRIORITY, int(priority))
-		json_data: Any | None = None
+		json_data: Union[Any, None] = None
 		for http_method, url in list(methods.items()):
-			urls: list[str] | tuple[str, ...] = (url,) if isinstance(url, str) else url
+			urls: Union[list[str], tuple[str, ...]] = (url,) if isinstance(url, str) else url
 			for method in http_method.upper().split("_"):
 				for _ in urls:
 					if method == "JSON":

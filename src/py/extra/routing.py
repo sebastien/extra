@@ -10,23 +10,20 @@ from typing import (
 	NamedTuple,
 	ClassVar,
 	TypeVar,
-	Self,
+	Union,
 	cast,
 )
-
 from .decorators import Transform, Extra, Expose
 from .http.model import HTTPRequest, HTTPRequestError, HTTPResponse
 from .utils.logging import info, warning
-
-# from .logging import info, error
 from inspect import iscoroutine
-
 # TODO: Support re2, orjson
 import re
 
-
+# For Python 3.8 compatibility
+Self = TypeVar('Self')
+DispatcherT = TypeVar('DispatcherT', bound='Dispatcher')
 T = TypeVar("T")
-
 
 async def awaited(value: Any) -> Any:
 	if iscoroutine(value):
@@ -49,7 +46,7 @@ class RoutePattern(NamedTuple):
 	"""Used in a parameter chunk to extract/match from the give path."""
 
 	expr: str
-	extractor: Type[Any] | Callable[[str], Any]
+	extractor: Union[Type[Any], Callable[[str], Any]]
 
 
 class TextChunk(NamedTuple):
@@ -65,7 +62,7 @@ class ParameterChunk(NamedTuple):
 	pattern: RoutePattern
 
 
-TChunk = TextChunk | ParameterChunk
+TChunk = Union[TextChunk, ParameterChunk]
 
 
 class Route:
@@ -111,7 +108,7 @@ class Route:
 		cls,
 		type: str,
 		regexp: str,
-		parser: Type[str] | Callable[[str], Any] = str,
+		parser: Union[Type[str], Callable[[str], Any]] = str,
 	) -> "RoutePattern":
 		"""Registers a new RoutePattern into `Route.PATTERNS`"""
 		# We do a precompilation to make sure it's working
@@ -157,9 +154,9 @@ class Route:
 		self.params: dict[str, ParameterChunk] = {
 			_.name: _ for _ in self.chunks if isinstance(_, ParameterChunk)
 		}
-		self.handler: Handler | None = handler
-		self._pattern: str | None = None
-		self._regexp: Pattern[str] | None = None
+		self.handler: Union[Handler, None] = handler
+		self._pattern: Union[str, None] = None
+		self._regexp: Union[Pattern[str], None] = None
 
 	@property
 	def priority(self) -> int:
@@ -208,7 +205,7 @@ class Route:
 	def toRegExp(self) -> str:
 		return "".join(self.toRegExpChunks())
 
-	def match(self, path: str) -> dict[str, str | int | bool | float] | None:
+	def match(self, path: str) -> Union[dict[str, Union[str, int, bool, float]], None]:
 		matches = self.regexp.match(path)
 		return (
 			{
@@ -224,7 +221,7 @@ class Route:
 		)
 
 	def __repr__(self) -> str:
-		return f"(Route \"{self.toRegExp()}\" ({' '.join(_ for _ in self.params)}))"
+		return f'(Route "{self.toRegExp()}" ({" ".join(_ for _ in self.params)}))'
 
 
 # -----------------------------------------------------------------------------
@@ -283,7 +280,7 @@ class Routes:
 		self.paths = routes
 		self.regexp: Pattern[str] = Routes.Compile(routes)
 
-	def match(self, path: str) -> tuple[int, dict[str, Any]] | None:
+	def match(self, path: str) -> Union[tuple[int, dict[str, Any]], None]:
 		if not (match := self.regexp.match(path)):
 			return None
 		else:
@@ -321,9 +318,9 @@ class Prefix:
 		return root
 
 	def __init__(
-		self, value: str | None = None, parent: Optional["Prefix"] = None
+		self, value: Union[str, None] = None, parent: Optional["Prefix"] = None
 	) -> None:
-		self.value: str | None = value
+		self.value: Union[str, None] = value
 		self.parent = parent
 		self.children: dict[str, Prefix] = {}
 
@@ -398,7 +395,7 @@ class Handler:
 		cls,
 		value: Any,
 		key: str,
-		extra: dict[str, Any] | None = None,
+		extra: Union[dict[str, Any], None] = None,
 		*,
 		merge: bool = False,
 	) -> Any:
@@ -420,7 +417,10 @@ class Handler:
 			if extra_value and merge:
 				if type(extra_value) is type(v):
 					if isinstance(v, dict):
-						v = {} | extra_value | v
+						merged = dict()
+						merged.update(extra_value)
+						merged.update(v)
+						v = merged
 					elif isinstance(v, list):
 						v = extra_value + v
 					else:
@@ -433,7 +433,7 @@ class Handler:
 	# FIXME: Handlers should compose transforms and predicate, right now it's
 	# passed as attributes, but it should not really be a stack of transforms.
 	@classmethod
-	def Get(cls, value: Any, extra: dict[str, Any] | None = None) -> Any | None:
+	def Get(cls, value: Any, extra: Union[dict[str, Any], None] = None) -> Union[Any, None]:
 		return (
 			Handler(
 				functor=value,
@@ -454,10 +454,10 @@ class Handler:
 		functor: Callable[..., Any],
 		methods: list[tuple[str, str]],
 		priority: int = 0,
-		expose: Expose | None = None,
-		contentType: str | None = None,
-		pre: list[Transform] | None = None,
-		post: list[Transform] | None = None,
+		expose: Union[Expose, None] = None,
+		contentType: Union[str, None] = None,
+		pre: Union[list[Transform], None] = None,
+		post: Union[list[Transform], None] = None,
 	) -> None:
 		self.functor = functor
 		# This extracts and normalizes the methods
@@ -469,14 +469,14 @@ class Handler:
 		self.priority = priority
 		self.expose = expose
 		self.contentType = contentType
-		self.pre: list[Transform] | None = pre
-		self.post: list[Transform] | None = post
+		self.pre: Union[list[Transform], None] = pre
+		self.post: Union[list[Transform], None] = post
 
 	# TODO: This is maybe more than routing, not sure if this really belongs here
 	# NOTE: For now we only do HTTP Requests, we'll see if we can generalise.
 	async def __call__(
 		self, request: HTTPRequest, params: dict[str, Any]
-	) -> HTTPResponse | Coroutine[Any, HTTPResponse, Any]:
+	) -> Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]]:
 		if self.pre:
 			for i, t in enumerate(self.pre):
 				try:
@@ -540,7 +540,7 @@ class Handler:
 
 	def __repr__(self) -> str:
 		methods = " ".join(
-			f'({k} {" ".join(repr(_) for _ in v)})' for k, v in self.methods.items()
+			f"({k} {' '.join(repr(_) for _ in v)})" for k, v in self.methods.items()
 		)
 		attrs = []
 		if self.expose:
@@ -570,7 +570,7 @@ class Dispatcher:
 		self.routes: dict[str, list[Route]] = {}
 		self.isPrepared: bool = True
 
-	def register(self, handler: Handler, prefix: str | None = None) -> "Dispatcher":
+	def register(self, handler: Handler, prefix: Union[str, None] = None) -> "Dispatcher":
 		"""Registers the handlers and their routes, adding the prefix if given."""
 		for method, paths in handler.methods.items():
 			for path in paths:
@@ -582,7 +582,7 @@ class Dispatcher:
 				self.isPrepared = False
 		return self
 
-	def prepare(self) -> Self:
+	def prepare(self: DispatcherT) -> DispatcherT:
 		"""Prepares the dispatcher, which optimizes the prefix tree for faster matching."""
 		res = {}
 		for method, routes in self.routes.items():
@@ -593,14 +593,14 @@ class Dispatcher:
 
 	def match(
 		self, method: str, path: str
-	) -> tuple[Route | None, bool | dict[str, str | int | float | bool] | None]:
+	) -> tuple[Union[Route, None], Union[bool, dict[str, Union[str, int, float, bool]], None]]:
 		"""Matches a given `method` and `path` with the registered route, returning
 		the matching route and the match information."""
 		if method not in self.routes:
 			return (None, False)
 		else:
-			matched_match: dict[str, str | bool | int | float] | None = None
-			matched_route: Route | None = None
+			matched_match: Union[dict[str, Union[str, bool, int, float]], None] = None
+			matched_route: Union[Route, None] = None
 			matched_priority: int = -1
 			# TODO: Use Routes
 			# NOTE: The problem here is that we're going through
@@ -611,7 +611,7 @@ class Dispatcher:
 			for route in self.routes[method]:
 				if route.priority < matched_priority:
 					continue
-				match: dict[str, str | bool | int | float] | None = route.match(path)
+				match: Union[dict[str, Union[str, bool, int, float]], None] = route.match(path)
 				# FIXME: Maybe use a debug stream here
 				if match is None:
 					continue

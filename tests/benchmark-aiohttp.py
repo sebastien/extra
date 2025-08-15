@@ -6,7 +6,7 @@ PORT: int = int(os.getenv("HTTP_PORT", 8000))
 
 
 async def hello(request):
-    return web.Response(text="Hello, World!")
+	return web.Response(text="Hello, World!")
 
 
 app = web.Application()

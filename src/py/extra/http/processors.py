@@ -15,16 +15,13 @@ T = TypeVar("T")
 
 class Processor(ABC, Generic[T]):
 	@abstractmethod
-	def accepts(self, headers: dict[str, str]) -> bool:
-		...
+	def accepts(self, headers: dict[str, str]) -> bool: ...
 
 	@abstractmethod
-	def start(self, headers: dict[str, str]) -> int:
-		...
+	def start(self, headers: dict[str, str]) -> int: ...
 
 	@abstractmethod
-	def feed(self, chunk: bytes) -> T | Control:
-		...
+	def feed(self, chunk: bytes) -> T | Control: ...
 
 
 # -----------------------------------------------------------------------------
@@ -76,7 +73,7 @@ class Multipart(Processor[MultipartOutput]):
 
 	def start(self, headers: dict[str, str]) -> int:
 		content_type = headers["Content-Type"]
-		self.boundary = f"--{content_type.split("boundary=", 1)[1]}".encode("ascii")
+		self.boundary = f"--{content_type.split('boundary=', 1)[1]}".encode("ascii")
 		self.boundaryLength = len(self.boundary)
 		self.line.reset(self.boundary)
 		self.hasMore = True

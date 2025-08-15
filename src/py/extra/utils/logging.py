@@ -102,15 +102,14 @@ def formatData(value: Any) -> str:
 def send(entry: LogEntry) -> LogEntry:
 	icon: str = f" {entry.icon}" if entry.icon else ""
 	clr: str = Term.Color(LOG_LEVEL_COLOR[entry.level])
-	match entry.type:
-		case LogType.Event:
-			ERR.write(
-				f"{clr}{Term.BOLD}[{entry.origin}] {entry.name}{Term.RESET} {formatData(entry.value)} {formatData(entry.context)}{Term.RESET}\n"
-			)
-		case _:
-			ERR.write(
-				f"{clr}{Term.BOLD}[{entry.origin}]{Term.RESET}{icon} {entry.message} {formatData(entry.context)}{Term.RESET}\n"
-			)
+	if entry.type == LogType.Event:
+		ERR.write(
+			f"{clr}{Term.BOLD}[{entry.origin}] {entry.name}{Term.RESET} {formatData(entry.value)} {formatData(entry.context)}{Term.RESET}\n"
+		)
+	else:
+		ERR.write(
+			f"{clr}{Term.BOLD}[{entry.origin}]{Term.RESET}{icon} {entry.message} {formatData(entry.context)}{Term.RESET}\n"
+		)
 	if entry.stack:
 		ERR.write(
 			f"{clr}{Term.Color(38)}  {' ' * len(entry.origin)} {'→'.join(entry.stack)}{Term.RESET}\n"

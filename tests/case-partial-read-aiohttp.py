@@ -2,9 +2,9 @@ from aiohttp import web
 
 
 async def handler(request):
-    # Read the first 1024 bytes from the request body
-    chunk = await request.content.read(1024)
-    return web.Response(text=f"Read: {len(chunk)}")
+	# Read the first 1024 bytes from the request body
+	chunk = await request.content.read(1024)
+	return web.Response(text=f"Read: {len(chunk)}")
 
 
 app = web.Application()

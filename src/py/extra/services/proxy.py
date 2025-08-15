@@ -60,7 +60,7 @@ class ProxyService(Service):
 	def __init__(self, target: ProxyTarget, *, prefix: str | None = None):
 		super().__init__(prefix=prefix)
 		self.target: ProxyTarget = target
-		info(f"Proxy service {self.prefix or "/"} to {target.uri}")
+		info(f"Proxy service {self.prefix or '/'} to {target.uri}")
 
 	@on(
 		GET="{path:any}",
@@ -98,7 +98,7 @@ class ProxyService(Service):
 		headers["Host"] = uri.host or "localhost"
 		# Now we do the request
 		res: HTTPResponse | None = None
-		req_path: str = f"{uri.path or ""}{path}" if self.prefix else path
+		req_path: str = f"{uri.path or ''}{path}" if self.prefix else path
 		info(f"Proxying {request.method} {path} to {uri / req_path}")
 		async for atom in HTTPClient.Request(
 			host=uri.host or "localhost",
@@ -124,18 +124,17 @@ class ProxyService(Service):
 			updated_headers: dict[str, str] = {}
 			# SEE: https://stackoverflow.com/questions/46288437/set-cookies-for-cross-origin-requests
 			for name, value in res.headers.headers.items():
-				match name:
+				if name == "Set-Cookie":
 					# We loosen the cookies so that they flow
-					case "Set-Cookie":
-						cookies = []
-						for cookie in iparseCookie(value):
-							if cookie.key in ("Secure", "HTTPOnly"):
-								continue
-							elif cookie.value == "Secure":
-								cookies.append(cookie._replace(value="Lax"))
-							else:
-								cookies.append(cookie)
-						updated_headers[name] = formatCookie(cookies)
+					cookies = []
+					for cookie in iparseCookie(value):
+						if cookie.key in ("Secure", "HTTPOnly"):
+							continue
+						elif cookie.value == "Secure":
+							cookies.append(cookie._replace(value="Lax"))
+						else:
+							cookies.append(cookie)
+					updated_headers[name] = formatCookie(cookies)
 			res.headers.headers.update(updated_headers)
 			return (
 				setCORSHeaders(res, origin=request.getHeader("Origin"))

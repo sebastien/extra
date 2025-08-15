@@ -2,6 +2,9 @@ import mimetypes
 from typing import NamedTuple
 import shutil
 from pathlib import Path
+from typing import NamedTuple
+
+mimetypes.init()
 
 mimetypes.init()
 

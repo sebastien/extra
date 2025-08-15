@@ -1,14 +1,17 @@
+import sys
 from typing import (
-	LiteralString,
 	Optional,
 	Iterable,
 	Iterator,
 	Union,
 	Callable,
-	Self,
 	cast,
 )
-from mypy_extensions import KwArg, VarArg
+
+if sys.version_info >= (3, 11):
+	from typing import LiteralString, Self
+else:
+	from typing_extensions import LiteralString, Self
 
 # TODO: Define a Chunk to define a way to pre-rendere chunks of a Node, so that
 # we get fast serialization when writing to. The key thing, just like with JSON
@@ -17,9 +20,9 @@ from mypy_extensions import KwArg, VarArg
 # --
 # HTMPL defines functions to create HTML templates
 
-HTML_EMPTY: list[
-	LiteralString
-] = "area base br col embed hr img input link meta param source track wbr".split()
+HTML_EMPTY: list[LiteralString] = (
+	"area base br col embed hr img input link meta param source track wbr".split()
+)
 HTML_ESCAPED = str.maketrans(
 	{"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#x27;"}
 )
@@ -145,13 +148,7 @@ def node(
 	)
 
 
-NodeFactory = Callable[
-	[
-		VarArg(Iterable[Node | str]),
-		KwArg(str | None),
-	],
-	Node,
-]
+NodeFactory = Callable[..., Node]
 
 
 def nodeFactory(name: str, ns: str | None = None) -> NodeFactory:

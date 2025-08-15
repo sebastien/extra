@@ -3,10 +3,10 @@ BASE="$(dirname "$(dirname "$(readlink -f "$0")")")"
 
 function run-case() {
 	echo "[test]   === CASE $1"
-	python "$BASE/tests/case-complete-read-$1.py" &
+	python3 "$BASE/tests/case-complete-read-$1.py" &
 	local server_pid="$!"
 	sleep 1
-	python "$BASE/tests/case-complete-read-client.py"
+	python3 "$BASE/tests/case-complete-read-client.py"
 	local result="$?"
 	kill -9 "$server_pid"
 	if [ "$result" == "0" ]; then

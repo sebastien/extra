@@ -223,7 +223,7 @@ class URI:
 			query=self.query,
 			fragment=self.fragment,
 		)
-		return f"URI({' '.join(f'{k}={v}' for k,v in attr.items() if v)})"
+		return f"URI({' '.join(f'{k}={v}' for k, v in attr.items() if v)})"
 
 	def __str__(self) -> str:
 		res: list[str] = []

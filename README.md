@@ -32,12 +32,13 @@ Highlights:
 - Pre/post conditions for request handlers
 - HTML templating (plays nice with HTMX)
 - CORS support
+- Configurable proxy support
 - Integrated logging
 - Regexp-based tree router
 
 Extra is the successor of [Retro](https://github.com/sebastien/retro),
 one of the oldest decorator-based framework for HTTP applications and
-built on the 15+ years of experience developing and maintainig that
+built on the 15+ years of experience developing and maintaining that
 toolkit.
 
 Like Retro, Extra is designed as a kit, providing easily composable
@@ -54,6 +55,7 @@ course, [FastAPI](https://fastapi.tiangolo.com/).
 Here is `helloworld.py`:
 
 ``` python
+#!/usr/bin/env uv run --with extra-http
 from extra import Service, HTTPRequest, HTTPResponse, on, run
 
 class HelloWorld(Service):

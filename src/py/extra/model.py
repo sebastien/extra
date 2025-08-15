@@ -1,4 +1,4 @@
-from typing import Iterable, ClassVar, Any, Coroutine, NamedTuple
+from typing import Iterable, ClassVar, Any, Coroutine, NamedTuple, Union
 import sys
 import importlib
 
@@ -34,11 +34,11 @@ class Service:
 		# TODO: What about the prefix?
 		return res
 
-	def __init__(self, name: str | None = None, *, prefix: str | None = None) -> None:
+	def __init__(self, name: Union[str, None] = None, *, prefix: Union[str, None] = None) -> None:
 		self.name: str = name or self.__class__.__name__
-		self.app: Application | None = None
+		self.app: Union[Application, None] = None
 		self.prefix = prefix or self.PREFIX
-		self._handlers: list[Handler] | None = None
+		self._handlers: Union[list[Handler], None] = None
 		self.init()
 
 	def init(self) -> None:
@@ -80,7 +80,7 @@ class Service:
 
 
 class Application:
-	def __init__(self, services: list[Service] | None = None) -> None:
+	def __init__(self, services: Union[list[Service], None] = None) -> None:
 		self.routes: list[Route] = []
 		self.dispatcher: Dispatcher = Dispatcher()
 		self.services: list[Service] = services if services else []
@@ -139,7 +139,7 @@ class Application:
 
 	def process(
 		self, request: HTTPRequest
-	) -> HTTPResponse | Coroutine[Any, HTTPResponse, Any]:
+	) -> Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]]:
 		route, params = self.dispatcher.match(
 			request.method or "GET", request.path or "/"
 		)
@@ -151,7 +151,7 @@ class Application:
 		else:
 			return self.onRouteNotFound(request)
 
-	def mount(self, service: Service, prefix: str | None = None) -> Service:
+	def mount(self, service: Service, prefix: Union[str, None] = None) -> Service:
 		if service.isMounted:
 			raise RuntimeError(
 				f"Cannot mount service, it is already mounted: {service}"
@@ -184,7 +184,7 @@ class Components(NamedTuple):
 	services: list[Service]
 
 	@staticmethod
-	def Make(components: Iterable[Application | Service]) -> "Components":
+	def Make(components: Iterable[Union[Application, Service]]) -> "Components":
 		"""Makes a Component value given the applications and services."""
 		apps: list[Application] = []
 		services: list[Service] = []
@@ -202,12 +202,12 @@ class Components(NamedTuple):
 		)
 
 
-def components(*components: Application | Service) -> Components:
+def components(*components: Union[Application, Service]) -> Components:
 	"""Wraps the application and compponents in a components structure."""
 	return Components.Make(components)
 
 
-def mount(*components: Application | Service) -> Application:
+def mount(*components: Union[Application, Service]) -> Application:
 	"""Mounts the given components into and application"""
 	c = Components.Make(components)
 	app: Application = c.app
