@@ -173,6 +173,13 @@ release: setup
 	$(UV) run python setup.py clean sdist bdist_wheel
 	$(TWINE) upload dist/$(subst -,_,$(PYPI_PROJECT))-$(VERSION)*
 
+.PHONY: release
+release:
+	@git commit -a -m "[Release] $(PROJECT): $(VERSION)"
+	git tag $(VERSION)
+	git push --all
+	$(PYTHON) setup.py clean sdist register upload
+
 .PHONY: install
 install:
 	@for file in $(SOURCES_BIN); do
