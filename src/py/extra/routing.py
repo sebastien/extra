@@ -17,13 +17,15 @@ from .decorators import Transform, Extra, Expose
 from .http.model import HTTPRequest, HTTPRequestError, HTTPResponse
 from .utils.logging import info, warning
 from inspect import iscoroutine
+
 # TODO: Support re2, orjson
 import re
 
 # For Python 3.8 compatibility
-Self = TypeVar('Self')
-DispatcherT = TypeVar('DispatcherT', bound='Dispatcher')
+Self = TypeVar("Self")
+DispatcherT = TypeVar("DispatcherT", bound="Dispatcher")
 T = TypeVar("T")
+
 
 async def awaited(value: Any) -> Any:
 	if iscoroutine(value):
@@ -433,7 +435,9 @@ class Handler:
 	# FIXME: Handlers should compose transforms and predicate, right now it's
 	# passed as attributes, but it should not really be a stack of transforms.
 	@classmethod
-	def Get(cls, value: Any, extra: Union[dict[str, Any], None] = None) -> Union[Any, None]:
+	def Get(
+		cls, value: Any, extra: Union[dict[str, Any], None] = None
+	) -> Union[Any, None]:
 		return (
 			Handler(
 				functor=value,
@@ -570,7 +574,9 @@ class Dispatcher:
 		self.routes: dict[str, list[Route]] = {}
 		self.isPrepared: bool = True
 
-	def register(self, handler: Handler, prefix: Union[str, None] = None) -> "Dispatcher":
+	def register(
+		self, handler: Handler, prefix: Union[str, None] = None
+	) -> "Dispatcher":
 		"""Registers the handlers and their routes, adding the prefix if given."""
 		for method, paths in handler.methods.items():
 			for path in paths:
@@ -593,7 +599,9 @@ class Dispatcher:
 
 	def match(
 		self, method: str, path: str
-	) -> tuple[Union[Route, None], Union[bool, dict[str, Union[str, int, float, bool]], None]]:
+	) -> tuple[
+		Union[Route, None], Union[bool, dict[str, Union[str, int, float, bool]], None]
+	]:
 		"""Matches a given `method` and `path` with the registered route, returning
 		the matching route and the match information."""
 		if method not in self.routes:
@@ -611,7 +619,9 @@ class Dispatcher:
 			for route in self.routes[method]:
 				if route.priority < matched_priority:
 					continue
-				match: Union[dict[str, Union[str, bool, int, float]], None] = route.match(path)
+				match: Union[
+					dict[str, Union[str, bool, int, float]], None
+				] = route.match(path)
 				# FIXME: Maybe use a debug stream here
 				if match is None:
 					continue

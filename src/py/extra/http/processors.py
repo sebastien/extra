@@ -15,13 +15,16 @@ T = TypeVar("T")
 
 class Processor(ABC, Generic[T]):
 	@abstractmethod
-	def accepts(self, headers: dict[str, str]) -> bool: ...
+	def accepts(self, headers: dict[str, str]) -> bool:
+		...
 
 	@abstractmethod
-	def start(self, headers: dict[str, str]) -> int: ...
+	def start(self, headers: dict[str, str]) -> int:
+		...
 
 	@abstractmethod
-	def feed(self, chunk: bytes) -> T | Control: ...
+	def feed(self, chunk: bytes) -> T | Control:
+		...
 
 
 # -----------------------------------------------------------------------------

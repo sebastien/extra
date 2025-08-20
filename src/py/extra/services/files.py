@@ -94,7 +94,7 @@ class FileService(Service):
 	) -> HTTPResponse:
 		path = path.strip("/")
 		if localPath.is_dir():
-			if format == "json":
+			match format:
 				# We support the JSON format to list the contents of a diretory
 				case "json":
 					return request.returns(

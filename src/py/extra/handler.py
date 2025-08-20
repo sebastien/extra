@@ -76,7 +76,9 @@ from .http.model import (
 # - `authorizer`: (If applicable) Information from a custom authorizer (e.g., Lambda authorizer) that you've configured for your API Gateway API.
 
 
-TAWSRequestContext = dict[str, Union[str, bytes, int, float, bool, dict[str, str], None]]
+TAWSRequestContext = dict[
+	str, Union[str, bytes, int, float, bool, dict[str, str], None]
+]
 TAWSEvent = dict[
 	str, Union[str, bytes, int, float, bool, dict[str, str], TAWSRequestContext, None]
 ]
@@ -195,7 +197,9 @@ class AWSLambdaHandler:
 		self, event: dict[str, Any], context: Union[dict[str, Any], None] = None
 	) -> dict[str, Any]:
 		req: HTTPRequest = AWSLambdaEvent.AsRequest(event)
-		r: Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]] = self.app.process(req)
+		r: Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]] = self.app.process(
+			req
+		)
 		if isinstance(r, HTTPResponse):
 			res: HTTPResponse = r
 		else:
@@ -241,7 +245,9 @@ def event(
 
 
 def awslambda(
-	handler: Callable[[HTTPRequest], Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]]],
+	handler: Callable[
+		[HTTPRequest], Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]]
+	],
 ) -> Callable[[dict[str, Any], Union[dict[str, Any], None]], dict[str, Any]]:
 	def wrapper(
 		event: dict[str, Any], context: Union[dict[str, Any], None] = None
