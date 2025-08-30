@@ -6,8 +6,6 @@ from typing import NamedTuple
 
 mimetypes.init()
 
-mimetypes.init()
-
 MIME_TYPES: dict[str, str] = dict(
 	bz2="application/x-bzip",
 	gz="application/x-gzip",

@@ -1,16 +1,18 @@
-from pathlib import Path
-from typing import Union, Callable
-from abc import abstractmethod
-from ..decorators import on
-from ..model import Service
-from ..http.model import HTTPRequest, HTTPResponse
-from ..features.cors import cors
-from ..utils.htmpl import Node, H, html
-from ..utils.shell import shell
-from ..utils.files import FileEntry
-from html import escape
 import os
+from abc import abstractmethod
+from email.utils import formatdate
+from hashlib import md5
+from html import escape
+from pathlib import Path
+from typing import Callable, Union
 
+from ..decorators import on
+from ..features.cors import cors
+from ..http.model import HTTPRequest, HTTPResponse
+from ..model import Service
+from ..utils.files import FileEntry, contentType
+from ..utils.htmpl import H, Node, html
+from ..utils.shell import shell
 
 FILE_CSS: str = """
 :root {
@@ -45,7 +47,7 @@ li {
 # TODO: Support caching
 class FileTranslator:
 	@abstractmethod
-	def match(self, base: Path, path: str) -> Path | None:
+	def match(self, base: Path, path: str, local: Path) -> Path | None:
 		...
 
 	@abstractmethod
@@ -56,11 +58,9 @@ class FileTranslator:
 class TypeScriptTranslator(FileTranslator):
 	"""Transpiles TypeScript using bun."""
 
-	def match(self, base: Path, path: str) -> Path | None:
+	def match(self, base: Path, path: str, local: Path) -> Path | None:
 		# TODO: Should check if Bun is there
-		p: Path = base / path
-		s = p.suffix
-		return p if s == ".ts" else None
+		return local if local.suffix == ".ts" else None
 
 	def translate(self, path: Path) -> tuple[str, bytes | str]:
 		# TODO: This is fully blocking, we should support streaming or
@@ -84,6 +84,7 @@ class FileService(Service):
 		self.canWrite: Callable[[HTTPRequest, Path], bool] = lambda r, p: False
 		self.canRead: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
 		self.canDelete: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
+		self.automatic: list[str] = [".html", ".htm", ".txt", ".md", ".ts", ".js"]
 
 	def renderPath(
 		self,
@@ -104,19 +105,36 @@ class FileService(Service):
 					return self.renderDir(request, path, localPath)
 		else:
 			for t in self.TRANSLATORS:
-				p = t.match(self.root, path)
+				p = t.match(self.root, path, localPath)
 				if p:
 					c, b = t.translate(p)
 					return request.respond(b, contentType=c)
 			return request.respondFile(
-				localPath, contentType=self.guessContentType(localPath)
+				localPath,
+				contentType=self.guessContentType(localPath),
+				headers=self.getFileHeaders(localPath),
 			)
 
 	def guessContentType(self, path: Path) -> str | None:
 		if path.name == "importmap.json":
 			return "application/importmap+json"
 		else:
-			return None
+			return contentType(path)
+
+	def getFileHeaders(self, path: Path) -> dict[str, str]:
+		"""Generate Last-Modified and ETag headers for a file."""
+		headers = {}
+		if path.exists():
+			stat_info = path.stat()
+			# Last-Modified header (RFC 7234)
+			headers["Last-Modified"] = formatdate(stat_info.st_mtime, usegmt=True)
+			# ETag header using file size and modification time
+			etag = md5(
+				f"{stat_info.st_size}-{stat_info.st_mtime}".encode(),
+				usedforsecurity=False,
+			).hexdigest()  # nosec
+			headers["ETag"] = f'"{etag}"'
+		return headers
 
 	def renderDir(
 		self, request: HTTPRequest, path: str, localPath: Path
@@ -214,9 +232,20 @@ class FileService(Service):
 		local_path = self.resolvePath(path)
 		if not (local_path and self.canRead(request, local_path)):
 			return request.notAuthorized(f"Not authorized to access path: {path}")
+		elif not local_path.exists():
+			return request.notFound()
 		else:
-			# FIXME: This should include the headers, type, etc, and it does not
-			return request.respond("")
+			# Include all headers that would be sent with GET request
+			if local_path.is_dir():
+				# Directory listing HEAD response
+				return request.respond("", contentType="text/html")
+			else:
+				# File HEAD response with proper headers
+				headers = self.getFileHeaders(local_path)
+				content_type = self.guessContentType(local_path)
+				if local_path.exists():
+					headers["Content-Length"] = str(local_path.stat().st_size)
+				return request.respond("", contentType=content_type, headers=headers)
 
 	@cors
 	@on(GET=("/", "/{path:any}"))
@@ -264,19 +293,23 @@ class FileService(Service):
 		local_path = self.root.joinpath(path).absolute()
 		if not local_path.parts[: len(parts := self.root.parts)] == parts:
 			return None
+		# First try to resolve with automatic extensions (unless path ends with "/")
+		if not has_slash and not local_path.suffix:
+			for suffix in self.automatic:
+				translated_path = local_path.with_suffix(suffix)
+				if translated_path.exists():
+					return translated_path
+
+		# Then check if it's a directory
 		if local_path.is_dir():
 			index_path = local_path / "index.html"
 			if not has_slash and index_path.exists():
 				return index_path
 			else:
 				return local_path
-		else:
-			if not local_path.exists() and not local_path.suffix:
-				for suffix in [".html", ".htm", ".txt", ".md"]:
-					html_path = local_path.with_suffix(suffix)
-					if html_path.exists():
-						return html_path
-			return local_path
+
+		# Finally return the original path if it exists, or None if it doesn't
+		return local_path if local_path.exists() else None
 
 
 # EOF
