@@ -33,7 +33,8 @@ class ResponseFactory(ABC, Generic[T]):
 		status: int = 200,
 		headers: dict[str, str] | None = None,
 		message: str | None = None,
-	) -> T: ...
+	) -> T:
+		...
 
 	def error(
 		self,

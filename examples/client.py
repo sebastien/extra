@@ -22,6 +22,7 @@ Usage:
 Default: https://google.com/
 """
 
+
 async def make_requests(url_str: str, num_requests: int = 3):
 	"""Make multiple HTTP requests to demonstrate connection pooling."""
 	uri = URI.Parse(url_str)

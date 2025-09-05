@@ -4,7 +4,7 @@ MAKEFLAGS+= --warn-undefined-variables
 MAKEFLAGS+= --no-builtin-rules
 PROJECT:=extra
 PYPI_PROJECT=extra-http
-VERSION:=$(shell grep VERSION setup.py  | head -n1 | cut -d '"' -f2)
+VERSION:=$(shell grep version pyproject.toml  | head -n1 | cut -d '"' -f2)
 
 # Use mise for Python version management and uv for dependencies
 MISE:=$(shell which mise 2>/dev/null || echo "mise")
@@ -167,11 +167,22 @@ release-prep: setup
 	# git tag $(VERSION); true
 	# git push --all; true
 
+# .PHONY: release
+# release: setup
+# 	@echo "=== Creating release ==="
+# 	$(UV) run python setup.py clean sdist bdist_wheel
+# 	$(TWINE) upload dist/$(subst -,_,$(PYPI_PROJECT))-$(VERSION)*
+
 .PHONY: release
 release: setup
-	@echo "=== Creating release ==="
-	$(UV) run python setup.py clean sdist bdist_wheel
-	$(TWINE) upload dist/$(subst -,_,$(PYPI_PROJECT))-$(VERSION)*
+	@echo "=== Running CI checks before release ==="
+	make ci
+	echo "=== Building package with pyproject.toml ==="
+	$(PYTHON) -m build
+	echo "=== Committing, tagging, and pushing release ==="
+	git commit -a -m "[Release] $(PROJECT): $(VERSION)"
+	git tag $(VERSION)
+	git push --all
 
 .PHONY: install
 install:
