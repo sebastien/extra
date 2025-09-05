@@ -167,11 +167,22 @@ release-prep: setup
 	# git tag $(VERSION); true
 	# git push --all; true
 
+# .PHONY: release
+# release: setup
+# 	@echo "=== Creating release ==="
+# 	$(UV) run python setup.py clean sdist bdist_wheel
+# 	$(TWINE) upload dist/$(subst -,_,$(PYPI_PROJECT))-$(VERSION)*
+
 .PHONY: release
 release: setup
-	@echo "=== Creating release ==="
-	$(UV) run python setup.py clean sdist bdist_wheel
-	$(TWINE) upload dist/$(subst -,_,$(PYPI_PROJECT))-$(VERSION)*
+	@echo "=== Running CI checks before release ==="
+	@make ci
+	@echo "=== Building package with pyproject.toml ==="
+	@$(PYTHON) -m build
+	@echo "=== Committing, tagging, and pushing release ==="
+	@git commit -a -m "[Release] $(PROJECT): $(VERSION)"
+	@git tag $(VERSION)
+	@git push --all
 
 .PHONY: install
 install:

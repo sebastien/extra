@@ -25,8 +25,8 @@ from .http.model import (
 from .http.parser import HTTPParser
 
 # For Python 3.8 compatibility
-ConnectionT = TypeVar('ConnectionT', bound='Connection')
-ConnectionPoolT = TypeVar('ConnectionPoolT', bound='ConnectionPool')
+ConnectionT = TypeVar("ConnectionT", bound="Connection")
+ConnectionPoolT = TypeVar("ConnectionPoolT", bound="ConnectionPool")
 
 
 # --

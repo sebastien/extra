@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "extra-http"
-version = "1.0.2"
+version = "1.0.7"
 description = "A fast, async HTTP framework"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 authors = [
     {name = "Extra Team"}
 ]
@@ -45,10 +46,15 @@ where = ["src/py"]
 [tool.ruff]
 line-length = 88
 target-version = "py38"
+indent-width = 4
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "tab"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
-ignore = ["E203", "E501", "W503"]
+ignore = ["E101", "E203", "E501", "W191"]
 
 [tool.mypy]
 python_version = "3.10"

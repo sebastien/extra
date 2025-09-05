@@ -34,11 +34,13 @@ class HTMXApp(Service):
 			H.head(
 				H.title("HTMX Example"),
 				H.script(src="https://unpkg.com/htmx.org@1.9.12"),
-				H.style("""
+				H.style(
+					"""
 					body { font-family: Arial, sans-serif; padding: 20px; }
 					.counter { font-size: 24px; margin: 10px 0; }
 					button { padding: 10px 20px; margin: 5px; cursor: pointer; }
-				"""),
+				"""
+				),
 			),
 			H.body(*body_content),
 		)

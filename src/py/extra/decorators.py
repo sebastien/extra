@@ -129,7 +129,9 @@ def expose(
 		meta.setdefault(Extra.ON_PRIORITY, int(priority))
 		json_data: Union[Any, None] = None
 		for http_method, url in list(methods.items()):
-			urls: Union[list[str], tuple[str, ...]] = (url,) if isinstance(url, str) else url
+			urls: Union[list[str], tuple[str, ...]] = (
+				(url,) if isinstance(url, str) else url
+			)
 			for method in http_method.upper().split("_"):
 				for _ in urls:
 					if method == "JSON":

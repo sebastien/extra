@@ -34,7 +34,9 @@ class Service:
 		# TODO: What about the prefix?
 		return res
 
-	def __init__(self, name: Union[str, None] = None, *, prefix: Union[str, None] = None) -> None:
+	def __init__(
+		self, name: Union[str, None] = None, *, prefix: Union[str, None] = None
+	) -> None:
 		self.name: str = name or self.__class__.__name__
 		self.app: Union[Application, None] = None
 		self.prefix = prefix or self.PREFIX

@@ -20,9 +20,9 @@ else:
 # --
 # HTMPL defines functions to create HTML templates
 
-HTML_EMPTY: list[LiteralString] = (
-	"area base br col embed hr img input link meta param source track wbr".split()
-)
+HTML_EMPTY: list[
+	LiteralString
+] = "area base br col embed hr img input link meta param source track wbr".split()
 HTML_ESCAPED = str.maketrans(
 	{"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#x27;"}
 )
