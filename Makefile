@@ -8,7 +8,7 @@ VERSION:=$(shell sed -n 's/^__version__ = "\(.*\)"/\1/p' src/py/extra/__init__.p
 
 # Use mise for Python version management and uv for dependencies
 MISE:=$(shell which mise 2>/dev/null || echo "mise")
-UV:=$(shell which uv 2>/dev/null || echo "uv")
+UV:=$(MISE) x -- uv
 PYTHON:=$(shell $(MISE) which python 2>/dev/null || which python3 2>/dev/null || echo "python3")
 PATH_SOURCES_PY=src/py
 PYTHON_MODULES=$(patsubst src/py/%,%,$(wildcard src/py/*))
