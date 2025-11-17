@@ -4,15 +4,9 @@ import sys
 from setuptools import find_packages, setup
 
 
-def get_version():
-	with open("pyproject.toml", "r", encoding="utf-8") as f:
-		for line in f:
-			if line.strip().startswith("version = "):
-				return line.split('"')[1]
-	return "unknown"
+VERSION = "1.0.9"
 
 
-VERSION = get_version()
 # Try to import mypyc, make it optional
 try:
 	from mypyc.build import mypycify

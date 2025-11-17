@@ -1,28 +1,29 @@
-from typing import NamedTuple, ClassVar, AsyncGenerator, Any, Iterator, Union, TypeVar
-from urllib.parse import quote_plus, urlparse
-from contextvars import ContextVar
-from contextlib import contextmanager
-from dataclasses import dataclass
 import asyncio
+import os
 import ssl
 import time
-import os
-from .utils.io import asWritable
-from .utils.logging import event
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator, ClassVar, Iterator, NamedTuple, TypeVar, Union
+from urllib.parse import quote_plus, urlparse
+
 from .http.model import (
-	HTTPRequest,
-	HTTPResponse,
-	HTTPBodyStream,
+	HTTPAtom,
+	HTTPBody,
 	HTTPBodyAsyncStream,
 	HTTPBodyBlob,
 	HTTPBodyFile,
-	HTTPHeaders,
-	HTTPBody,
 	HTTPBodyIO,
-	HTTPAtom,
+	HTTPBodyStream,
+	HTTPHeaders,
 	HTTPProcessingStatus,
+	HTTPRequest,
+	HTTPResponse,
 )
 from .http.parser import HTTPParser
+from .utils.io import asWritable
+from .utils.logging import event
 
 # For Python 3.8 compatibility
 ConnectionT = TypeVar("ConnectionT", bound="Connection")
@@ -45,7 +46,7 @@ SSL_CLIENT_UNVERIFIED_CONTEXT: ssl.SSLContext = (
 	ssl._create_unverified_context()  # nosec: B323
 )
 try:
-	import certifi  # type: ignore[import-not-found]
+	import certifi
 
 	SSL_CLIENT_CONTEXT.load_verify_locations(certifi.where())
 except FileNotFoundError:

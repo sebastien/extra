@@ -4,7 +4,7 @@ MAKEFLAGS+= --warn-undefined-variables
 MAKEFLAGS+= --no-builtin-rules
 PROJECT:=extra
 PYPI_PROJECT=extra-http
-VERSION:=$(shell grep version pyproject.toml  | head -n1 | cut -d '"' -f2)
+VERSION:=$(shell sed -n 's/^__version__ = "\(.*\)"/\1/p' src/py/extra/__init__.py | head -n1)
 
 # Use mise for Python version management and uv for dependencies
 MISE:=$(shell which mise 2>/dev/null || echo "mise")
@@ -15,6 +15,7 @@ PYTHON_MODULES=$(patsubst src/py/%,%,$(wildcard src/py/*))
 SOURCES_BIN:=$(wildcard bin/*)
 SOURCES_PY:=$(wildcard $(PATH_SOURCES_PY)/*.py $(PATH_SOURCES_PY)/*/*.py $(PATH_SOURCES_PY)/*/*/*.py $(PATH_SOURCES_PY)/*/*/*/*.py)
 MODULES_PY:=$(filter-out %/__main__,$(filter-out %/__init__,$(SOURCES_PY:$(PATH_SOURCES_PY)/%.py=%)))
+MYPYC_BUILD_DIR=build-mypyc
 
 PATH_LOCAL_PY=$(firstword $(shell $(PYTHON) -c "import sys,pathlib;sys.stdout.write(' '.join([_ for _ in sys.path if _.startswith(str(pathlib.Path.home()))] ))" 2>/dev/null || echo ""))
 PATH_LOCAL_BIN=$(HOME)/.local/bin
@@ -26,6 +27,7 @@ FLAKE8=$(UV) run flake8
 MYPY=mypy
 TWINE=$(UV) run twine
 MYPYC=$(UV) run mypyc
+BUILD=$(UV) run build
 
 cmd-check=if ! $$(which $1 &> /dev/null ); then echo "ERR Could not find command $1"; exit 1; fi; $1
 
@@ -41,11 +43,10 @@ setup:
 		curl -LsSf https://astral.sh/uv/install.sh | sh; \
 	fi
 	@echo "Installing Python dependencies with uv..."
-	@$(UV) tool install flake8 2>/dev/null || true
-	@$(UV) tool install bandit 2>/dev/null || true
 	@$(UV) tool install mypy 2>/dev/null || true
 	@$(UV) tool install twine 2>/dev/null || true
 	@$(UV) tool install ruff 2>/dev/null || true
+	@$(UV) tool install build 2>/dev/null || true
 	@echo "=== Setup complete ==="
 
 .PHONY: prep
@@ -103,7 +104,7 @@ check: check-bandit check-flakes check-strict
 check-compiled:
 	@
 	echo "=== $@"
-	COMPILED=$$(PYTHONPATH=build python -c "import extra;print(extra)")
+	COMPILED=$$(PYTHONPATH=$(MYPYC_BUILD_DIR) python -c "import extra;print(extra)")
 	echo "Extra compiled at: $$COMPILED"
 
 .PHONY: check-bandit
@@ -177,10 +178,29 @@ release-prep: setup
 release: setup
 	@echo "=== Running CI checks before release ==="
 	make ci
-	echo "=== Building package with pyproject.toml ==="
-	$(PYTHON) -m build
-	echo "=== Committing, tagging, and pushing release ==="
+	@echo "=== Building package with setup.py ==="
+	@$(PYTHON) setup.py clean sdist bdist_wheel
+	@echo "=== Uploading package to PyPI with twine ==="
+	@$(TWINE) upload dist/$(subst -,_,$(PYPI_PROJECT))-$(VERSION)*
+	@echo "=== Committing, tagging, and pushing release ==="
 	git commit -a -m "[Release] $(PROJECT): $(VERSION)"
+	git tag $(VERSION)
+	git push --all
+
+.PHONY: test-release
+test-release: setup
+	@echo "=== Building package with setup.py (test release, no upload) ==="
+	@$(PYTHON) setup.py clean sdist bdist_wheel
+	@echo "=== Test release complete; artifacts in dist/ (no upload, no tagging) ==="
+
+.PHONY: quick-release
+quick-release: setup
+	@echo "=== Building package with setup.py (no CI) ==="
+	@$(PYTHON) setup.py clean sdist bdist_wheel
+	@echo "=== Uploading package to PyPI with twine (no CI) ==="
+	@$(TWINE) upload dist/$(subst -,_,$(PYPI_PROJECT))-$(VERSION)*
+	@echo "=== Committing, tagging, and pushing quick release ==="
+	git commit -a -m "[Quick Release] $(PROJECT): $(VERSION)"
 	git tag $(VERSION)
 	git push --all
 
