@@ -60,7 +60,7 @@ class TypeScriptTranslator(FileTranslator):
 
 	def match(self, base: Path, path: str, local: Path) -> Path | None:
 		# TODO: Should check if Bun is there
-		return local if local.suffix == ".ts" else None
+		return local if local.suffix in (".ts", ".tsx", ".jsx") else None
 
 	def translate(self, path: Path) -> tuple[str, bytes | str]:
 		# TODO: This is fully blocking, we should support streaming or
@@ -76,15 +76,25 @@ class FileService(Service):
 
 	TRANSLATORS: list[FileTranslator] = [TypeScriptTranslator()]
 
-	def __init__(self, root: str | Path | None = None):
+	def __init__(self, root: str | Path | None = None, strict: bool = False):
 		super().__init__()
+		self.strictLocalPath: bool = strict
 		self.root: Path = (
 			root if isinstance(root, Path) else Path(root or ".")
 		).absolute()
 		self.canWrite: Callable[[HTTPRequest, Path], bool] = lambda r, p: False
 		self.canRead: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
 		self.canDelete: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
-		self.automatic: list[str] = [".html", ".htm", ".txt", ".md", ".ts", ".js"]
+		self.automatic: list[str] = [
+			".html",
+			".htm",
+			".txt",
+			".md",
+			".ts",
+			".tsx",
+			".js",
+			".jsx",
+		]
 
 	def renderPath(
 		self,
@@ -291,7 +301,10 @@ class FileService(Service):
 	def resolvePath(self, path: Union[str, Path]) -> Path | None:
 		has_slash = isinstance(path, str) and path.endswith("/")
 		local_path = self.root.joinpath(path).absolute()
-		if not local_path.parts[: len(parts := self.root.parts)] == parts:
+		if (
+			self.strictLocalPath
+			and not local_path.parts[: len(parts := self.root.parts)] == parts
+		):
 			return None
 		# First try to resolve with automatic extensions (unless path ends with "/")
 		if not has_slash and not local_path.suffix:

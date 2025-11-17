@@ -1,12 +1,11 @@
-from typing import Any, Generic, TypeVar, Iterator
 from abc import ABC, abstractmethod
-from pathlib import Path
-
 from base64 import b64encode
+from pathlib import Path
+from typing import Any, Generic, Iterator, TypeVar
 
-from .status import HTTP_STATUS
-from ..utils.json import json
 from ..utils.files import contentType as getContentType
+from ..utils.json import json
+from .status import HTTP_STATUS
 
 T = TypeVar("T")
 
@@ -33,8 +32,19 @@ class ResponseFactory(ABC, Generic[T]):
 		status: int = 200,
 		headers: dict[str, str] | None = None,
 		message: str | None = None,
+	) -> T: ...
+
+	def empty(
+		self,
+		status: int = 200,
+		headers: dict[str, str] | None = None,
 	) -> T:
-		...
+		return self.respond(
+			content=None,
+			contentType=None,
+			status=status,
+			headers=headers,
+		)
 
 	def error(
 		self,
