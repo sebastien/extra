@@ -305,19 +305,20 @@ class FileService(Service):
 		):
 			return None
 		# First try to resolve with automatic extensions (unless path ends with "/")
-		if not has_slash and (local_path.is_dir() or not local_path.exists()):
+		if not has_slash and (local_path.exists() is False or local_path.is_dir()):
 			for suffix in self.automatic:
 				translated_path = local_path.parent / f"{local_path.name}{suffix}"
 				if translated_path.exists():
-					return translated_path
+					local_path = translated_path
+					break
 
 		# Then check if it's a directory
 		if local_path.is_dir():
 			if not has_slash:
 				# NOTE: Maybe this should be handled previously?
 				for suffix in (".html", ".htm", ".ts", "tsx"):
-					index_path = local_path / f"index.{suffix}"
-					if not has_slash and index_path.exists():
+					index_path = local_path / f"index{suffix}"
+					if (not has_slash) and index_path.exists():
 						return index_path
 			return local_path
 

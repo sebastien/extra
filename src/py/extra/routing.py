@@ -619,9 +619,9 @@ class Dispatcher:
 			for route in self.routes[method]:
 				if route.priority < matched_priority:
 					continue
-				match: Union[
-					dict[str, Union[str, bool, int, float]], None
-				] = route.match(path)
+				match: Union[dict[str, Union[str, bool, int, float]], None] = (
+					route.match(path)
+				)
 				# FIXME: Maybe use a debug stream here
 				if match is None:
 					continue
