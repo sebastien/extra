@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-set -euo pipefail
-# Find the available servers
-python -m extra
+BASE_PY=$(dirname "$(dirname "$(readlink -f "$0")")")/src/py
+MODULE=extra
+if [ -z "${PYTHON:-}" ]; then
+	PYTHON=python3
+fi
+if [ -e "$BASE_PY" ]; then
+	UPDATED_PYTHONPATH=$BASE_PY:$PYTHONPATH
+else
+	UPDATED_PYTHONPATH=$PYTHONPATH
+fi
+PYTHONPATH=$UPDATED_PYTHONPATH $PYTHON -m "$MODULE" "$@"
 # EOF

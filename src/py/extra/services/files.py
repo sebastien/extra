@@ -47,12 +47,10 @@ li {
 # TODO: Support caching
 class FileTranslator:
 	@abstractmethod
-	def match(self, base: Path, path: str, local: Path) -> Path | None:
-		...
+	def match(self, base: Path, path: str, local: Path) -> Path | None: ...
 
 	@abstractmethod
-	def translate(self, path: Path) -> tuple[str, bytes | str]:
-		...
+	def translate(self, path: Path) -> tuple[str, bytes | str]: ...
 
 
 class TypeScriptTranslator(FileTranslator):
@@ -307,19 +305,21 @@ class FileService(Service):
 		):
 			return None
 		# First try to resolve with automatic extensions (unless path ends with "/")
-		if not has_slash and not local_path.suffix:
+		if not has_slash and (local_path.is_dir() or not local_path.exists()):
 			for suffix in self.automatic:
-				translated_path = local_path.with_suffix(suffix)
+				translated_path = local_path.parent / f"{local_path.name}{suffix}"
 				if translated_path.exists():
 					return translated_path
 
 		# Then check if it's a directory
 		if local_path.is_dir():
-			index_path = local_path / "index.html"
-			if not has_slash and index_path.exists():
-				return index_path
-			else:
-				return local_path
+			if not has_slash:
+				# NOTE: Maybe this should be handled previously?
+				for suffix in (".html", ".htm", ".ts", "tsx"):
+					index_path = local_path / f"index.{suffix}"
+					if not has_slash and index_path.exists():
+						return index_path
+			return local_path
 
 		# Finally return the original path if it exists, or None if it doesn't
 		return local_path if local_path.exists() else None
