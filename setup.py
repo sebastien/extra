@@ -4,8 +4,7 @@ import sys
 from setuptools import find_packages, setup
 
 
-VERSION = "1.0.10"
-
+VERSION = "1.0.11"
 
 # Try to import mypyc, make it optional
 try:

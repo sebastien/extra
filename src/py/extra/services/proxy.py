@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from ..model import Service
-from ..http.model import HTTPRequest, HTTPResponse
+from ..http.model import HTTPRequest, HTTPResponse, headername
 from ..http.parser import iparseCookie, formatCookie
 from ..decorators import on
 from ..server import run
@@ -47,6 +47,20 @@ PROXY_STRIPPED_RESPONSE_HEADERS: set[str] = {
 }
 
 
+def parseHeaderList(
+	headers: list[str] | None, initial: set[str] | None = None
+) -> set[str]:
+	"""Parses a list of headers into a set of header names."""
+	res: set[str] = set(initial or [])
+	for header in headers or []:
+		for h in header.split(","):
+			if h == "null":
+				res = set()
+			else:
+				res.add(headername(h.strip()))
+	return res
+
+
 class ProxyTarget(NamedTuple):
 	uri: URI
 	keepalive: bool = False  # Tells if the connection should be kept alive
@@ -57,10 +71,41 @@ class ProxyTarget(NamedTuple):
 
 # TODO: Abstract headers pre-processing and post-processing
 class ProxyService(Service):
-	def __init__(self, target: ProxyTarget, *, prefix: str | None = None):
+	# Header stripping can be configured
+	allowedRequestHeaders: set[str]
+	strippedRequestHeaders: set[str]
+	allowedResponseHeaders: set[str]
+	strippedResponseHeaders: set[str]
+
+	def __init__(
+		self,
+		target: ProxyTarget,
+		*,
+		prefix: str | None = None,
+		allowedRequestHeaders: set[str] | None = PROXY_ALLOWED_REQUEST_HEADERS,
+		strippedRequestHeaders: set[str] | None = None,
+		allowedResponseHeaders: set[str] | None = None,
+		strippedResponseHeaders: set[str] | None = PROXY_STRIPPED_RESPONSE_HEADERS,
+	):
 		super().__init__(prefix=prefix)
 		self.target: ProxyTarget = target
+		self.allowedRequestHeaders = allowedRequestHeaders or set()
+		self.strippedRequestHeaders = strippedRequestHeaders or set()
+		self.allowedResponseHeaders = allowedRequestHeaders or set()
+		self.strippedResponseHeaders = strippedResponseHeaders or set()
 		info(f"Proxy service {self.prefix or '/'} to {target.uri}")
+		if self.allowedRequestHeaders:
+			info(f"Allowed request headers: {','.join(self.allowedRequestHeaders)}")
+		elif not self.strippedRequestHeaders:
+			info("All request headers allowed")
+		if self.strippedResponseHeaders:
+			info(f"Stripped request headers: {','.join(self.strippedResponseHeaders)}")
+		if self.allowedResponseHeaders:
+			info(f"Allowed response headers: {','.join(self.allowedResponseHeaders)}")
+		elif not self.strippedResponseHeaders:
+			info("All response headers allowed")
+		if self.strippedResponseHeaders:
+			info(f"Stripped response headers: {','.join(self.strippedResponseHeaders)}")
 
 	@on(
 		GET="{path:any}",
@@ -91,7 +136,9 @@ class ProxyService(Service):
 		# NOTE: We whitelist the request headers that we're passing down to
 		# the backend. In particular, we're limited by the nencodings we accept
 		for name, value in request.headers.items():
-			if name in PROXY_ALLOWED_REQUEST_HEADERS:
+			if self.strippedRequestHeaders and name in self.strippedRequestHeaders:
+				continue
+			if not self.allowedRequestHeaders or name in self.allowedRequestHeaders:
 				headers[name] = value
 		# We ensure the host is there
 		uri: URI = self.target.uri
@@ -116,9 +163,13 @@ class ProxyService(Service):
 		if not res:
 			return request.fail(f"Did not get a response for: {uri / req_path}")
 		else:
-			# TODO: We should have a postProcessHeaders method
 			# We stripped some headers from the response
-			for name in PROXY_STRIPPED_RESPONSE_HEADERS:
+			if self.allowedResponseHeaders:
+				for name in set(res.headers.headers.keys()).difference(
+					self.allowedResponseHeaders
+				):
+					del res.headers.headers[name]
+			for name in self.strippedResponseHeaders:
 				if name in res.headers.headers:
 					del res.headers.headers[name]
 			updated_headers: dict[str, str] = {}
@@ -183,6 +234,38 @@ def main(args: list[str]) -> None:
 		help="Throttles connection speed (in Kbytes/second)",
 		default=0,
 	)
+	parser.add_argument(
+		"-i",
+		"--allow-request-headers",
+		action="append",
+		dest="allowedRequestHeaders",
+		metavar="HEADER_NAME",
+		help="Header name to include from the request (can be repeated)",
+	)
+	parser.add_argument(
+		"-x",
+		"--strip-request-header",
+		action="append",
+		metavar="HEADER_NAME",
+		dest="strippedRequestHeaders",
+		help="Header name to exclude from the request (can be repeated)",
+	)
+	parser.add_argument(
+		"-I",
+		"--allow-response-headers",
+		action="append",
+		dest="allowedResponseHeaders",
+		metavar="HEADER_NAME",
+		help="Header name to include from the response (can be repeated)",
+	)
+	parser.add_argument(
+		"-X",
+		"--strip-response-header",
+		action="append",
+		metavar="HEADER_NAME",
+		dest="strippedResponseHeaders",
+		help="Header name to exclude from the response (can be repeated)",
+	)
 
 	# Add positional argument for the URL
 	parser.add_argument(
@@ -197,6 +280,14 @@ def main(args: list[str]) -> None:
 	options = parser.parse_args(args=args)
 
 	components: list[Service] = []
+	stripped_request_headers = parseHeaderList(options.strippedRequestHeaders)
+	allowed_request_headers = parseHeaderList(
+		options.allowedRequestHeaders, PROXY_ALLOWED_REQUEST_HEADERS
+	)
+	stripped_response_headers = parseHeaderList(
+		options.strippedResponseHeaders, PROXY_STRIPPED_RESPONSE_HEADERS
+	)
+	allowed_response_headers = parseHeaderList(options.allowedResponseHeaders)
 	for url in options.url:
 		lc = url.split("=", 1)
 		prefix, target = (None, url) if len(lc) == 1 else lc
@@ -210,6 +301,10 @@ def main(args: list[str]) -> None:
 					cors=options.cors,
 				),
 				prefix=prefix,
+				allowedRequestHeaders=allowed_request_headers,
+				strippedRequestHeaders=stripped_request_headers,
+				allowedResponseHeaders=allowed_response_headers,
+				strippedResponseHeaders=stripped_response_headers,
 			)
 		)
 
