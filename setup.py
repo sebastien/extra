@@ -2,9 +2,10 @@ import os
 import sys
 
 from setuptools import find_packages, setup
+from extra.__version__ import __version__
 
 
-VERSION = "1.0.11"
+VERSION = __version__
 
 # Try to import mypyc, make it optional
 try:
@@ -66,8 +67,9 @@ setup(
 	},
 	packages=find_packages(where="src/py"),
 	package_dir={"": "src/py"},
+	# SEE: https://pypi.org/classifiers/
 	classifiers=[
-		"Development Status :: 4 - Beta",
+		"Development Status :: 5 - Production/Stable",
 		"Intended Audience :: Developers",
 		"License :: OSI Approved :: MIT License",
 		"Operating System :: OS Independent",
