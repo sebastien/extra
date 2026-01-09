@@ -715,7 +715,12 @@ class HTTPResponse:
 
 	def head(self) -> bytes:
 		"""Serializes the head as a payload."""
-		status: int = 204 if self.body is None else self.status
+		status: int = self.status
+		if self.body is None:
+			if status == 200:
+				status = 204
+			else:
+				self.setHeader("Content-Length", 0)
 		message: str = self.message or HTTP_STATUS[status]
 		lines: list[str] = [
 			f"{headername(k)}: {v}" for k, v in self.headers.headers.items()
