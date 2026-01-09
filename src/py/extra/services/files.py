@@ -228,8 +228,10 @@ class FileService(Service):
 
 	@on(INFO=("/", "/{path:any}"))
 	def info(self, request: HTTPRequest, path: str) -> HTTPResponse:
-		local_path = self.resolvePath(path)
-		if not (local_path and self.canRead(request, local_path)):
+		local_path, redirect_path = self.resolvePath(path)
+		if redirect_path:
+			return request.redirect(redirect_path)
+		elif not (local_path and self.canRead(request, local_path)):
 			return request.notAuthorized(f"Not authorized to access path: {path}")
 		else:
 			return request.respond("OK")
@@ -237,8 +239,10 @@ class FileService(Service):
 	@cors
 	@on(HEAD=("/", "/{path:any}"))
 	def head(self, request: HTTPRequest, path: str) -> HTTPResponse:
-		local_path = self.resolvePath(path)
-		if not (local_path and self.canRead(request, local_path)):
+		local_path, redirect_path = self.resolvePath(path)
+		if redirect_path:
+			return request.redirect(redirect_path)
+		elif not (local_path and self.canRead(request, local_path)):
 			return request.notAuthorized(f"Not authorized to access path: {path}")
 		elif not local_path.exists():
 			return request.notFound()
@@ -259,8 +263,10 @@ class FileService(Service):
 	@on(GET=("/", "/{path:any}"))
 	def read(self, request: HTTPRequest, path: str = ".") -> HTTPResponse:
 		format: str = request.param("format", "html") or "html"
-		local_path = self.resolvePath(path)
-		if not (local_path and self.canRead(request, local_path)):
+		local_path, redirect_path = self.resolvePath(path)
+		if redirect_path:
+			return request.redirect(redirect_path)
+		elif not (local_path and self.canRead(request, local_path)):
 			return request.notAuthorized(f"Not authorized to access path: {path}")
 		elif not local_path.exists():
 			return request.notFound()
@@ -269,8 +275,10 @@ class FileService(Service):
 
 	@on(PUT_PATCH="/{path:any}")
 	def write(self, request: HTTPRequest, path: str = ".") -> HTTPResponse:
-		local_path = self.resolvePath(path)
-		if not (local_path and self.canWrite(request, local_path)):
+		local_path, redirect_path = self.resolvePath(path)
+		if redirect_path:
+			return request.redirect(redirect_path)
+		elif not (local_path and self.canWrite(request, local_path)):
 			return request.notAuthorized(f"Not authoried to write to path: {path}")
 			# NOTE: We don't use self.resolvePath, as we want to bypass resolvers
 			# dirname = os.path.dirname(local_path)
@@ -283,8 +291,10 @@ class FileService(Service):
 
 	@on(DELETE="/{path:any}")
 	def delete(self, request: HTTPRequest, path: str) -> HTTPResponse:
-		local_path = self.resolvePath(path)
-		if not (local_path and self.canWrite(request, local_path)):
+		local_path, redirect_path = self.resolvePath(path)
+		if redirect_path:
+			return request.redirect(redirect_path)
+		elif not (local_path and self.canWrite(request, local_path)):
 			return request.notAuthorized(f"Not authorized to delete path: {path}")
 		elif self.canDelete(request, local_path):
 			# NOTE: We don't use self.resolvePath, as we want to bypass resolvers
@@ -296,14 +306,16 @@ class FileService(Service):
 		else:
 			return request.returns(False)
 
-	def resolvePath(self, path: Union[str, Path]) -> Path | None:
+	def resolvePath(self, path: Union[str, Path]) -> tuple[Path | None, str | None]:
 		has_slash = isinstance(path, str) and path.endswith("/")
 		local_path = self.root.joinpath(path).absolute()
+		original_path = local_path
+		with_redirect = False
 		if (
 			self.strictLocalPath
 			and not local_path.parts[: len(parts := self.root.parts)] == parts
 		):
-			return None
+			return None, None
 		# First try to resolve with automatic extensions (unless path ends with "/")
 		if not has_slash and (local_path.exists() is False or local_path.is_dir()):
 			for suffix in self.automatic:
@@ -319,11 +331,22 @@ class FileService(Service):
 				for suffix in (".html", ".htm", ".ts", "tsx"):
 					index_path = local_path / f"index{suffix}"
 					if (not has_slash) and index_path.exists():
-						return index_path
-			return local_path
+						local_path = index_path
+						with_redirect = True
+						break
 
 		# Finally return the original path if it exists, or None if it doesn't
-		return local_path if local_path.exists() else None
+		if not local_path.exists():
+			return None, None
+		elif local_path != original_path:
+			redirect_url = (
+				"/"
+				+ local_path.relative_to(self.root).as_posix()
+				+ ("/" if local_path.is_dir() else "")
+			)
+			return local_path, redirect_url if with_redirect else None
+		else:
+			return local_path, None
 
 
 # EOF

@@ -719,7 +719,7 @@ class HTTPResponse:
 		if self.body is None:
 			if status == 200:
 				status = 204
-			else:
+			elif "Content-Length" not in self.headers.headers:
 				self.setHeader("Content-Length", 0)
 		message: str = self.message or HTTP_STATUS[status]
 		lines: list[str] = [
