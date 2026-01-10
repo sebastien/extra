@@ -3,7 +3,8 @@ from base64 import b64encode
 from pathlib import Path
 from typing import Any, Generic, Iterator, TypeVar
 
-from ..utils.files import contentType as getContentType
+from ..utils.codec import ENCODING_EXT, ENCODING_PRIORITY, parseAcceptEncoding
+from ..utils.files import contentType as getContentType, resolveSuffix
 from ..utils.json import json
 from .status import HTTP_STATUS
 
@@ -143,16 +144,61 @@ class ResponseFactory(ABC, Generic[T]):
 		headers: dict[str, str] | None = None,
 		status: int = 200,
 		contentType: str | None = None,
+		acceptEncoding: str | None = None,
 	) -> T:
-		# TODO: We should have a much more detailed file handling, supporting ranges, etags, etc.
+		"""Respond with a file, optionally serving pre-compressed variants.
+
+		If acceptEncoding is provided (from Accept-Encoding header), and a
+		pre-compressed file exists (e.g., file.js.gz or file.js.br), it will
+		be served with the appropriate Content-Encoding header.
+
+		Args:
+		    path: Path to the file to serve
+		    headers: Additional headers to include
+		    status: HTTP status code
+		    contentType: Override content type (defaults to guessing from path)
+		    acceptEncoding: Value of Accept-Encoding header for compression negotiation
+		"""
 		p: Path = path if isinstance(path, Path) else Path(path)
-		content_type: str = contentType or getContentType(p)
-		content_length: str = str(p.stat().st_size)
-		base_headers = {"Content-Type": content_type, "Content-Length": content_length}
+		actualPath: Path = p
+		encoding: str | None = None
+
+		# Try to find a pre-compressed version if client accepts compression
+		if acceptEncoding:
+			accepted = parseAcceptEncoding(acceptEncoding)
+			# Build suffix list in priority order for accepted encodings
+			suffixes = [
+				ENCODING_EXT[enc] for enc in ENCODING_PRIORITY if enc in accepted
+			]
+			if suffixes:
+				if match := resolveSuffix(p, suffixes):
+					actualPath, ext = match
+					# Map extension back to encoding name
+					encoding = next(
+						(enc for enc, e in ENCODING_EXT.items() if e == ext), None
+					)
+
+		# Content type is based on original file, not compressed version
+		ctype: str = contentType or getContentType(p)
+		clen: str = str(actualPath.stat().st_size)
+
+		baseHeaders: dict[str, str] = {
+			"Content-Type": ctype,
+			"Content-Length": clen,
+		}
+
+		# Add encoding header if serving compressed file
+		if encoding:
+			baseHeaders["Content-Encoding"] = encoding
+
+		# Add Vary header for proper caching when compression is possible
+		if acceptEncoding:
+			baseHeaders["Vary"] = "Accept-Encoding"
+
 		return self.respond(
-			content=path if isinstance(path, Path) else Path(path),
+			content=actualPath,
 			status=status,
-			headers=base_headers | headers if headers else base_headers,
+			headers=baseHeaders | headers if headers else baseHeaders,
 		)
 
 	def respondError(

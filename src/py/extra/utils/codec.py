@@ -2,6 +2,43 @@ import zlib
 from typing import Literal
 from abc import ABC, abstractmethod
 
+# --
+# Encoding constants for content negotiation
+
+# Maps encoding name to file extension
+ENCODING_EXT: dict[str, str] = {
+	"br": ".br",
+	"gzip": ".gz",
+}
+
+# Preferred order for serving compressed files (brotli > gzip)
+ENCODING_PRIORITY: list[str] = ["br", "gzip"]
+
+
+def parseAcceptEncoding(header: str | None) -> set[str]:
+	"""Parses Accept-Encoding header and returns set of accepted encodings.
+
+	Handles formats like:
+	- "gzip, deflate, br"
+	- "br;q=1.0, gzip;q=0.8, *;q=0"
+
+	Note: q=0 means explicitly not accepted, but we don't filter those
+	since they're rarely used in practice.
+	"""
+	if not header:
+		return set()
+	result: set[str] = set()
+	for part in header.split(","):
+		# Strip whitespace and extract encoding name (before any ;q=)
+		part = part.strip()
+		if not part:
+			continue
+		# Split on semicolon to separate encoding from q-value
+		encoding = part.split(";")[0].strip().lower()
+		if encoding:
+			result.add(encoding)
+	return result
+
 
 class BytesTransform(ABC):
 	"""An abstract bytes transform."""

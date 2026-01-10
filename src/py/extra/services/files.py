@@ -10,7 +10,7 @@ from ..decorators import on
 from ..features.cors import cors
 from ..http.model import HTTPRequest, HTTPResponse
 from ..model import Service
-from ..utils.files import FileEntry, contentType
+from ..utils.files import FileEntry, contentType, resolveSuffix
 from ..utils.htmpl import H, Node, html
 from ..utils.shell import shell
 
@@ -121,6 +121,7 @@ class FileService(Service):
 				localPath,
 				contentType=self.guessContentType(localPath),
 				headers=self.getFileHeaders(localPath),
+				acceptEncoding=request.header("Accept-Encoding"),
 			)
 
 	def guessContentType(self, path: Path) -> str | None:
@@ -318,22 +319,17 @@ class FileService(Service):
 			return None, None
 		# First try to resolve with automatic extensions (unless path ends with "/")
 		if not has_slash and (local_path.exists() is False or local_path.is_dir()):
-			for suffix in self.automatic:
-				translated_path = local_path.parent / f"{local_path.name}{suffix}"
-				if translated_path.exists():
-					local_path = translated_path
-					break
+			if match := resolveSuffix(local_path, self.automatic):
+				local_path, _ = match
 
 		# Then check if it's a directory
 		if local_path.is_dir():
 			if not has_slash:
 				# NOTE: Maybe this should be handled previously?
-				for suffix in (".html", ".htm", ".ts", "tsx"):
-					index_path = local_path / f"index{suffix}"
-					if (not has_slash) and index_path.exists():
-						local_path = index_path
-						with_redirect = True
-						break
+				index_suffixes = [".html", ".htm", ".ts", ".tsx"]
+				if match := resolveSuffix(local_path / "index", index_suffixes):
+					local_path, _ = match
+					with_redirect = True
 
 		# Finally return the original path if it exists, or None if it doesn't
 		if not local_path.exists():

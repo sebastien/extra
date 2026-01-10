@@ -139,4 +139,27 @@ def contentType(path: Path | str) -> str:
 	)
 
 
+def resolveSuffix(
+	path: Path, suffixes: list[str], replace: bool = False
+) -> tuple[Path, str] | None:
+	"""Try to find a file by appending or replacing suffixes.
+
+	Args:
+	    path: Base path to resolve
+	    suffixes: List of suffixes to try, in order of preference
+	    replace: If True, replace existing suffix; if False, append
+
+	Returns:
+	    Tuple of (resolved_path, matched_suffix) or None if no match found.
+	"""
+	for suffix in suffixes:
+		if replace:
+			candidate = path.with_suffix(suffix)
+		else:
+			candidate = path.parent / f"{path.name}{suffix}"
+		if candidate.exists():
+			return (candidate, suffix)
+	return None
+
+
 # EOF

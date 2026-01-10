@@ -2,7 +2,7 @@
 
 ## Build/Test/Lint Commands
 - **Build**: `make compile` (compiles with mypyc)
-- **Lint**: `make lint` or `make check-flakes` 
+- **Lint**: `make lint` or `make check-flakes`
 - **Type check**: `make check-strict` (runs mypy --strict on all files)
 - **Security audit**: `make check-bandit`
 - **Full check**: `make check` (runs bandit, flake8, mypy)
@@ -13,7 +13,7 @@
 - **Indentation**: Use tabs (configured in .pylintrc)
 - **Imports**: Relative imports within package (e.g., `from .model import Service`)
 - **Type hints**: Full type annotations required, use `typing` module generics
-- **Naming**: snake_case for functions/variables, PascalCase for classes
+- **Naming**: lowercase (short Go-like name) or camelCase for functions/variables, PascalCase for classes
 - **Error handling**: Use custom exception classes, log with `utils.logging`
 - **Line length**: Flexible (flake8 ignores E501)
 - **Comments**: Use `# NOQA` for intentional lint suppressions
