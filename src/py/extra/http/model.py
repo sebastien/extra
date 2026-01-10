@@ -226,13 +226,20 @@ class HTTPBodyBlob(NamedTuple):
 
 
 class HTTPBodyFile(NamedTuple):
-	"""Represents an HTTP body from a file, potentially with a file descriptor."""
+	"""Represents an HTTP body from a file, potentially with a file descriptor.
+
+	For Range requests, start and end define the byte range (inclusive).
+	"""
 
 	path: Path
 	fd: int | None = None
+	start: int | None = None  # Byte offset for Range requests
+	end: int | None = None  # End byte (inclusive) for Range requests
 
 	@property
 	def length(self) -> int:
+		if self.start is not None and self.end is not None:
+			return self.end - self.start + 1
 		return self.path.stat().st_size
 
 
@@ -370,7 +377,7 @@ class HTTPBodyWriter(ABC):
 		elif isinstance(body, HTTPBodyBlob):
 			return await self._write(body.payload)
 		elif isinstance(body, HTTPBodyFile):
-			return await self._writeFile(body.path)
+			return await self._writeFile(body.path, body.start, body.end)
 		elif isinstance(body, HTTPBodyStream):
 			# No keep alive with streaming as these are long
 			# lived requests.
@@ -411,10 +418,37 @@ class HTTPBodyWriter(ABC):
 		if atom is CLOSE_STREAM:
 			self.shouldClose = True
 
-	async def _writeFile(self, path: Path, size: int = 64_000) -> bool:
+	async def _writeFile(
+		self,
+		path: Path,
+		start: int | None = None,
+		end: int | None = None,
+		size: int = 64_000,
+	) -> bool:
+		"""Write file content, optionally a byte range.
+
+		Args:
+		    path: Path to the file
+		    start: Start byte offset (inclusive), None for beginning
+		    end: End byte offset (inclusive), None for end of file
+		    size: Chunk size for reading
+		"""
 		with open(path, "rb") as f:
-			while chunk := f.read(size):
+			if start is not None:
+				f.seek(start)
+			remaining = (
+				(end - start + 1) if (start is not None and end is not None) else None
+			)
+			while True:
+				toRead = min(size, remaining) if remaining is not None else size
+				chunk = f.read(toRead)
+				if not chunk:
+					break
 				await self._write(chunk, bool(chunk))
+				if remaining is not None:
+					remaining -= len(chunk)
+					if remaining <= 0:
+						break
 		return True
 
 	async def _write(self, chunk: bytes, more: bool = False) -> bool:
@@ -610,6 +644,10 @@ class HTTPResponse:
 			payload = content.encode(DEFAULT_ENCODING)
 		elif isinstance(content, bytes):
 			payload = content
+		elif isinstance(content, HTTPBodyFile):
+			# Allow passing HTTPBodyFile directly (for Range support)
+			body = content
+			contentLength = body.length
 		elif isinstance(content, Path):
 			body = HTTPBodyFile(content.absolute())
 			contentLength = os.path.getsize(body.path)

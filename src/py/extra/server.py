@@ -136,9 +136,22 @@ class AIOSocketBodyWriter(HTTPBodyWriter):
 			await self.loop.sock_sendall(self.client, chunk)
 		return False
 
-	async def _writeFile(self, path: Path, size: int = 64_000) -> bool:
+	async def _writeFile(
+		self,
+		path: Path,
+		start: int | None = None,
+		end: int | None = None,
+		size: int = 64_000,
+	) -> bool:
 		with open(path, "rb") as f:
-			await self.loop.sock_sendfile(self.client, f)
+			if start is not None and end is not None:
+				# Partial file: use offset and count with sendfile
+				f.seek(start)
+				count = end - start + 1
+				await self.loop.sock_sendfile(self.client, f, offset=0, count=count)
+			else:
+				# Full file
+				await self.loop.sock_sendfile(self.client, f)
 		return True
 
 

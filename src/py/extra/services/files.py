@@ -120,8 +120,11 @@ class FileService(Service):
 			return request.respondFile(
 				localPath,
 				contentType=self.guessContentType(localPath),
-				headers=self.getFileHeaders(localPath),
 				acceptEncoding=request.header("Accept-Encoding"),
+				ifNoneMatch=request.header("If-None-Match"),
+				ifModifiedSince=request.header("If-Modified-Since"),
+				ifRange=request.header("If-Range"),
+				rangeHeader=request.header("Range"),
 			)
 
 	def guessContentType(self, path: Path) -> str | None:

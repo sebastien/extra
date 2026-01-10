@@ -1,5 +1,7 @@
 import mimetypes
+import re
 import shutil
+from hashlib import md5
 from pathlib import Path
 from typing import NamedTuple
 
@@ -160,6 +162,75 @@ def resolveSuffix(
 		if candidate.exists():
 			return (candidate, suffix)
 	return None
+
+
+def fileEtag(path: Path) -> str:
+	"""Generate an ETag from file size and modification time.
+
+	Returns a quoted ETag string suitable for HTTP headers.
+	"""
+	stat = path.stat()
+	# Hash size and mtime for a stable identifier
+	h = md5(
+		f"{stat.st_size}-{stat.st_mtime}".encode(), usedforsecurity=False
+	).hexdigest()
+	return f'"{h}"'
+
+
+# Regex to parse Range header: bytes=start-end, bytes=start-, bytes=-suffix
+RE_RANGE = re.compile(r"bytes=(\d*)-(\d*)")
+
+
+def parseRange(header: str | None, fileSize: int) -> tuple[int, int] | None:
+	"""Parse a Range header and return (start, end) inclusive byte positions.
+
+	Supports single range formats per RFC 7233:
+	- bytes=0-100  → (0, 100)
+	- bytes=100-   → (100, fileSize-1)
+	- bytes=-100   → (fileSize-100, fileSize-1)  [last 100 bytes]
+
+	Args:
+	    header: Value of Range header (e.g., "bytes=0-100")
+	    fileSize: Total size of the file in bytes
+
+	Returns:
+	    Tuple of (start, end) inclusive, or None if invalid/unsatisfiable.
+	"""
+	if not header or fileSize <= 0:
+		return None
+
+	match = RE_RANGE.match(header.strip())
+	if not match:
+		return None
+
+	start_str, end_str = match.groups()
+
+	# bytes=-100 (suffix range: last N bytes)
+	if not start_str and end_str:
+		suffix = int(end_str)
+		if suffix <= 0:
+			return None
+		start = max(0, fileSize - suffix)
+		end = fileSize - 1
+	# bytes=100- (from offset to end)
+	elif start_str and not end_str:
+		start = int(start_str)
+		if start >= fileSize:
+			return None
+		end = fileSize - 1
+	# bytes=100-200 (explicit range)
+	elif start_str and end_str:
+		start = int(start_str)
+		end = int(end_str)
+		# Clamp end to file size - 1
+		end = min(end, fileSize - 1)
+		if start > end or start >= fileSize:
+			return None
+	else:
+		# bytes=- is invalid
+		return None
+
+	return (start, end)
 
 
 # EOF

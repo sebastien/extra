@@ -148,8 +148,20 @@ class AWSLambdaEvent:
 			buffer.write(response.body.payload or b"")
 		elif isinstance(response.body, HTTPBodyFile):
 			with open(response.body.path, "rb") as f:
-				while data := f.read(32_000):
-					buffer.write(data)
+				# Handle Range requests with start/end offsets
+				if response.body.start is not None:
+					f.seek(response.body.start)
+					remaining = response.body.length
+					while remaining > 0:
+						toRead = min(32_000, remaining)
+						data = f.read(toRead)
+						if not data:
+							break
+						buffer.write(data)
+						remaining -= len(data)
+				else:
+					while data := f.read(32_000):
+						buffer.write(data)
 		elif isinstance(response.body, HTTPBodyStream):
 			# TODO: Should handle exception
 			try:
