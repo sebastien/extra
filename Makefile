@@ -4,7 +4,7 @@ MAKEFLAGS+= --warn-undefined-variables
 MAKEFLAGS+= --no-builtin-rules
 PROJECT:=extra
 PYPI_PROJECT=extra-http
-VERSION:=$(shell sed -n 's/^__version__ = "\(.*\)"/\1/p' src/py/extra/__init__.py | head -n1)
+VERSION:=$(shell sed -n 's/^__version__ = "\(.*\)"/\1/p' src/py/extra/__version__.py | head -n1)
 
 # Use mise for Python version management and uv for dependencies
 MISE:=$(shell which mise 2>/dev/null || echo "mise")

@@ -320,10 +320,14 @@ class FileService(Service):
 			and not local_path.parts[: len(parts := self.root.parts)] == parts
 		):
 			return None, None
+
 		# First try to resolve with automatic extensions (unless path ends with "/")
-		if not has_slash and (local_path.exists() is False or local_path.is_dir()):
-			if match := resolveSuffix(local_path, self.automatic):
-				local_path, _ = match
+		if not has_slash and (local_path.is_dir() or not local_path.exists()):
+			for suffix in self.automatic:
+				translated_path = local_path.parent / f"{local_path.name}{suffix}"
+				if translated_path.exists():
+					local_path = translated_path
+					break
 
 		# Then check if it's a directory
 		if local_path.is_dir():
