@@ -46,7 +46,7 @@ SSL_CLIENT_UNVERIFIED_CONTEXT: ssl.SSLContext = (
 	ssl._create_unverified_context()  # nosec: B323
 )
 try:
-	import certifi
+	import certifi  # type: ignore[import-not-found]
 
 	SSL_CLIENT_CONTEXT.load_verify_locations(certifi.where())
 except FileNotFoundError:

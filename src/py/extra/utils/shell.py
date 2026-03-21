@@ -178,9 +178,9 @@ def shellstream(
 				if fd != fdout and fd != fderr:
 					try:
 						os.close(fd)
-					except Exception:
+					except OSError:
 						# This is an invalid fd
-						pass
+						continue
 		while closed:
 			del waiting[waiting.index(closed.pop())]
 

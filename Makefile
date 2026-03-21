@@ -11,6 +11,7 @@ MISE:=$(shell which mise 2>/dev/null || echo "mise")
 UV:=$(MISE) x -- uv
 PYTHON:=$(shell $(MISE) which python 2>/dev/null || which python3 2>/dev/null || echo "python3")
 PATH_SOURCES_PY=src/py
+PYTHONPATH_TEST:=$(realpath $(PATH_SOURCES_PY))
 PYTHON_MODULES=$(patsubst src/py/%,%,$(wildcard src/py/*))
 SOURCES_BIN:=$(wildcard bin/*)
 SOURCES_PY:=$(wildcard $(PATH_SOURCES_PY)/*.py $(PATH_SOURCES_PY)/*/*.py $(PATH_SOURCES_PY)/*/*/*.py $(PATH_SOURCES_PY)/*/*/*/*.py)
@@ -60,22 +61,22 @@ run:
 .PHONY: test
 test:
 	@echo "=== Running unit tests ==="
-	@$(PYTHON) tests/unit-io-line.py
-	@$(PYTHON) tests/unit-parser-http.py >/dev/null && echo "✓ unit-parser-http.py"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-io-line.py
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-parser-http.py >/dev/null && echo "✓ unit-parser-http.py"
 	@echo "=== Running routing tests ==="
-	@$(PYTHON) tests/routing-prefix.py >/dev/null && echo "✓ routing-prefix.py"
-	@$(PYTHON) tests/routing-route.py >/dev/null && echo "✓ routing-route.py"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/routing-prefix.py >/dev/null && echo "✓ routing-prefix.py"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/routing-route.py >/dev/null && echo "✓ routing-route.py"
 	@echo "=== Running request parsing tests ==="
-	@$(PYTHON) tests/request-parsing.py >/dev/null && echo "✓ request-parsing.py"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/request-parsing.py >/dev/null && echo "✓ request-parsing.py"
 	@echo "=== Running server tests (with timeout) ==="
-	@($(PYTHON) tests/case-complete-read-extra.py & PID=$$!; sleep 5; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null) && echo "✓ case-complete-read-extra.py (server test)" || echo "✓ case-complete-read-extra.py (server test)"
-	@($(PYTHON) tests/case-partial-read-extra.py & PID=$$!; sleep 5; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null) && echo "✓ case-partial-read-extra.py (server test)" || echo "✓ case-partial-read-extra.py (server test)"
-	@($(PYTHON) tests/benchmark-extra-aio.py & PID=$$!; sleep 5; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null) && echo "✓ benchmark-extra-aio.py (server test)" || echo "✓ benchmark-extra-aio.py (server test)"
+	@(PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/case-complete-read-extra.py & PID=$$!; sleep 5; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null) && echo "✓ case-complete-read-extra.py (server test)" || echo "✓ case-complete-read-extra.py (server test)"
+	@(PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/case-partial-read-extra.py & PID=$$!; sleep 5; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null) && echo "✓ case-partial-read-extra.py (server test)" || echo "✓ case-partial-read-extra.py (server test)"
+	@(PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-extra-aio.py & PID=$$!; sleep 5; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null) && echo "✓ benchmark-extra-aio.py (server test)" || echo "✓ benchmark-extra-aio.py (server test)"
 	@echo "=== Running handler tests ==="
-	@$(PYTHON) tests/handler-aws.py >/dev/null && echo "✓ handler-aws.py"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/handler-aws.py >/dev/null && echo "✓ handler-aws.py"
 	@echo "=== Running optional tests ==="
-	@$(PYTHON) tests/bridge-python.py | grep -q "SKIPPED" && echo "✓ bridge-python.py (skipped - module not implemented)"
-	@$(PYTHON) tests/perf-httpparsing.py | grep -q "SKIPPED" && echo "✓ perf-httpparsing.py (skipped - data file missing)"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/bridge-python.py | grep -q "SKIPPED" && echo "✓ bridge-python.py (skipped - module not implemented)"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/perf-httpparsing.py | grep -q "SKIPPED" && echo "✓ perf-httpparsing.py (skipped - data file missing)"
 	@echo "=== All tests completed successfully! ==="
 
 .PHONY: ci

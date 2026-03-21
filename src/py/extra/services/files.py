@@ -117,15 +117,18 @@ class FileService(Service):
 				if p:
 					c, b = t.translate(p)
 					return request.respond(b, contentType=c)
-			return request.respondFile(
-				localPath,
-				contentType=self.guessContentType(localPath),
-				acceptEncoding=request.header("Accept-Encoding"),
-				ifNoneMatch=request.header("If-None-Match"),
-				ifModifiedSince=request.header("If-Modified-Since"),
-				ifRange=request.header("If-Range"),
-				rangeHeader=request.header("Range"),
-			)
+			return self.respondFile(request, localPath)
+
+	def respondFile(self, request: HTTPRequest, path: Path) -> HTTPResponse:
+		return request.respondFile(
+			path,
+			contentType=self.guessContentType(path),
+			acceptEncoding=request.header("Accept-Encoding"),
+			ifNoneMatch=request.header("If-None-Match"),
+			ifModifiedSince=request.header("If-Modified-Since"),
+			ifRange=request.header("If-Range"),
+			rangeHeader=request.header("Range"),
+		)
 
 	def guessContentType(self, path: Path) -> str | None:
 		if path.name == "importmap.json":
@@ -251,17 +254,13 @@ class FileService(Service):
 		elif not local_path.exists():
 			return request.notFound()
 		else:
-			# Include all headers that would be sent with GET request
 			if local_path.is_dir():
 				# Directory listing HEAD response
 				return request.respond("", contentType="text/html")
 			else:
-				# File HEAD response with proper headers
-				headers = self.getFileHeaders(local_path)
-				content_type = self.guessContentType(local_path)
-				if local_path.exists():
-					headers["Content-Length"] = str(local_path.stat().st_size)
-				return request.respond("", contentType=content_type, headers=headers)
+				response = self.respondFile(request, local_path)
+				response.body = None
+				return response
 
 	@cors
 	@on(GET=("/", "/{path:any}"))
