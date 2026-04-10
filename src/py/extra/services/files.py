@@ -74,12 +74,12 @@ class FileService(Service):
 
 	TRANSLATORS: list[FileTranslator] = [TypeScriptTranslator()]
 
-	def __init__(self, root: str | Path | None = None, strict: bool = False):
+	def __init__(self, root: str | Path | None = None, strict: bool = True):
 		super().__init__()
 		self.strictLocalPath: bool = strict
 		self.root: Path = (
 			root if isinstance(root, Path) else Path(root or ".")
-		).absolute()
+		).resolve()
 		self.canWrite: Callable[[HTTPRequest, Path], bool] = lambda r, p: False
 		self.canRead: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
 		self.canDelete: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
@@ -100,6 +100,7 @@ class FileService(Service):
 		path: str,
 		localPath: Path,
 		format: str,
+		raw: bool = False,
 	) -> HTTPResponse:
 		path = path.strip("/")
 		if localPath.is_dir():
@@ -112,11 +113,13 @@ class FileService(Service):
 				case _:
 					return self.renderDir(request, path, localPath)
 		else:
-			for t in self.TRANSLATORS:
-				p = t.match(self.root, path, localPath)
-				if p:
-					c, b = t.translate(p)
-					return request.respond(b, contentType=c)
+			# Bypass translators if ?raw is requested
+			if not raw:
+				for t in self.TRANSLATORS:
+					p = t.match(self.root, path, localPath)
+					if p:
+						c, b = t.translate(p)
+						return request.respond(b, contentType=c)
 			return self.respondFile(request, localPath)
 
 	def respondFile(self, request: HTTPRequest, path: Path) -> HTTPResponse:
@@ -266,6 +269,7 @@ class FileService(Service):
 	@on(GET=("/", "/{path:any}"))
 	def read(self, request: HTTPRequest, path: str = ".") -> HTTPResponse:
 		format: str = request.param("format", "html") or "html"
+		raw: bool = request.param("raw") is not None
 		local_path, redirect_path = self.resolvePath(path)
 		if redirect_path:
 			return request.redirect(redirect_path)
@@ -274,7 +278,7 @@ class FileService(Service):
 		elif not local_path.exists():
 			return request.notFound()
 		else:
-			return self.renderPath(request, path, local_path, format=format)
+			return self.renderPath(request, path, local_path, format=format, raw=raw)
 
 	@on(PUT_PATCH="/{path:any}")
 	def write(self, request: HTTPRequest, path: str = ".") -> HTTPResponse:
@@ -311,13 +315,10 @@ class FileService(Service):
 
 	def resolvePath(self, path: Union[str, Path]) -> tuple[Path | None, str | None]:
 		has_slash = isinstance(path, str) and path.endswith("/")
-		local_path = self.root.joinpath(path).absolute()
+		local_path = self.root.joinpath(path).resolve(strict=False)
 		original_path = local_path
 		with_redirect = False
-		if (
-			self.strictLocalPath
-			and not local_path.parts[: len(parts := self.root.parts)] == parts
-		):
+		if not local_path.is_relative_to(self.root):
 			return None, None
 
 		# First try to resolve with automatic extensions (unless path ends with "/")
@@ -332,7 +333,7 @@ class FileService(Service):
 		if local_path.is_dir():
 			if not has_slash:
 				# NOTE: Maybe this should be handled previously?
-				index_suffixes = [".html", ".htm", ".ts", ".tsx"]
+				index_suffixes = [".html", ".htm", ".ts", ".tsx", ".js", ".jsx"]
 				if match := resolveSuffix(local_path / "index", index_suffixes):
 					local_path, _ = match
 					with_redirect = True

@@ -178,7 +178,7 @@ def fileEtag(path: Path) -> str:
 
 
 # Regex to parse Range header: bytes=start-end, bytes=start-, bytes=-suffix
-RE_RANGE = re.compile(r"bytes=(\d*)-(\d*)")
+RE_RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 
 def parseRange(header: str | None, fileSize: int) -> tuple[int, int] | None:

@@ -91,7 +91,7 @@ class ProxyService(Service):
 		self.target: ProxyTarget = target
 		self.allowedRequestHeaders = allowedRequestHeaders or set()
 		self.strippedRequestHeaders = strippedRequestHeaders or set()
-		self.allowedResponseHeaders = allowedRequestHeaders or set()
+		self.allowedResponseHeaders = allowedResponseHeaders or set()
 		self.strippedResponseHeaders = strippedResponseHeaders or set()
 		info(f"Proxy service {self.prefix or '/'} to {target.uri}")
 		if self.allowedRequestHeaders:
@@ -292,6 +292,10 @@ def main(args: list[str]) -> None:
 		lc = url.split("=", 1)
 		prefix, target = (None, url) if len(lc) == 1 else lc
 		uri = URI.Parse(target)
+		if uri.scheme not in ("http", "https"):
+			raise RuntimeError(
+				f"Unsupported proxy target scheme '{uri.scheme}', expected http or https"
+			)
 		if not uri.host:
 			raise RuntimeError(f"URI has no host: {url}")
 		components.append(

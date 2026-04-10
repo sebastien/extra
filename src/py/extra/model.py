@@ -160,6 +160,9 @@ class Application:
 			)
 		for handler in service.handlers:
 			self.dispatcher.register(handler, prefix or service.prefix)
+		service.app = self
+		if service not in self.services:
+			self.services.append(service)
 		return service
 
 	def unmount(self, service: Service) -> Service:
@@ -167,11 +170,13 @@ class Application:
 			raise RuntimeError(
 				f"Cannot unmount service, it is not already mounted: {service}"
 			)
-		if service.app == self:
+		if service.app != self:
 			raise RuntimeError(
 				f"Cannot unmount service, it is not mounted in this application: {service}"
 			)
-		service.app = self
+		service.app = None
+		if service in self.services:
+			self.services.remove(service)
 		return service
 
 	def onRouteNotFound(self, request: HTTPRequest) -> HTTPResponse:

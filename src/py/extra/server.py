@@ -78,6 +78,14 @@ SERVER_ERROR: bytes = (
 	b"\r\n"
 	b"Internal server error: Request not sent\r\n"
 )
+SERVER_BAD_REQUEST: bytes = (
+	b"HTTP/1.1 400 Bad Request\r\n"
+	b"Content-Type: text/plain\r\n"
+	b"Content-Length: 11\r\n"
+	b"Connection: close\r\n"
+	b"\r\n"
+	b"Bad Request"
+)
 
 
 class AIOSocketBodyReader(HTTPBodyReader):
@@ -252,6 +260,17 @@ class AIOSocketServer:
 						break
 					if atom is HTTPProcessingStatus.Complete:
 						status = atom
+					elif atom is HTTPProcessingStatus.BadFormat:
+						status = atom
+						warning(
+							"Bad HTTP request format",
+							Client=f"{id(client):x}",
+							Iteration=iteration,
+						)
+						await writer.write(SERVER_BAD_REQUEST)
+						res_count += 1
+						keep_alive = False
+						break
 					elif isinstance(atom, HTTPRequest):
 						req = atom
 						# We pass the reader to the request, as for instance
@@ -280,12 +299,6 @@ class AIOSocketServer:
 								Iteration=iteration,
 								Count=res_count,
 							)
-				# We clear what we've read from the buffer
-				if n != size:
-					del buffer[:n]
-				else:
-					# FIXME: Or is it buffer.clear()?
-					del buffer[:]
 				iteration += 1
 
 			# NOTE: We'll need to think about the loading of the body, which

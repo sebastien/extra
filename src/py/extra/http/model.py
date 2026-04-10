@@ -31,6 +31,8 @@ from .status import HTTP_STATUS
 
 TControl = bool | None
 T = TypeVar("T")
+_HEADER_CACHE_MAX: int = 4096
+_HEADER_CACHE: dict[str, str] = {}
 
 # -----------------------------------------------------------------------------
 #
@@ -39,8 +41,11 @@ T = TypeVar("T")
 # -----------------------------------------------------------------------------
 
 
-def headername(name: str, *, headers: dict[str, str] = {}) -> str:
+def headername(name: str, *, headers: dict[str, str] | None = None) -> str:
 	"""Normalizes the header name as `Kebab-Case`."""
+	headers = _HEADER_CACHE if headers is None else headers
+	if headers is _HEADER_CACHE and len(_HEADER_CACHE) >= _HEADER_CACHE_MAX:
+		_HEADER_CACHE.clear()
 	if name in headers:
 		return headers[name]
 	key: str = name.lower()
@@ -348,14 +353,19 @@ class HTTPBodyReader(ABC):
 		self, timeout: float = BODY_READER_TIMEOUT
 	) -> SpooledTemporaryFile[bytes]:
 		"""The safer way to load a body especially if the file exceeds a given size."""
-		with SpooledTemporaryFile(prefix="extra", suffix="raw") as f:
+		f = SpooledTemporaryFile(prefix="extra", suffix="raw")
+		try:
 			while True:
 				chunk = await self.read(timeout)
 				if not chunk:
 					break
 				else:
 					f.write(chunk)
+			f.seek(0)
 			return f
+		except Exception:
+			f.close()
+			raise
 
 
 class HTTPBodyWriter(ABC):

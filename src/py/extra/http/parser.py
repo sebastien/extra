@@ -328,6 +328,40 @@ class HTTPParser:
 								body=HTTPBodyBlob(b"", 0),
 							)
 							self.parser = self.message.reset()
+						elif (
+							headers is not None
+							and self.requestLine
+							and isinstance(self.requestLine, HTTPRequestLine)
+						):
+							line = self.requestLine
+							if headers.contentLength is None:
+								transfer_encoding = headers.headers.get("Transfer-Encoding")
+								if (
+									transfer_encoding
+									and transfer_encoding.strip().lower() != "identity"
+								):
+									# Chunked and other transfer encodings are not supported
+									# by this parser yet.
+									yield HTTPProcessingStatus.BadFormat
+									self.parser = self.message.reset()
+								else:
+									# For requests with no body delimiter, we do not consume
+									# arbitrary bytes from the stream (which could include a
+									# pipelined request).
+									yield HTTPRequest(
+										method=line.method,
+										path=line.path,
+										query=parseQuery(line.query),
+										headers=headers,
+										protocol=line.protocol,
+										body=HTTPBodyBlob(b"", 0),
+									)
+									self.parser = self.message.reset()
+							else:
+								self.parser = self.bodyLength.reset(
+									headers.contentLength
+								)
+								yield HTTPProcessingStatus.Body
 						elif headers is not None:
 							if headers.contentLength is None:
 								# FIXME: Not sure what the EOS parser was for

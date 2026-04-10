@@ -542,9 +542,14 @@ class HTTPClient:
 				)
 				for k, v in params.items()
 			)
-			path = f"{path}&{p}" if path else p
+			if path:
+				separator = "&" if "?" in path else "?"
+				path = f"{path}{separator}{p}"
+			else:
+				path = f"?{p}"
 		else:
-			path = f"{path}&{params}"
+			separator = "&" if "?" in path else "?"
+			path = f"{path}{separator}{params}"
 
 		# If we have a proxy setup
 		if proxy_host and proxy_port:
