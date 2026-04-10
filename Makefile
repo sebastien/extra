@@ -68,20 +68,43 @@ test:
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/routing-route.py >/dev/null && echo "✓ routing-route.py"
 	@echo "=== Running request parsing tests ==="
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/request-parsing.py >/dev/null && echo "✓ request-parsing.py"
-	@echo "=== Running server tests (with timeout) ==="
-	@(PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/case-complete-read-extra.py & PID=$$!; sleep 5; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null) && echo "✓ case-complete-read-extra.py (server test)" || echo "✓ case-complete-read-extra.py (server test)"
-	@(PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/case-partial-read-extra.py & PID=$$!; sleep 5; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null) && echo "✓ case-partial-read-extra.py (server test)" || echo "✓ case-partial-read-extra.py (server test)"
+	@echo "=== Running server tests (dynamic port fallback) ==="
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/server-dynamic-port-check.py --mode complete --server tests/case-complete-read-extra.py && echo "✓ case-complete-read-extra.py (dynamic port server test)"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/server-dynamic-port-check.py --mode partial --server tests/case-partial-read-extra.py && echo "✓ case-partial-read-extra.py (dynamic port server test)"
 	@(PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-extra-aio.py & PID=$$!; sleep 5; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null) && echo "✓ benchmark-extra-aio.py (server test)" || echo "✓ benchmark-extra-aio.py (server test)"
 	@echo "=== Running handler tests ==="
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/handler-aws.py >/dev/null && echo "✓ handler-aws.py"
 	@echo "=== Running optional tests ==="
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/bridge-python.py | grep -q "SKIPPED" && echo "✓ bridge-python.py (skipped - module not implemented)"
-	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/perf-httpparsing.py | grep -q "SKIPPED" && echo "✓ perf-httpparsing.py (skipped - data file missing)"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-httpparsing.py | grep -q "SKIPPED" && echo "✓ benchmark-httpparsing.py (skipped - data file missing)"
 	@echo "=== All tests completed successfully! ==="
 
 .PHONY: ci
 ci: check test
 	@
+
+BENCH_ROUTING_BASE_ARGS=--iterations 100000 --warmup 10000 --static-routes 500 --param-routes 500 --sample-size 512
+BENCH_REQRES_BASE_ARGS=--iterations 100000 --warmup 10000 --sample-size 256
+BENCH_ROUTING_FAST_ARGS=--iterations 10000 --warmup 1000 --static-routes 200 --param-routes 200 --sample-size 256
+BENCH_REQRES_FAST_ARGS=--iterations 10000 --warmup 1000 --sample-size 128
+
+.PHONY: bench
+bench: setup
+	@echo "=== Running core benchmarks (baseline) ==="
+	@routing_out=$$(mktemp); reqres_out=$$(mktemp); \
+	trap 'rm -f "$$routing_out" "$$reqres_out"' EXIT; \
+	PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-routing.py $(BENCH_ROUTING_BASE_ARGS) > "$$routing_out"; \
+	PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-reqres.py $(BENCH_REQRES_BASE_ARGS) > "$$reqres_out"; \
+	PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-table.py --routing "$$routing_out" --reqres "$$reqres_out" --label baseline
+
+.PHONY: bench-fast
+bench-fast: setup
+	@echo "=== Running core benchmarks (fast) ==="
+	@routing_out=$$(mktemp); reqres_out=$$(mktemp); \
+	trap 'rm -f "$$routing_out" "$$reqres_out"' EXIT; \
+	PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-routing.py $(BENCH_ROUTING_FAST_ARGS) > "$$routing_out"; \
+	PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-reqres.py $(BENCH_REQRES_FAST_ARGS) > "$$reqres_out"; \
+	PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-table.py --routing "$$routing_out" --reqres "$$reqres_out" --label fast
 
 .PHONY: audit
 audit: check-bandit
