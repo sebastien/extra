@@ -66,3 +66,7 @@ class HelloWorld(Service):
 app = run(HelloWorld())
 ```
 
+# More examples
+
+-   `examples/awslambda.py`: AWS Lambda handler integration with both
+    non-streaming and streaming-style responses.
