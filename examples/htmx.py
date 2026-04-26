@@ -16,6 +16,8 @@ Test with:
     http://localhost:8000/         # Main page with counter
     http://localhost:8000/counter  # HTMX endpoint for counter updates
 """
+# EXPECT: Starting HTMX web application
+# EXPECT: HTMX application initialized
 
 from extra import Service, HTTPRequest, HTTPResponse, on, expose, run
 from extra.utils.htmpl import Node, H

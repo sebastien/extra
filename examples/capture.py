@@ -17,6 +17,8 @@ Test with:
     curl -X POST -H "Content-Type: application/json" -d '{"key":"value"}' http://localhost:8000/data
     curl -X POST -d "form data" http://localhost:8000/form
 """
+# EXPECT: Starting request capture service
+# EXPECT: Test commands:
 
 from extra import Service, HTTPRequest, HTTPResponse, on, run
 from extra.utils.logging import info

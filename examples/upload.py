@@ -17,6 +17,8 @@ Test with:
     # Via curl:
     curl -F "file=@example.txt" -F "description=Test file" http://localhost:8000/upload
 """
+# EXPECT: Starting file upload service
+# EXPECT: Visit http://localhost:8000 to access the upload form
 
 from extra import Service, HTTPRequest, HTTPResponse, on, expose, run
 from extra.utils.logging import info

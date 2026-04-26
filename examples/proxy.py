@@ -21,6 +21,8 @@ Test with:
     curl -v -X POST -d '{"key":"value"}' -H "Content-Type: application/json" http://localhost:8000/post
     curl -v -H "X-Custom: hello" http://localhost:8000/headers
 """
+# EXPECT: Starting proxy example
+# EXPECT: Test endpoints:
 
 from extra import Service, HTTPRequest, HTTPResponse, on, run
 from extra.decorators import pre, post

@@ -13,6 +13,8 @@ Usage:
 
 This example fetches a compressed JavaScript file and decompresses it.
 """
+# EXPECT: Starting GZip HTTP client example
+# EXPECT: Starting GZip fetch
 
 import asyncio
 from extra.client import HTTPClient

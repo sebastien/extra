@@ -17,6 +17,8 @@ Test with:
     curl http://localhost:8000/status
     curl http://localhost:8000/results  # SSE stream of completed tasks
 """
+# EXPECT: Starting background worker service
+# EXPECT: Try these commands:
 
 from typing import Optional, AsyncIterator
 from extra import Service, HTTPRequest, HTTPResponse, on, expose, run

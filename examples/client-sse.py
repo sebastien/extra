@@ -19,6 +19,8 @@ Test different endpoints:
     # /time      - Default 1 second interval
     # /time/5    - 5 second interval
 """
+# EXPECT: Starting SSE client example
+# EXPECT: Connecting to SSE stream
 
 import asyncio
 from extra.client import HTTPClient

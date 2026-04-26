@@ -18,6 +18,8 @@ Test with:
     curl -H "Authorization: Bearer invalid-token" http://localhost:8000/protected
     curl http://localhost:8000/error
 """
+# EXPECT: Starting middleware and decorators example
+# EXPECT: Test endpoints:
 
 from extra import Service, HTTPRequest, HTTPResponse, on, expose, run
 from extra.decorators import pre, post

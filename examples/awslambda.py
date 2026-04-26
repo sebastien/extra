@@ -22,6 +22,8 @@ Usage:
 Local demo:
     python awslambda.py
 """
+# EXPECT: Non-streaming response:
+# EXPECT: Streaming response:
 
 from typing import Iterator, Any
 import json

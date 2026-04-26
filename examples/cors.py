@@ -16,6 +16,8 @@ Test with:
     curl -H "Origin: https://example.com" http://localhost:8000/api/data
     curl -X OPTIONS -H "Origin: https://example.com" -H "Access-Control-Request-Method: POST" http://localhost:8000/api/data
 """
+# EXPECT: Starting CORS-enabled API service
+# EXPECT: Test CORS with:
 
 from extra import Service, HTTPRequest, HTTPResponse, on, expose, run
 from extra.features.cors import setCORSHeaders

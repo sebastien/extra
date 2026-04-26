@@ -1,10 +1,21 @@
 import os
+import re
 import sys
+from pathlib import Path
 
 from setuptools import find_packages, setup
-from extra.__version__ import __version__
 
-VERSION = __version__
+
+def read_version() -> str:
+	version_file = Path(__file__).parent / "src" / "py" / "extra" / "__version__.py"
+	content = version_file.read_text(encoding="utf-8")
+	match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
+	if not match:
+		raise RuntimeError("Unable to find version string in src/py/extra/__version__.py")
+	return match.group(1)
+
+
+VERSION = read_version()
 
 # Try to import mypyc, make it optional
 try:

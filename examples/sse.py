@@ -17,6 +17,8 @@ Test with:
     curl http://localhost:8000/time/2  # 2 second delay
     curl http://localhost:8000/chunks
 """
+# EXPECT: Starting Server-Sent Events service
+# EXPECT: Test commands:
 
 from extra import Service, on, run
 from extra.utils.logging import info

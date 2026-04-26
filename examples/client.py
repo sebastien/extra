@@ -21,6 +21,8 @@ Usage:
 
 Default: https://google.com/
 """
+# EXPECT: HTTP Client Example starting
+# EXPECT: Starting HTTP client demo
 
 
 async def make_requests(url_str: str, num_requests: int = 3):
@@ -40,32 +42,36 @@ async def make_requests(url_str: str, num_requests: int = 3):
 		for i in range(num_requests):
 			info("Making request", Number=f"{i + 1}/{num_requests}")
 
-			async for atom in HTTPClient.Request(
-				host=uri.host,
-				method="GET",
-				port=uri.port,
-				path=uri.path or "/",
-				timeout=10.0,
-				streaming=False,
-				# Keep connection alive for all but last request
-				keepalive=i < num_requests - 1,
-				ssl=uri.ssl,
-			):
-				atom_type = type(atom).__name__
-				if hasattr(atom, "status"):
-					info("Response received", Type=atom_type, Status=atom.status)
-				elif hasattr(atom, "payload"):
-					# Truncate long responses for readability
-					payload_size = len(atom.payload)
-					preview = atom.payload[:100] if payload_size > 100 else atom.payload
-					info(
-						"Response data",
-						Type=atom_type,
-						Size=payload_size,
-						Preview=str(preview),
-					)
-				else:
-					info("Response atom", Type=atom_type)
+			try:
+				async for atom in HTTPClient.Request(
+					host=uri.host,
+					method="GET",
+					port=uri.port,
+					path=uri.path or "/",
+					timeout=10.0,
+					streaming=False,
+					# Keep connection alive for all but last request
+					keepalive=i < num_requests - 1,
+					ssl=uri.ssl,
+				):
+					atom_type = type(atom).__name__
+					if hasattr(atom, "status"):
+						info("Response received", Type=atom_type, Status=atom.status)
+					elif hasattr(atom, "payload"):
+						# Truncate long responses for readability
+						payload_size = len(atom.payload)
+						preview = atom.payload[:100] if payload_size > 100 else atom.payload
+						info(
+							"Response data",
+							Type=atom_type,
+							Size=payload_size,
+							Preview=str(preview),
+						)
+					else:
+						info("Response atom", Type=atom_type)
+			except Exception as e:
+				info("HTTP client request failed", Error=str(e))
+				break
 
 			# Small delay between requests
 			if i < num_requests - 1:

@@ -17,6 +17,8 @@ Test with:
 
 The server will serve files from the current working directory.
 """
+# EXPECT: Starting static file server
+# EXPECT: Serving files from current working directory
 
 from extra import run
 from extra.services.files import FileService

@@ -20,6 +20,8 @@ Test with:
     curl http://localhost:8000/api/counter/add/5
     curl -X POST http://localhost:8000/api/pong -H "Content-Type: application/json" -d '{"name":"John","age":30}'
 """
+# EXPECT: Starting JSON API service
+# EXPECT: Test commands:
 
 from extra import Service, HTTPRequest, HTTPResponse, on, expose, run
 from extra.utils.logging import info

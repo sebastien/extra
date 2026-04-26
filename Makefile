@@ -77,6 +77,8 @@ test:
 	@echo "=== Running optional tests ==="
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/bridge-python.py | grep -q "SKIPPED" && echo "✓ bridge-python.py (skipped - module not implemented)"
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-httpparsing.py | grep -q "SKIPPED" && echo "✓ benchmark-httpparsing.py (skipped - data file missing)"
+	@echo "=== Running integration examples tests ==="
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/integration-examples.py && echo "✓ integration-examples.py"
 	@echo "=== All tests completed successfully! ==="
 
 .PHONY: ci

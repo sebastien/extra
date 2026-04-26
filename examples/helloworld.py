@@ -16,6 +16,8 @@ Test with:
     curl http://localhost:8000/anything
     curl http://localhost:8000/hello
 """
+# EXPECT: Starting Hello World service
+# EXPECT: Test commands:
 
 from extra import Service, HTTPRequest, HTTPResponse, on, run
 from extra.utils.logging import info
