@@ -16,7 +16,7 @@ from typing import (
 from .decorators import Transform, Extra, Expose
 from .http.model import HTTPRequest, HTTPRequestError, HTTPResponse
 from .utils.logging import info, warning
-from inspect import iscoroutine
+from inspect import iscoroutine, iscoroutinefunction
 
 # TODO: Support re2, orjson
 import re
@@ -527,10 +527,68 @@ class Handler:
 		self.contentType = contentType
 		self.pre: Union[list[Transform], None] = pre
 		self.post: Union[list[Transform], None] = post
+		self.isAsync: bool = iscoroutinefunction(functor)
 
 	# TODO: This is maybe more than routing, not sure if this really belongs here
 	# NOTE: For now we only do HTTP Requests, we'll see if we can generalise.
-	async def __call__(
+	def __call__(
+		self, request: HTTPRequest, params: dict[str, Any]
+	) -> Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]]:
+		"""Dispatches to the sync or async path depending on the handler type.
+		Returns an HTTPResponse directly for sync handlers, or a coroutine
+		for async handlers -- avoiding coroutine creation overhead for sync."""
+		if self.isAsync:
+			return self._callAsync(request, params)
+		else:
+			return self._callSync(request, params)
+
+	def _callSync(
+		self, request: HTTPRequest, params: dict[str, Any]
+	) -> HTTPResponse:
+		"""Fast path for synchronous handlers -- no coroutine overhead."""
+		if self.pre:
+			for i, t in enumerate(self.pre):
+				try:
+					res = t.transform(request, params)
+				except HTTPRequestError as error:
+					return request.respondError(str(error))
+				except Exception as e:
+					raise e from e
+				if isinstance(res, HTTPResponse):
+					return res
+				elif isinstance(res, HTTPRequestError):
+					return request.respond(
+						content=res.payload if res.payload else res.message,
+						status=res.status or 500,
+						contentType=res.contentType or "text/plain",
+					)
+				elif res is False:
+					return request.fail(f"Precondition {1} failed")
+		try:
+			if self.expose:
+				value: Any = self.functor(**params)
+				content_type: str = (
+					self.contentType or self.expose.contentType or "application/json"
+				)
+				response: HTTPResponse = (
+					request.respond(value, contentType=content_type)
+					if self.expose.raw
+					else request.returns(value, contentType=content_type)
+				)
+			else:
+				response = self.functor(request, **params)
+		except HTTPRequestError as error:
+			response = request.respond(
+				content=error.payload if error.payload else error.message,
+				status=error.status or 500,
+				contentType=error.contentType or "text/plain",
+			)
+		if self.post:
+			for t in self.post:
+				t.transform(request, response, *t.args, **t.kwargs)
+		return response
+
+	async def _callAsync(
 		self, request: HTTPRequest, params: dict[str, Any]
 	) -> Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]]:
 		if self.pre:

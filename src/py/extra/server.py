@@ -8,6 +8,7 @@ from typing import Any, Callable, Coroutine, Literal, NamedTuple, Union
 
 from .config import HOST, PORT
 from .http.model import (
+	HTTPBodyBlob,
 	HTTPBodyReader,
 	HTTPBodyWriter,
 	HTTPProcessingStatus,
@@ -241,8 +242,7 @@ class AIOSocketServer:
 				# request in the same payload, so we need to be prepared
 				# to answer more than one request.
 				chunk = buffer[:n] if n != size else buffer
-				# TODO: We're converting a bytearray to bytes, check if that's performant.
-				stream = parser.feed(bytes(chunk))
+				stream = parser.feed(chunk)  # type: ignore[arg-type]
 				debug(
 					"Reading Requests(s)",
 					Client=f"{id(client):x}",
@@ -379,10 +379,21 @@ class AIOSocketServer:
 			sent = True
 		else:
 			try:
-				# We send the request head
-				await writer.write(res.head())
+				body = res.body
+				# Fast path: combine head + blob body into a single write
+				# to halve the number of sock_sendall syscalls.
+				if isinstance(body, HTTPBodyBlob):
+					head = res.head()
+					payload = body.payload
+					if payload:
+						await writer.write(head + payload)
+					else:
+						await writer.write(head)
+				else:
+					# We send the request head
+					await writer.write(res.head())
+					await writer.write(body)
 				sent = True
-				await writer.write(res.body)
 			except BrokenPipeError:
 				# Client did an early close
 				sent = True

@@ -640,7 +640,38 @@ class HTTPResponse:
 		protocol: str = "HTTP/1.1",
 	) -> "HTTPResponse":
 		"""Factory method to create HTTP response objects."""
-		payload: bytes | None = None
+		# --- Fast path: bytes or str content with no extra headers ---
+		# This avoids the isinstance chain, inspect calls, and dict merging
+		# for the common case (respondText, returns).
+		if headers is None and isinstance(content, bytes):
+			cl = contentLength if contentLength is not None else len(content)
+			h: dict[str, str] = {"Content-Length": str(cl)}
+			if contentType is not None:
+				h["Content-Type"] = contentType
+			return HTTPResponse(
+				status=status,
+				message=message or HTTP_STATUS.get(status, "Unknown status"),
+				headers=HTTPHeaders(h, contentType=contentType, contentLength=cl),
+				body=HTTPBodyBlob(content, cl),
+				protocol=protocol,
+				shouldClose=False,
+			)
+		if headers is None and isinstance(content, str):
+			payload = content.encode(DEFAULT_ENCODING)
+			cl = len(payload)
+			h = {"Content-Length": str(cl)}
+			if contentType is not None:
+				h["Content-Type"] = contentType
+			return HTTPResponse(
+				status=status,
+				message=message or HTTP_STATUS.get(status, "Unknown status"),
+				headers=HTTPHeaders(h, contentType=contentType, contentLength=cl),
+				body=HTTPBodyBlob(payload, cl),
+				protocol=protocol,
+				shouldClose=False,
+			)
+		# --- General path ---
+		payload_bytes: bytes | None = None
 		updated_headers: dict[str, str] = {} if headers is None else {}
 		should_close: bool = False
 
@@ -651,9 +682,9 @@ class HTTPResponse:
 		if content is None:
 			pass
 		elif isinstance(content, str):
-			payload = content.encode(DEFAULT_ENCODING)
+			payload_bytes = content.encode(DEFAULT_ENCODING)
 		elif isinstance(content, bytes):
-			payload = content
+			payload_bytes = content
 		elif isinstance(content, HTTPBodyFile):
 			# Allow passing HTTPBodyFile directly (for Range support)
 			body = content
@@ -663,9 +694,6 @@ class HTTPResponse:
 			contentLength = os.path.getsize(body.path)
 		elif inspect.isgenerator(content):
 			body = HTTPBodyStream(content)
-			# All streams should close the connection
-			# TODO:In general, should close would be determined by the
-			# presence of content length or not
 			should_close = True
 		elif inspect.isasyncgen(content):
 			body = HTTPBodyAsyncStream(content)
@@ -673,9 +701,9 @@ class HTTPResponse:
 		else:
 			raise ValueError(f"Unsupported content {type(content)}:{content}")
 		# If we have a payload then it's a Blob response
-		if payload is not None:
-			contentLength = len(payload)
-			body = HTTPBodyBlob(payload, contentLength)
+		if payload_bytes is not None:
+			contentLength = len(payload_bytes)
+			body = HTTPBodyBlob(payload_bytes, contentLength)
 		# Content Type
 		content_type: str | None = headers.get("Content-Type") if headers else None
 		if contentType is not None and contentType != content_type:
@@ -697,11 +725,6 @@ class HTTPResponse:
 			if hcl is not None:
 				contentLength = int(hcl)
 
-		# TODO: We should have a response pipeline that can do things
-		# like ETags, Ranged requests, etc.
-		# We adjust any extra header
-		# --
-		# The response is ready to be packaged
 		return HTTPResponse(
 			status=status,
 			message=message or HTTP_STATUS.get(status, "Unknown status"),
@@ -770,15 +793,12 @@ class HTTPResponse:
 			elif "Content-Length" not in self.headers.headers:
 				self.setHeader("Content-Length", 0)
 		message: str = self.message or HTTP_STATUS[status]
-		lines: list[str] = [
-			f"{headername(k)}: {v}" for k, v in self.headers.headers.items()
-		]
-		# TODO: No Content support?
-		lines.insert(0, f"{self.protocol} {status} {message}")
-		lines.append("")
-		lines.append("")
-		# TODO: UTF8 maybe? Why ASCII?
-		return "\r\n".join(lines).encode("ascii")
+		# Build directly as bytes to avoid join + encode overhead
+		parts: list[bytes] = [f"{self.protocol} {status} {message}\r\n".encode("ascii")]
+		for k, v in self.headers.headers.items():
+			parts.append(f"{headername(k)}: {v}\r\n".encode("ascii"))
+		parts.append(b"\r\n")
+		return b"".join(parts)
 
 	def onClose(
 		self, callback: Callable[["HTTPResponse"], None] | None
