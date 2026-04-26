@@ -244,16 +244,24 @@ class Routes:
 	expressions into a single"""
 
 	@staticmethod
-	def Compile(routes: Iterable[str]) -> Pattern[str]:
+	def Compile(
+		routes: Iterable[str],
+	) -> tuple[Pattern[str], list[str], dict[int, list[tuple[str, str, list[str]]]]]:
 		"""Compiles the list of routes into a single regex that can match
-		all of these routes, and extract the arguments."""
+		all of these routes, and extract the arguments. Returns the compiled
+		regex, an ordered list of route marker group names, and a mapping
+		of route indices to their expected parameters as
+		(name, type, candidate_group_names) tuples."""
 		# --
 		# This first step is where a bit of magic happens. We suffix each route
 		# with a regexp match group that has a unique name like R_0_{0…n}.
 		# --
 		# We wrap that in a prefix tree so that we get a tree of strings
 		# based on their common prefix.
-		tree = Prefix.Make([f"{r}(?P<R_0_{i}>$)" for i, r in enumerate(routes)])
+		route_list = list(routes)
+		tree = Prefix.Make(
+			[f"{r}(?P<R_0_{i}>$)" for i, r in enumerate(route_list)]
+		)
 		j: int = 0
 		chunks: list[str] = []
 		# Now we iterate on the regular expression version of the prefix
@@ -265,7 +273,7 @@ class Routes:
 				if pat.start() != i:
 					chunks.append(chunk[i : pat.start()])
 				p_name = pat.group("name")
-				p_type = pat.group("type") or p_name
+				p_type = (pat.group("type") or p_name).lower()
 				# Here again to avoid duplicate groups, we add a numeric
 				# suffix to the group name, and also add the pattern type,
 				# which we can use later to apply the extractor.
@@ -276,27 +284,71 @@ class Routes:
 				i = pat.end()
 			if i < n:
 				chunks.append(chunk[i:])
-		return re.compile("".join(chunks))
+		compiled = re.compile("".join(chunks))
+		# Build per-route expected params from the original templates,
+		# with pre-resolved candidate group names from the compiled regex.
+		markers: list[str] = [f"R_0_{i}" for i in range(len(route_list))]
+		# Index all param group names by (name, type) prefix
+		group_candidates: dict[str, list[str]] = {}
+		for gname in compiled.groupindex:
+			if not gname.startswith("R_"):
+				key = "_".join(gname.split("_", 2)[:2])
+				group_candidates.setdefault(key, []).append(gname)
+		route_params: dict[int, list[tuple[str, str, list[str]]]] = {}
+		for idx, route_text in enumerate(route_list):
+			params: list[tuple[str, str, list[str]]] = []
+			for pat in Route.RE_TEMPLATE.finditer(route_text):
+				p_name = pat.group("name")
+				p_type = (pat.group("type") or p_name).lower()
+				key = f"{p_name}_{p_type}"
+				params.append((p_name, p_type, group_candidates.get(key, [])))
+			route_params[idx] = params
+		return compiled, markers, route_params
 
 	def __init__(self, *routes: str):
 		self.paths = routes
-		self.regexp: Pattern[str] = Routes.Compile(routes)
+		self.regexp: Pattern[str]
+		self._markers: list[str]
+		self._params: dict[int, list[tuple[str, str, list[str]]]]
+		self.regexp, self._markers, self._params = Routes.Compile(routes)
+		# Pre-compute marker group numeric indices for fast scanning
+		# via match.regs (C-level tuple access).
+		self._marker_info: tuple[tuple[int, int], ...] = tuple(
+			(self.regexp.groupindex[mn], idx)
+			for idx, mn in enumerate(self._markers)
+		)
+		# Pre-compute param group numeric indices per route for fast
+		# extraction via match.group(int) instead of match.group(str).
+		self._param_info: dict[int, tuple[tuple[str, str, tuple[int, ...]], ...]] = {}
+		for ridx, param_list in self._params.items():
+			self._param_info[ridx] = tuple(
+				(
+					p_name,
+					p_type,
+					tuple(self.regexp.groupindex[gn] for gn in candidates),
+				)
+				for p_name, p_type, candidates in param_list
+			)
 
 	def match(self, path: str) -> Union[tuple[int, dict[str, Any]], None]:
 		if not (match := self.regexp.match(path)):
 			return None
 		else:
-			route: int = 0
+			# Find the route marker using match.regs for fast C-level access.
+			regs = match.regs
+			route: int = next(
+				(ri for gi, ri in self._marker_info if regs[gi][0] >= 0), -1
+			)
+			if route < 0:
+				return None
+			# Extract only the matched route's params using numeric indices.
 			params: dict[str, Any] = {}
-			for name, value in match.groupdict().items():
-				if value is None:
-					continue
-				else:
-					name, ptype, index = name.split("_", 2)
-					if name == "R":
-						route = int(index)
-					else:
-						params[name] = Route.PATTERNS[ptype].extractor(value)
+			for p_name, p_type, candidates in self._param_info.get(route, ()):
+				for gidx in candidates:
+					value = match.group(gidx)
+					if value is not None:
+						params[p_name] = Route.PATTERNS[p_type].extractor(value)
+						break
 			return (route, params)
 
 
@@ -565,13 +617,19 @@ class Handler:
 # -----------------------------------------------------------------------------
 
 
-# TODO: The dispatcher should use the Routes instead
 class Dispatcher:
 	"""A dispatcher registers handlers that respond to HTTP methods
-	on a given path/URI."""
+	on a given path/URI. Uses a compiled prefix-tree regex for O(1)
+	route matching and a dict fast-path for static routes."""
 
 	def __init__(self) -> None:
 		self.routes: dict[str, list[Route]] = {}
+		# Static routes indexed by path for O(1) dict lookup
+		self._static: dict[str, dict[str, Route]] = {}
+		# Compiled single-regex matcher per method
+		self._compiled: dict[str, Routes] = {}
+		# Ordered route list per method, indices match the compiled regex
+		self._indexed: dict[str, list[Route]] = {}
 		self.isPrepared: bool = True
 
 	def register(
@@ -589,11 +647,36 @@ class Dispatcher:
 		return self
 
 	def prepare(self: DispatcherT) -> DispatcherT:
-		"""Prepares the dispatcher, which optimizes the prefix tree for faster matching."""
-		res = {}
+		"""Prepares the dispatcher by compiling routes into optimised
+		matching structures: a dict for static routes and a single
+		compiled regex (via prefix tree) for dynamic routes."""
+		res: dict[str, list[Route]] = {}
+		static: dict[str, dict[str, Route]] = {}
+		indexed: dict[str, list[Route]] = {}
+		compiled: dict[str, Routes] = {}
 		for method, routes in self.routes.items():
-			res[method] = sorted(routes, key=lambda _: _.pattern)
+			# Sort by descending priority so the first alternation match
+			# in the compiled regex corresponds to the highest priority.
+			sorted_routes = sorted(routes, key=lambda _: (-_.priority, _.pattern))
+			res[method] = sorted_routes
+			# Separate static (no params) from dynamic routes
+			method_static: dict[str, Route] = {}
+			dynamic_routes: list[Route] = []
+			for route in sorted_routes:
+				if not route.params:
+					# Only keep the first (highest priority) static route
+					if route.text not in method_static:
+						method_static[route.text] = route
+				else:
+					dynamic_routes.append(route)
+			static[method] = method_static
+			indexed[method] = dynamic_routes
+			if dynamic_routes:
+				compiled[method] = Routes(*(r.text for r in dynamic_routes))
 		self.routes = res
+		self._static = static
+		self._indexed = indexed
+		self._compiled = compiled
 		self.isPrepared = True
 		return self
 
@@ -606,34 +689,20 @@ class Dispatcher:
 		the matching route and the match information."""
 		if method not in self.routes:
 			return (None, False)
-		else:
-			matched_match: Union[dict[str, Union[str, bool, int, float]], None] = None
-			matched_route: Union[Route, None] = None
-			matched_priority: int = -1
-			# TODO: Use Routes
-			# NOTE: The problem here is that we're going through
-			# *all* the registered routes for any URL. So the more routes,
-			# the slower this is going to be.
-			# ---
-			# FIXME: This is a critical performance issue
-			for route in self.routes[method]:
-				if route.priority < matched_priority:
-					continue
-				match: Union[dict[str, Union[str, bool, int, float]], None] = (
-					route.match(path)
-				)
-				# FIXME: Maybe use a debug stream here
-				if match is None:
-					continue
-				elif route.priority >= matched_priority:
-					matched_match = match
-					matched_route = route
-					matched_priority = route.priority
-			return (
-				(matched_route, matched_match)
-				if matched_match is not None
-				else (None, None)
-			)
+		# Fast path: O(1) dict lookup for static routes
+		static = self._static.get(method)
+		if static:
+			route = static.get(path)
+			if route is not None:
+				return (route, {})
+		# Compiled regex: single match for all dynamic routes
+		comp = self._compiled.get(method)
+		if comp:
+			result = comp.match(path)
+			if result is not None:
+				route_index, params = result
+				return (self._indexed[method][route_index], params)
+		return (None, None)
 
 
 # EOF
