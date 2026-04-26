@@ -2,12 +2,18 @@ from typing import Any, Coroutine, Callable, cast, Union
 from base64 import b64encode, b64decode
 from urllib.parse import urlparse, parse_qs
 from functools import update_wrapper
+import argparse
 import asyncio
+import importlib.util
 from io import BytesIO
+from pathlib import Path
+from types import ModuleType
 
 from .utils.io import asWritable
 from .utils.logging import exception
 from .model import Application, Service, mount
+from .decorators import on
+from .server import run
 from .http.model import (
 	HTTPRequest,
 	HTTPHeaders,
@@ -82,6 +88,10 @@ TAWSRequestContext = dict[
 TAWSEvent = dict[
 	str, Union[str, bytes, int, float, bool, dict[str, str], TAWSRequestContext, None]
 ]
+TAWSLambdaHandler = Callable[
+	[dict[str, Any], Union[dict[str, Any], None]],
+	Union[dict[str, Any], Coroutine[Any, Any, dict[str, Any]]],
+]
 
 
 class AWSLambdaEvent:
@@ -111,24 +121,28 @@ class AWSLambdaEvent:
 
 	@staticmethod
 	def AsRequest(event: dict[str, Any]) -> HTTPRequest:
-		body: bytes = (
-			(
-				b64decode(event["body"].encode())
-				if event.get("isBase64Encoded")
-				else event["body"].encode()
-			)
-			if "body" in event
-			else b""
-		)
+		request_context = cast(dict[str, Any], event.get("requestContext") or {})
+		http_context = cast(dict[str, Any], request_context.get("http") or {})
+		method = cast(str, event.get("httpMethod") or http_context.get("method") or "GET")
+		path = cast(str, event.get("path") or event.get("rawPath") or http_context.get("path") or "/")
+		raw_body = event.get("body")
+		if raw_body is None:
+			body: bytes = b""
+		elif event.get("isBase64Encoded"):
+			body = b64decode(raw_body.encode())
+		elif isinstance(raw_body, bytes):
+			body = raw_body
+		else:
+			body = raw_body.encode()
 		raw_headers: dict[str, str] = {
 			headername(k): v
-			for k, v in cast(dict[str, str], event.get("headers", {})).items()
+			for k, v in cast(dict[str, str], event.get("headers") or {}).items()
 		}
 		# TODO: Should do params
 		return HTTPRequest(
-			method=event.get("httpMethod", "GET"),
-			path=event.get("path", "/"),
-			query=cast(dict[str, str], event.get("queryStringParameters", {})),
+			method=method,
+			path=path,
+			query=cast(dict[str, str], event.get("queryStringParameters") or {}),
 			headers=HTTPHeaders(
 				raw_headers,
 				raw_headers.get("Content-Type"),
@@ -205,7 +219,12 @@ class AWSLambdaHandler:
 	def __init__(self, app: Application):
 		self.app: Application = app
 
-	async def handle(
+	def handle(
+		self, event: dict[str, Any], context: Union[dict[str, Any], None] = None
+	) -> dict[str, Any]:
+		return asyncio.run(self.ahandle(event, context))
+
+	async def ahandle(
 		self, event: dict[str, Any], context: Union[dict[str, Any], None] = None
 	) -> dict[str, Any]:
 		req: HTTPRequest = AWSLambdaEvent.AsRequest(event)
@@ -239,12 +258,12 @@ def response(
 	return asyncio.run(aresponse(response))
 
 
-def handler(
+def awshandler(
 	*components: Union[Application, Service],
-) -> AWSLambdaHandler:
+) -> Callable[[dict[str, Any], Union[dict[str, Any], None]], dict[str, Any]]:
 	"""Returns an AWS Lambda Handler function"""
 	app = mount(*components)
-	return AWSLambdaHandler(app)
+	return AWSLambdaHandler(app).handle
 
 
 def event(
@@ -293,6 +312,101 @@ def awslambda(
 		return response(res)
 
 	return update_wrapper(wrapper, handler)
+
+
+def _loadmodule(path: str) -> ModuleType:
+	module_path = Path(path).expanduser().resolve()
+	if not module_path.exists():
+		raise RuntimeError(f"Module file does not exist: {module_path}")
+	spec = importlib.util.spec_from_file_location(
+		f"extra_lambda_{module_path.stem}", module_path
+	)
+	if spec is None or spec.loader is None:
+		raise RuntimeError(f"Cannot load module from path: {module_path}")
+	module = importlib.util.module_from_spec(spec)
+	spec.loader.exec_module(module)
+	return module
+
+
+def _loadhandler(path: str, name: str) -> TAWSLambdaHandler:
+	module = _loadmodule(path)
+	if not hasattr(module, name):
+		raise RuntimeError(f"Handler '{name}' not found in module: {path}")
+	handler = getattr(module, name)
+	if not callable(handler):
+		raise RuntimeError(f"Resolved handler '{name}' is not callable: {handler}")
+	return cast(TAWSLambdaHandler, handler)
+
+
+class AWSLambdaBridgeService(Service):
+	def __init__(self, handler: TAWSLambdaHandler):
+		super().__init__(name="AWSLambdaBridge")
+		self.handler = handler
+
+	@on(GET_POST_PUT_PATCH_DELETE_OPTIONS_HEAD=("/", "/{path:any}"))
+	async def handle(self, request: HTTPRequest, path: str = "") -> HTTPResponse:
+		body_data = await request.body.load() or b""
+		event: dict[str, Any] = {
+			"httpMethod": request.method,
+			"path": request.path,
+			"queryStringParameters": request.query or {},
+			"headers": request.headers,
+		}
+		if body_data:
+			try:
+				event["body"] = body_data.decode("utf8")
+				event["isBase64Encoded"] = False
+			except UnicodeDecodeError:
+				event["body"] = b64encode(body_data).decode("ascii")
+				event["isBase64Encoded"] = True
+
+		result = self.handler(event, None)
+		payload: dict[str, Any]
+		if asyncio.iscoroutine(result):
+			payload = await result
+		else:
+			payload = result
+
+		status = int(payload.get("statusCode") or 200)
+		headers = cast(dict[str, str], payload.get("headers") or {})
+		raw_body = payload.get("body")
+		is_base64 = bool(payload.get("isBase64Encoded"))
+
+		if raw_body is None:
+			response_body = b""
+		elif is_base64:
+			if isinstance(raw_body, bytes):
+				response_body = b64decode(raw_body)
+			else:
+				response_body = b64decode(str(raw_body).encode())
+		elif isinstance(raw_body, bytes):
+			response_body = raw_body
+		else:
+			response_body = str(raw_body).encode("utf8")
+
+		return request.respond(
+			content=response_body,
+			status=status,
+			headers=headers,
+			contentType=headers.get("Content-Type"),
+		)
+
+
+def main(args: list[str] | None = None) -> None:
+	parser = argparse.ArgumentParser(prog="python -m extra.handler")
+	parser.add_argument("module", help="Path to a Python module file")
+	parser.add_argument(
+		"--handler", default="handler", help="Lambda handler symbol name"
+	)
+	parser.add_argument("--host", default="127.0.0.1", help="Host to bind")
+	parser.add_argument("--port", type=int, default=8000, help="Port to bind")
+	options = parser.parse_args(args=args)
+	handler = _loadhandler(options.module, options.handler)
+	run(AWSLambdaBridgeService(handler), host=options.host, port=options.port)
+
+
+if __name__ == "__main__":
+	main()
 
 
 # EOF

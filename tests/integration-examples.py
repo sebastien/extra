@@ -16,14 +16,29 @@ TIMEOUTS: dict[str, float] = {
 	"client.py": 25.0,
 	"client-gzip.py": 25.0,
 }
+DAEMON_EXAMPLES: set[str] = {
+	"api.py",
+	"capture.py",
+	"cors.py",
+	"fileserver.py",
+	"helloworld.py",
+	"htmx.py",
+	"middleware.py",
+	"proxy.py",
+	"sse.py",
+	"upload.py",
+	"workers.py",
+}
 
 
 @dataclass(slots=True)
 class RunResult:
 	name: str
+	mode: str
 	timeout: float
 	returncode: int | None
 	timed_out: bool
+	killed: bool
 	output: str
 	expected: list[str]
 	missing: list[str]
@@ -52,12 +67,15 @@ def missing_in_order(output: str, expected: list[str]) -> list[str]:
 
 def run_example(path: Path) -> RunResult:
 	expected = extract_expected_lines(path)
+	mode = "daemon" if path.name in DAEMON_EXAMPLES else "finite"
 	if not expected:
 		return RunResult(
 			name=path.name,
+			mode=mode,
 			timeout=0,
 			returncode=None,
 			timed_out=False,
+			killed=False,
 			output="",
 			expected=[],
 			missing=["No # EXPECT: lines found"],
@@ -82,19 +100,31 @@ def run_example(path: Path) -> RunResult:
 	)
 
 	timed_out = False
+	killed = False
 	try:
 		output, _ = process.communicate(timeout=timeout)
 	except subprocess.TimeoutExpired:
-		timed_out = True
-		process.kill()
-		output, _ = process.communicate()
+		if mode == "daemon":
+			killed = True
+			process.terminate()
+			try:
+				output, _ = process.communicate(timeout=2.0)
+			except subprocess.TimeoutExpired:
+				process.kill()
+				output, _ = process.communicate()
+		else:
+			timed_out = True
+			process.kill()
+			output, _ = process.communicate()
 
 	missing = missing_in_order(output, expected)
 	return RunResult(
 		name=path.name,
+		mode=mode,
 		timeout=timeout,
 		returncode=process.returncode,
 		timed_out=timed_out,
+		killed=killed,
 		output=output,
 		expected=expected,
 		missing=missing,
@@ -121,12 +151,21 @@ def main() -> int:
 	for path in example_files:
 		result = run_example(path)
 
-		has_runtime_failure = (not result.timed_out) and (
-			result.returncode is not None and result.returncode != 0
-		)
+		has_runtime_failure = False
+		if result.timed_out:
+			has_runtime_failure = True
+		elif result.mode == "finite":
+			has_runtime_failure = result.returncode is not None and result.returncode != 0
+		elif not result.killed:
+			has_runtime_failure = result.returncode is not None and result.returncode != 0
 		is_failure = bool(result.missing) or has_runtime_failure
 		status = "FAIL" if is_failure else "PASS"
-		detail = "timeout" if result.timed_out else f"exit={result.returncode}"
+		if result.timed_out:
+			detail = "timeout"
+		elif result.killed:
+			detail = "killed"
+		else:
+			detail = f"exit={result.returncode}"
 		print(f"[{status}] {result.name} ({detail})")
 
 		if is_failure:
@@ -139,7 +178,9 @@ def main() -> int:
 			if result.missing:
 				for item in result.missing:
 					print(f"    Missing EXPECT: {item}")
-			if (not result.timed_out) and (
+			if result.timed_out:
+				print(f"    Process timed out after {result.timeout:.1f}s")
+			elif (result.mode == "finite" or not result.killed) and (
 				result.returncode is not None and result.returncode != 0
 			):
 				print(f"    Process failed with exit code {result.returncode}")
