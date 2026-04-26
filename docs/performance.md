@@ -11,7 +11,16 @@ Here are the things that we've done to maximise performance:
 ## Keep-Alive
 
 HTTP/1.0 (used by tools like `ab`) closes connection at the end of each
-request, while
+request by default. With `ab -k`, keep-alive is enabled.
+
+For HTTP/1.1, `h2load --h1` uses persistent connections by default. You can
+force close-on-each-request behavior with:
+
+```
+h2load -n10000 -c1000 -m1 --h1 -H 'Connection: close' http://localhost:8000/
+```
+
+You can also test HTTP/1.1 pipelining with `-m` values greater than `1`.
 
 ## Tips
 
@@ -37,6 +46,26 @@ and here's the same for HTTP/1.0:
 ```
 ab -n10000 -c1000 http://localhost:8000
 ```
+
+HTTP/1.0 keep-alive with `ab`:
+
+```
+ab -k -n10000 -c1000 http://localhost:8000
+```
+
+You can run all scenarios across all built-in test servers using:
+
+```
+python tests/benchmark.py --modes all
+```
+
+Available modes are:
+
+- `h10_close_legacy`
+- `h10_keepalive_legacy`
+- `h1_close`
+- `h1_keepalive_serial`
+- `h1_keepalive_pipeline`
 
 
 
