@@ -8,17 +8,20 @@
 Extra is an toolkit to write HTTP/1.1 web services and applications, with
 first class support for streaming.
 
-It is focused on providing primitives for creating web services,
+Extra works also well in serverless mode, thanks to its AWS Lambda handler.
+
+Extra is focused on providing primitives for creating web services,
 implemented to work well both in development and production while
 providing a great developer experience.
 
 Key Features:
 
--   Client and server
+-   Server *and* client, with full control over requests and responses
+-   AWS Lambda/Serverless support
 -   Streaming reads and writes, lazy decoding and encoding
 -   Embedded asynchronous HTTP/1 development server
--   Only requires Python stdlib
--   Good baseline performance (5-10K RPS on average hardware)
+-   No dependency, only requires Python stdlib
+-   Good baseline performance, competitive with FastAPI (5-10K RPS on average hardware)
 
 Design principles:
 
@@ -68,5 +71,18 @@ app = run(HelloWorld())
 
 # More examples
 
--   `examples/awslambda.py`: AWS Lambda handler integration with both
-    non-streaming and streaming-style responses.
+-   `examples/api.py`: JSON API with routing, type conversion, and service lifecycle
+-   `examples/awslambda.py`: AWS Lambda handler integration with streaming support
+-   `examples/capture.py`: Request inspection with catch-all routes and body streaming
+-   `examples/client.py`: HTTP client with connection pooling and keepalive
+-   `examples/client-gzip.py`: HTTP client with GZip decompression
+-   `examples/client-sse.py`: HTTP client consuming Server-Sent Events streams
+-   `examples/cors.py`: CORS headers, pre-flight handling, and cross-origin requests
+-   `examples/fileserver.py`: Static file serving with MIME type detection
+-   `examples/htmx.py`: Interactive web apps with HTMX and server-side rendering
+-   `examples/middleware.py`: Pre/post middleware decorators for request/response processing
+-   `examples/proxy.py`: Reverse proxy with header manipulation and forwarding
+-   `examples/sse.py`: Server-Sent Events streaming with async generators
+-   `examples/upload.py`: File upload handling with HTML forms
+-   `examples/workers.py`: Background task processing with asyncio queues
+
