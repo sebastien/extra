@@ -745,21 +745,31 @@ class Dispatcher:
 	]:
 		"""Matches a given `method` and `path` with the registered route, returning
 		the matching route and the match information."""
+		if not self.isPrepared:
+			self.prepare()
 		if method not in self.routes:
 			return (None, False)
+		static_route: Union[Route, None] = None
 		# Fast path: O(1) dict lookup for static routes
 		static = self._static.get(method)
 		if static:
-			route = static.get(path)
-			if route is not None:
-				return (route, {})
+			static_route = static.get(path)
 		# Compiled regex: single match for all dynamic routes
 		comp = self._compiled.get(method)
 		if comp:
 			result = comp.match(path)
 			if result is not None:
 				route_index, params = result
-				return (self._indexed[method][route_index], params)
+				dynamic_route = self._indexed[method][route_index]
+				if static_route is None:
+					return (dynamic_route, params)
+				# Keep old dispatcher semantics: pick highest priority,
+				# and favour static on ties.
+				if dynamic_route.priority > static_route.priority:
+					return (dynamic_route, params)
+				return (static_route, {})
+		if static_route is not None:
+			return (static_route, {})
 		return (None, None)
 
 
