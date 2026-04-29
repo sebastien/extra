@@ -74,9 +74,15 @@ class FileService(Service):
 
 	TRANSLATORS: list[FileTranslator] = [TypeScriptTranslator()]
 
-	def __init__(self, root: str | Path | None = None, strict: bool = True):
+	def __init__(
+		self,
+		root: str | Path | None = None,
+		strict: bool = True,
+		followSymlinks: bool = True,
+	):
 		super().__init__()
 		self.strictLocalPath: bool = strict
+		self.followSymlinks: bool = followSymlinks
 		self.root: Path = (
 			root if isinstance(root, Path) else Path(root or ".")
 		).resolve()
@@ -315,10 +321,14 @@ class FileService(Service):
 
 	def resolvePath(self, path: Union[str, Path]) -> tuple[Path | None, str | None]:
 		has_slash = isinstance(path, str) and path.endswith("/")
-		local_path = self.root.joinpath(path).resolve(strict=False)
+		local_path = Path(os.path.abspath(self.root.joinpath(path)))
 		original_path = local_path
 		with_redirect = False
 		if not local_path.is_relative_to(self.root):
+			return None, None
+		if not self.followSymlinks and not local_path.resolve(strict=False).is_relative_to(
+			self.root
+		):
 			return None, None
 
 		# First try to resolve with automatic extensions (unless path ends with "/")

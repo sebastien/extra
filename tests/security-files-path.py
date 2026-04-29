@@ -32,8 +32,14 @@ with tempfile.TemporaryDirectory(prefix="extra-sec-root-") as tmp_root:
 		try:
 			os.symlink(outside, link_path)
 			resolved_link, _ = svc.resolvePath("link.txt")
-			if resolved_link is not None:
-				print("FAIL: symlink escape should be rejected")
+			if resolved_link != link_path.absolute():
+				print("FAIL: symlink should resolve by default")
+				failed += 1
+
+			svc_strict = FileService(root=root, followSymlinks=False)
+			resolved_link_strict, _ = svc_strict.resolvePath("link.txt")
+			if resolved_link_strict is not None:
+				print("FAIL: symlink escape should be rejected when disabled")
 				failed += 1
 		except OSError:
 			# Symlink may be unavailable in restricted environments.
