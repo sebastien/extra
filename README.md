@@ -84,5 +84,5 @@ app = run(HelloWorld())
 -   `examples/proxy.py`: Reverse proxy with header manipulation and forwarding
 -   `examples/sse.py`: Server-Sent Events streaming with async generators
 -   `examples/upload.py`: File upload handling with HTML forms
+-   `examples/watch.py`: Filesystem change streaming via SSE using CLI watchers
 -   `examples/workers.py`: Background task processing with asyncio queues
-
