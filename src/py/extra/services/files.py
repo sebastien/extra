@@ -1,4 +1,5 @@
 import os
+import shutil
 from abc import abstractmethod
 from email.utils import formatdate
 from hashlib import md5
@@ -11,8 +12,18 @@ from ..features.cors import cors
 from ..http.model import HTTPRequest, HTTPResponse
 from ..model import Service
 from ..utils.files import FileEntry, contentType, resolveSuffix
-from ..utils.htmpl import H, Node, html
+from ..utils.htmpl import H, Node, html, raw
 from ..utils.shell import shell
+
+try:
+	import paml.engine as _paml_engine  # type: ignore[import-not-found]
+except ImportError:
+	_paml_engine = None
+
+try:
+	import pcss as _pcss  # type: ignore[import-not-found]
+except ImportError:
+	_pcss = None
 
 FILE_CSS: str = """
 :root {
@@ -69,10 +80,90 @@ class TypeScriptTranslator(FileTranslator):
 		)
 
 
+class PAMLTranslator(FileTranslator):
+	"""Transforms PAML files to HTML, XML or JavaScript."""
+
+	def match(self, base: Path, path: str, local: Path) -> Path | None:
+		if _paml_engine is None:
+			return None
+		name = local.name
+		return (
+			local
+			if name.endswith(".paml")
+			or name.endswith(".paml.xml")
+			or name.endswith(".paml.js")
+			else None
+		)
+
+	def translate(self, path: Path) -> tuple[str, bytes | str]:
+		name = path.name
+		if name.endswith(".paml.xml"):
+			fmt, ctype = "xml", "application/xml"
+		elif name.endswith(".paml.js"):
+			fmt, ctype = "js", "text/javascript"
+		else:
+			fmt, ctype = "html", "text/html"
+		source = path.read_text(encoding="utf8")
+		return ctype, _paml_engine.parse(source, path=str(path), format=fmt)
+
+
+class PCSSTranslator(FileTranslator):
+	"""Transforms PCSS files to CSS."""
+
+	def match(self, base: Path, path: str, local: Path) -> Path | None:
+		if _pcss is None:
+			return None
+		return local if local.suffix == ".pcss" else None
+
+	def translate(self, path: Path) -> tuple[str, bytes | str]:
+		source = path.read_text(encoding="utf8")
+		return "text/css", _pcss.process(source, path=str(path))
+
+
+class MarkdownTranslator(FileTranslator):
+	"""Transforms Markdown files to HTML using pandoc."""
+
+	GITHUB_MARKDOWN_CSS = "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.8.1/github-markdown.min.css"
+
+	def match(self, base: Path, path: str, local: Path) -> Path | None:
+		return local if local.suffix == ".md" and shutil.which("pandoc") else None
+
+	def translate(self, path: Path) -> tuple[str, bytes | str]:
+		html_body = shell(
+			["pandoc", "--from", "gfm", "--to", "html5"],
+			input=path.read_bytes(),
+		).decode("utf8")
+		document = "".join(
+			html(
+				H.html(
+					H.head(
+						H.meta(charset="utf-8"),
+						H.meta(name="viewport", content="width=device-width, initial-scale=1.0"),
+						H.title(path.name),
+						H.link(rel="stylesheet", href=self.GITHUB_MARKDOWN_CSS),
+						H.style(
+							"body { margin: 0; background: #ffffff; }"
+							" .markdown-body { box-sizing: border-box; max-width: 980px; margin: 0 auto; padding: 32px 24px; }"
+							" @media (max-width: 767px) { .markdown-body { padding: 16px; } }"
+						),
+					),
+					H.body(H.article(raw(html_body), _="markdown-body")),
+				),
+				doctype="html",
+			)
+		)
+		return "text/html", document
+
+
 class FileService(Service):
 	"""A service to serve files from the local filesystem"""
 
-	TRANSLATORS: list[FileTranslator] = [TypeScriptTranslator()]
+	TRANSLATORS: list[FileTranslator] = [
+		TypeScriptTranslator(),
+		PAMLTranslator(),
+		PCSSTranslator(),
+		MarkdownTranslator(),
+	]
 
 	def __init__(
 		self,
@@ -92,6 +183,10 @@ class FileService(Service):
 		self.automatic: list[str] = [
 			".html",
 			".htm",
+			".pcss",
+			".paml",
+			".paml.xml",
+			".paml.js",
 			".txt",
 			".md",
 			".ts",
@@ -326,9 +421,9 @@ class FileService(Service):
 		with_redirect = False
 		if not local_path.is_relative_to(self.root):
 			return None, None
-		if not self.followSymlinks and not local_path.resolve(strict=False).is_relative_to(
-			self.root
-		):
+		if not self.followSymlinks and not local_path.resolve(
+			strict=False
+		).is_relative_to(self.root):
 			return None, None
 
 		# First try to resolve with automatic extensions (unless path ends with "/")
@@ -343,7 +438,18 @@ class FileService(Service):
 		if local_path.is_dir():
 			if not has_slash:
 				# NOTE: Maybe this should be handled previously?
-				index_suffixes = [".html", ".htm", ".ts", ".tsx", ".js", ".jsx"]
+				index_suffixes = [
+					".html",
+					".htm",
+					".pcss",
+					".paml",
+					".paml.xml",
+					".paml.js",
+					".ts",
+					".tsx",
+					".js",
+					".jsx",
+				]
 				if match := resolveSuffix(local_path / "index", index_suffixes):
 					local_path, _ = match
 					with_redirect = True
