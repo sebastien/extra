@@ -14,14 +14,15 @@ from ..model import Service
 from ..utils.files import FileEntry, contentType, resolveSuffix
 from ..utils.htmpl import H, Node, html, raw
 from ..utils.shell import shell
+from ..utils.ssi import processSSI
 
 try:
-	import paml.engine as _paml_engine  # type: ignore[import-not-found]
+	import paml.engine as _paml_engine  # type: ignore[import-untyped]
 except ImportError:
 	_paml_engine = None
 
 try:
-	import pcss as _pcss  # type: ignore[import-not-found]
+	import pcss as _pcss  # type: ignore[import-untyped]
 except ImportError:
 	_pcss = None
 
@@ -155,6 +156,22 @@ class MarkdownTranslator(FileTranslator):
 		return "text/html", document
 
 
+class SSITranslator(FileTranslator):
+	"""Transforms SHTML files by expanding SSI include directives."""
+
+	def __init__(self) -> None:
+		self.base: Path | None = None
+
+	def match(self, base: Path, path: str, local: Path) -> Path | None:
+		self.base = base
+		return local if local.suffix in (".shtml", ".shtm") else None
+
+	def translate(self, path: Path) -> tuple[str, bytes | str]:
+		source = path.read_text(encoding="utf8")
+		root = self.base or path.parent
+		return "text/html", processSSI(source, root=root, current=path)
+
+
 class FileService(Service):
 	"""A service to serve files from the local filesystem"""
 
@@ -163,6 +180,7 @@ class FileService(Service):
 		PAMLTranslator(),
 		PCSSTranslator(),
 		MarkdownTranslator(),
+		SSITranslator(),
 	]
 
 	def __init__(
@@ -183,6 +201,8 @@ class FileService(Service):
 		self.automatic: list[str] = [
 			".html",
 			".htm",
+			".shtml",
+			".shtm",
 			".pcss",
 			".paml",
 			".paml.xml",
@@ -441,6 +461,8 @@ class FileService(Service):
 				index_suffixes = [
 					".html",
 					".htm",
+					".shtml",
+					".shtm",
 					".pcss",
 					".paml",
 					".paml.xml",
