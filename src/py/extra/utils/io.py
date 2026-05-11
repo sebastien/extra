@@ -63,18 +63,27 @@ class LineParser:
 	def feed(self, chunk: bytes, start: int = 0) -> tuple[bytes | None, int]:
 		"""Returns the matching line and how many bytes were read in chunk from start. When line is None,
 		then the whole chunk has been processed."""
+		# Fast path: no buffered prefix, parse directly from incoming chunk to
+		# avoid copying whole chunks in the common case.
+		if not self.buffer:
+			end = chunk.find(self.eol, start)
+			if end != -1:
+				self.line = chunk[start:end]
+				self.offset = 0
+				return self.line, (end - start) + self.eolsize
+			self.buffer += chunk[start:]
+			self.offset = max(0, len(self.buffer) - self.eolsize + 1)
+			return None, len(chunk) - start
 		pos = len(self.buffer)
 		self.buffer += chunk[start:]
 		end = self.buffer.find(self.eol, self.offset)
 		if end == -1:
 			self.offset = max(0, len(self.buffer) - self.eolsize + 1)
 			return None, len(chunk) - start
-		else:
-			self.line = bytes(self.buffer[:end])
-			# FIXME: It may not be .clear()?
-			self.buffer.clear()
-			self.offset = 0
-			return self.line, (end - pos) + self.eolsize
+		self.line = bytes(self.buffer[:end])
+		self.buffer.clear()
+		self.offset = 0
+		return self.line, (end - pos) + self.eolsize
 
 
 # EOF

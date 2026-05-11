@@ -150,7 +150,7 @@ class HTTPRequestError(Exception):
 # -----------------------------------------------------------------------------
 
 
-BODY_READER_TIMEOUT: float = 1.0
+BODY_READER_TIMEOUT: float | None = None
 
 
 class HTTPBodyIO:
@@ -313,7 +313,7 @@ class HTTPBodyReader(ABC):
 		self.transform: BytesTransform | None = transform
 
 	async def read(
-		self, timeout: float = BODY_READER_TIMEOUT, size: int | None = None
+		self, timeout: float | None = BODY_READER_TIMEOUT, size: int | None = None
 	) -> bytes | None:
 		chunk = await self._read(timeout=timeout, size=size)
 		if chunk is not None and self.transform:
@@ -324,13 +324,13 @@ class HTTPBodyReader(ABC):
 
 	@abstractmethod
 	async def _read(
-		self, timeout: float = BODY_READER_TIMEOUT, size: int | None = None
+		self, timeout: float | None = BODY_READER_TIMEOUT, size: int | None = None
 	) -> bytes | None: ...
 
 	# NOTE: This is a dangerous operation, as this way bloat the whole memory.
 	# Instead, loading should spool the file.
 	async def load(
-		self, timeout: float = BODY_READER_TIMEOUT, size: int | None = None
+		self, timeout: float | None = BODY_READER_TIMEOUT, size: int | None = None
 	) -> bytes:
 		"""Loads the entire body into a bytes array."""
 		data = bytearray()
@@ -350,7 +350,7 @@ class HTTPBodyReader(ABC):
 		return bytes(data)
 
 	async def spool(
-		self, timeout: float = BODY_READER_TIMEOUT
+		self, timeout: float | None = BODY_READER_TIMEOUT
 	) -> SpooledTemporaryFile[bytes]:
 		"""The safer way to load a body especially if the file exceeds a given size."""
 		f = SpooledTemporaryFile(prefix="extra", suffix="raw")
@@ -796,7 +796,7 @@ class HTTPResponse:
 		# Build directly as bytes to avoid join + encode overhead
 		parts: list[bytes] = [f"{self.protocol} {status} {message}\r\n".encode("ascii")]
 		for k, v in self.headers.headers.items():
-			parts.append(f"{headername(k)}: {v}\r\n".encode("ascii"))
+			parts.append(f"{k}: {v}\r\n".encode("ascii"))
 		parts.append(b"\r\n")
 		return b"".join(parts)
 

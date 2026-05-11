@@ -218,12 +218,12 @@ class BodyLengthParser:
 	def __init__(self) -> None:
 		self.expected: int | None = None
 		self.read: int = 0
-		self.data: list[bytes] = []
+		self.data: bytearray = bytearray()
 
 	def flush(self) -> HTTPBodyBlob:
 		# TODO: We should check it's expected
 		res = HTTPBodyBlob(
-			b"".join(self.data),
+			bytes(self.data),
 			self.read,
 			0 if self.expected is None else self.expected - self.read,
 		)
@@ -244,11 +244,11 @@ class BodyLengthParser:
 		)
 		# FIXME: Is this correct?
 		if to_read < left:
-			self.data.append(chunk[start : start + to_read])
+			self.data.extend(chunk[start : start + to_read])
 			self.read += to_read
 			return False, to_read
 		else:
-			self.data.append(chunk[start:] if start else chunk)
+			self.data.extend(chunk[start:] if start else chunk)
 			self.read += to_read
 			return True, to_read
 
