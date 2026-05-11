@@ -317,18 +317,23 @@ class Routes:
 			(self.regexp.groupindex[mn], idx)
 			for idx, mn in enumerate(self._markers)
 		)
-		# Pre-compute param group numeric indices per route for fast
-		# extraction via match.group(int) instead of match.group(str).
-		self._param_info: dict[int, tuple[tuple[str, str, tuple[int, ...]], ...]] = {}
+		# Pre-compute param extraction plan per route:
+		# (param_name, extractor, candidate_group_indices).
+		self._param_info: dict[
+			int, tuple[tuple[str, Callable[[str], Any], tuple[int, ...]], ...]
+		] = {}
+		self._param_pref: dict[int, list[int]] = {}
 		for ridx, param_list in self._params.items():
-			self._param_info[ridx] = tuple(
+			info_tuple = tuple(
 				(
 					p_name,
-					p_type,
+					cast(Callable[[str], Any], Route.PATTERNS[p_type].extractor),
 					tuple(self.regexp.groupindex[gn] for gn in candidates),
 				)
 				for p_name, p_type, candidates in param_list
 			)
+			self._param_info[ridx] = info_tuple
+			self._param_pref[ridx] = [-1] * len(info_tuple)
 
 	def match(self, path: str) -> Union[tuple[int, dict[str, Any]], None]:
 		if not (match := self.regexp.match(path)):
@@ -336,18 +341,32 @@ class Routes:
 		else:
 			# Find the route marker using match.regs for fast C-level access.
 			regs = match.regs
-			route: int = next(
-				(ri for gi, ri in self._marker_info if regs[gi][0] >= 0), -1
-			)
+			route: int = -1
+			for gi, ri in self._marker_info:
+				if regs[gi][0] >= 0:
+					route = ri
+					break
 			if route < 0:
 				return None
-			# Extract only the matched route's params using numeric indices.
+			# Extract only the matched route's params using numeric indices
+			# and regs offsets to avoid repeated match.group(...) calls.
 			params: dict[str, Any] = {}
-			for p_name, p_type, candidates in self._param_info.get(route, ()):
+			param_info = self._param_info.get(route, ())
+			pref = self._param_pref.get(route)
+			for i, (p_name, extractor, candidates) in enumerate(param_info):
+				if pref is not None:
+					pg = pref[i]
+					if pg >= 0:
+						start, end = regs[pg]
+						if start >= 0:
+							params[p_name] = extractor(path[start:end])
+							continue
 				for gidx in candidates:
-					value = match.group(gidx)
-					if value is not None:
-						params[p_name] = Route.PATTERNS[p_type].extractor(value)
+					start, end = regs[gidx]
+					if start >= 0:
+						params[p_name] = extractor(path[start:end])
+						if pref is not None:
+							pref[i] = gidx
 						break
 			return (route, params)
 
@@ -771,6 +790,5 @@ class Dispatcher:
 		if static_route is not None:
 			return (static_route, {})
 		return (None, None)
-
 
 # EOF

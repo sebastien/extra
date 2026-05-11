@@ -108,7 +108,7 @@ class AIOSocketBodyReader(HTTPBodyReader):
 		self.size: int = size
 
 	async def _read(
-		self, timeout: float = 1.0, size: Union[int, None] = None
+		self, timeout: float | None = 1.0, size: Union[int, None] = None
 	) -> Union[bytes, None]:
 		logged(debug) and debug(
 			"Reading Body",
@@ -116,6 +116,8 @@ class AIOSocketBodyReader(HTTPBodyReader):
 			Size=size or self.size,
 			Timeout=timeout,
 		)
+		if timeout is None:
+			return await self.loop.sock_recv(self.socket, size or self.size)
 		return await asyncio.wait_for(
 			self.loop.sock_recv(self.socket, size or self.size),
 			timeout=timeout,
