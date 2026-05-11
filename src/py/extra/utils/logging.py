@@ -1,6 +1,10 @@
 import sys
 import time
 import inspect
+import atexit
+import os
+import threading
+from queue import Queue, Empty
 from enum import Enum
 from typing import NamedTuple, Any, TypeAlias
 from contextvars import ContextVar
@@ -99,23 +103,133 @@ def formatData(value: Any) -> str:
 		return str(value)
 
 
-def send(entry: LogEntry) -> LogEntry:
+def _render(entry: LogEntry) -> tuple[str, str | None]:
 	icon: str = f" {entry.icon}" if entry.icon else ""
 	clr: str = Term.Color(LOG_LEVEL_COLOR[entry.level])
 	if entry.type == LogType.Event:
-		ERR.write(
-			f"{clr}{Term.BOLD}[{entry.origin}] {entry.name}{Term.RESET} {formatData(entry.value)} {formatData(entry.context)}{Term.RESET}\n"
+		line = (
+			f"{clr}{Term.BOLD}[{entry.origin}] {entry.name}{Term.RESET} "
+			f"{formatData(entry.value)} {formatData(entry.context)}{Term.RESET}\n"
 		)
 	else:
-		ERR.write(
-			f"{clr}{Term.BOLD}[{entry.origin}]{Term.RESET}{icon} {entry.message} {formatData(entry.context)}{Term.RESET}\n"
+		line = (
+			f"{clr}{Term.BOLD}[{entry.origin}]{Term.RESET}{icon} "
+			f"{entry.message} {formatData(entry.context)}{Term.RESET}\n"
 		)
-	if entry.stack:
-		ERR.write(
-			f"{clr}{Term.Color(38)}  {' ' * len(entry.origin)} {'→'.join(entry.stack)}{Term.RESET}\n"
+	stack_line = (
+		f"{clr}{Term.Color(38)}  {' ' * len(entry.origin)} {'→'.join(entry.stack)}{Term.RESET}\n"
+		if entry.stack
+		else None
+	)
+	return line, stack_line
+
+
+class LoggerSink:
+	def send(self, entry: LogEntry) -> LogEntry:
+		raise NotImplementedError
+
+	def close(self) -> None:
+		pass
+
+
+class SyncLogger(LoggerSink):
+	def send(self, entry: LogEntry) -> LogEntry:
+		line, stack_line = _render(entry)
+		ERR.write(line)
+		if stack_line is not None:
+			ERR.write(stack_line)
+		ERR.flush()
+		return entry
+
+
+class AsyncLogger(LoggerSink):
+	def __init__(self) -> None:
+		self._queue: Queue[str] = Queue()
+		self._stop: threading.Event = threading.Event()
+		self._worker: threading.Thread = threading.Thread(
+			target=self._run,
+			name="extra-log-worker",
+			daemon=True,
 		)
-	ERR.flush()
-	return entry
+		self._worker.start()
+
+	def _drain(self) -> None:
+		while True:
+			try:
+				line = self._queue.get_nowait()
+			except Empty:
+				break
+			ERR.write(line)
+		ERR.flush()
+
+	def _run(self) -> None:
+		while not self._stop.is_set():
+			try:
+				line = self._queue.get(timeout=0.25)
+			except Empty:
+				continue
+			ERR.write(line)
+			# Keep logger de-prioritized vs request path by batching flushes.
+			if self._queue.empty():
+				ERR.flush()
+				time.sleep(0.001)
+		self._drain()
+
+	def send(self, entry: LogEntry) -> LogEntry:
+		line, stack_line = _render(entry)
+		self._queue.put(line)
+		if stack_line is not None:
+			self._queue.put(stack_line)
+		return entry
+
+	def close(self) -> None:
+		self._stop.set()
+		self._worker.join(timeout=1.0)
+		self._drain()
+
+
+class Logger:
+	def __init__(self, sink: LoggerSink | None = None) -> None:
+		self._sink: LoggerSink = sink if sink is not None else SyncLogger()
+
+	def configure(self, *, asynchronous: bool = False) -> None:
+		if asynchronous:
+			if isinstance(self._sink, AsyncLogger):
+				return
+			self._sink.close()
+			self._sink = AsyncLogger()
+		else:
+			if isinstance(self._sink, SyncLogger):
+				return
+			self._sink.close()
+			self._sink = SyncLogger()
+
+	def shutdown(self) -> None:
+		self.configure(asynchronous=False)
+
+	def send(self, entry: LogEntry) -> LogEntry:
+		return self._sink.send(entry)
+
+
+DEFAULT_LOGGER = Logger()
+
+
+def configure(*, asynchronous: bool = False) -> None:
+	"""Configures logging backend.
+
+	When `asynchronous=True`, log lines are queued and written by a background
+	worker thread so request processing does not block on stderr I/O.
+	"""
+	DEFAULT_LOGGER.configure(asynchronous=asynchronous)
+
+
+def shutdown() -> None:
+	"""Flushes queued logs and stops the async worker if enabled."""
+	DEFAULT_LOGGER.shutdown()
+
+
+def send(entry: LogEntry) -> LogEntry:
+	return DEFAULT_LOGGER.send(entry)
 
 
 def entry(
@@ -307,6 +421,14 @@ def logged(item: Any) -> bool:
 	building when not necessary."""
 	# TODO: Implement based on log level
 	return True
+
+
+atexit.register(shutdown)
+
+# Optional opt-in from environment:
+#   EXTRA_ASYNC_LOGS=1|true|yes|on
+if os.getenv("EXTRA_ASYNC_LOGS", "").strip().lower() in ("1", "true", "yes", "on"):
+	configure(asynchronous=True)
 
 
 # EOF
