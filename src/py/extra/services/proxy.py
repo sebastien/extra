@@ -61,6 +61,17 @@ def parseHeaderList(
 	return res
 
 
+def parseBoolOption(value: str | None) -> bool:
+	if value is None:
+		return True
+	normalized = value.strip().lower()
+	if normalized in ("1", "true", "yes", "on"):
+		return True
+	if normalized in ("0", "false", "no", "off"):
+		return False
+	raise argparse.ArgumentTypeError(f"Invalid boolean value: {value!r}")
+
+
 class ProxyTarget(NamedTuple):
 	uri: URI
 	keepalive: bool = False  # Tells if the connection should be kept alive
@@ -198,10 +209,20 @@ def main(args: list[str]) -> None:
 	# Create the parser
 	parser = argparse.ArgumentParser(
 		description="Retro[+proxy]",
+		add_help=False,
 		formatter_class=argparse.ArgumentDefaultsHelpFormatter,  # Shows default values in help
 	)
+	parser.add_argument("--help", action="help", help="Show this help message and exit")
 
 	# Register the options
+	parser.add_argument(
+		"-h",
+		"--host",
+		action="store",
+		dest="host",
+		help="Specifies the host",
+		default="127.0.0.1",
+	)
 	parser.add_argument(
 		"-p",
 		"--port",
@@ -212,11 +233,13 @@ def main(args: list[str]) -> None:
 		default=int(os.environ.get("PORT", 8000)),
 	)
 	parser.add_argument(
-		"-c",
 		"--cors",
-		action="store_true",
 		dest="cors",
-		help="Proxy as CORS",
+		nargs="?",
+		const=True,
+		default=True,
+		type=parseBoolOption,
+		help="Proxy as CORS (default: true, use --cors=false to disable)",
 	)
 	parser.add_argument(
 		"-f",
@@ -316,7 +339,7 @@ def main(args: list[str]) -> None:
 	if options.files:
 		components.append(FileService(options.files))
 
-	return run(*components, port=options.port)
+	return run(*components, host=options.host, port=options.port)
 
 
 if __name__ == "__main__":

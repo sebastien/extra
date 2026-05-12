@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable, Union
 
 from ..decorators import on
-from ..features.cors import cors
+from ..features.cors import setCORSHeaders
 from ..http.model import HTTPRequest, HTTPResponse
 from ..model import Service
 from ..utils.files import FileEntry, contentType, resolveSuffix
@@ -188,10 +188,14 @@ class FileService(Service):
 		root: str | Path | None = None,
 		strict: bool = True,
 		followSymlinks: bool = True,
+		enableCORS: bool = True,
+		enableSSI: bool = True,
 	):
 		super().__init__()
 		self.strictLocalPath: bool = strict
 		self.followSymlinks: bool = followSymlinks
+		self.enableCORS: bool = enableCORS
+		self.enableSSI: bool = enableSSI
 		self.root: Path = (
 			root if isinstance(root, Path) else Path(root or ".")
 		).resolve()
@@ -237,6 +241,8 @@ class FileService(Service):
 			# Bypass translators if ?raw is requested
 			if not raw:
 				for t in self.TRANSLATORS:
+					if isinstance(t, SSITranslator) and not self.enableSSI:
+						continue
 					p = t.match(self.root, path, localPath)
 					if p:
 						c, b = t.translate(p)
@@ -367,39 +373,48 @@ class FileService(Service):
 		else:
 			return request.respond("OK")
 
-	@cors
 	@on(HEAD=("/", "/{path:any}"))
 	def head(self, request: HTTPRequest, path: str) -> HTTPResponse:
+		response: HTTPResponse
 		local_path, redirect_path = self.resolvePath(path)
 		if redirect_path:
-			return request.redirect(redirect_path)
+			response = request.redirect(redirect_path)
 		elif not (local_path and self.canRead(request, local_path)):
-			return request.notAuthorized(f"Not authorized to access path: {path}")
+			response = request.notAuthorized(f"Not authorized to access path: {path}")
 		elif not local_path.exists():
-			return request.notFound()
+			response = request.notFound()
 		else:
 			if local_path.is_dir():
 				# Directory listing HEAD response
-				return request.respond("", contentType="text/html")
+				response = request.respond("", contentType="text/html")
 			else:
 				response = self.respondFile(request, local_path)
 				response.body = None
-				return response
+		return (
+			setCORSHeaders(response, origin=request.getHeader("Origin"))
+			if self.enableCORS
+			else response
+		)
 
-	@cors
 	@on(GET=("/", "/{path:any}"))
 	def read(self, request: HTTPRequest, path: str = ".") -> HTTPResponse:
 		format: str = request.param("format", "html") or "html"
 		raw: bool = request.param("raw") is not None
+		response: HTTPResponse
 		local_path, redirect_path = self.resolvePath(path)
 		if redirect_path:
-			return request.redirect(redirect_path)
+			response = request.redirect(redirect_path)
 		elif not (local_path and self.canRead(request, local_path)):
-			return request.notAuthorized(f"Not authorized to access path: {path}")
+			response = request.notAuthorized(f"Not authorized to access path: {path}")
 		elif not local_path.exists():
-			return request.notFound()
+			response = request.notFound()
 		else:
-			return self.renderPath(request, path, local_path, format=format, raw=raw)
+			response = self.renderPath(request, path, local_path, format=format, raw=raw)
+		return (
+			setCORSHeaders(response, origin=request.getHeader("Origin"))
+			if self.enableCORS
+			else response
+		)
 
 	@on(PUT_PATCH="/{path:any}")
 	def write(self, request: HTTPRequest, path: str = ".") -> HTTPResponse:

@@ -393,13 +393,14 @@ class AWSLambdaBridgeService(Service):
 
 
 def main(args: list[str] | None = None) -> None:
-	parser = argparse.ArgumentParser(prog="python -m extra.handler")
+	parser = argparse.ArgumentParser(prog="python -m extra.handler", add_help=False)
+	parser.add_argument("--help", action="help", help="Show this help message and exit")
 	parser.add_argument("module", help="Path to a Python module file")
 	parser.add_argument(
 		"--handler", default="handler", help="Lambda handler symbol name"
 	)
-	parser.add_argument("--host", default="127.0.0.1", help="Host to bind")
-	parser.add_argument("--port", type=int, default=8000, help="Port to bind")
+	parser.add_argument("-h", "--host", default="127.0.0.1", help="Host to bind")
+	parser.add_argument("-p", "--port", type=int, default=8000, help="Port to bind")
 	options = parser.parse_args(args=args)
 	handler = _loadhandler(options.module, options.handler)
 	run(AWSLambdaBridgeService(handler), host=options.host, port=options.port)
