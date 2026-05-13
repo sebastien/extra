@@ -159,8 +159,9 @@ class MarkdownTranslator(FileTranslator):
 class SSITranslator(FileTranslator):
 	"""Transforms SHTML files by expanding SSI include directives."""
 
-	def __init__(self) -> None:
+	def __init__(self, stripIncludedDoctype: bool = True) -> None:
 		self.base: Path | None = None
+		self.stripIncludedDoctype: bool = stripIncludedDoctype
 
 	def match(self, base: Path, path: str, local: Path) -> Path | None:
 		self.base = base
@@ -169,19 +170,16 @@ class SSITranslator(FileTranslator):
 	def translate(self, path: Path) -> tuple[str, bytes | str]:
 		source = path.read_text(encoding="utf8")
 		root = self.base or path.parent
-		return "text/html", processSSI(source, root=root, current=path)
+		return "text/html", processSSI(
+			source,
+			root=root,
+			current=path,
+			stripIncludedDoctype=self.stripIncludedDoctype,
+		)
 
 
 class FileService(Service):
 	"""A service to serve files from the local filesystem"""
-
-	TRANSLATORS: list[FileTranslator] = [
-		TypeScriptTranslator(),
-		PAMLTranslator(),
-		PCSSTranslator(),
-		MarkdownTranslator(),
-		SSITranslator(),
-	]
 
 	def __init__(
 		self,
@@ -190,15 +188,24 @@ class FileService(Service):
 		followSymlinks: bool = True,
 		enableCORS: bool = True,
 		enableSSI: bool = True,
+		stripSSIDOCTYPE: bool = True,
 	):
 		super().__init__()
 		self.strictLocalPath: bool = strict
 		self.followSymlinks: bool = followSymlinks
 		self.enableCORS: bool = enableCORS
 		self.enableSSI: bool = enableSSI
+		self.stripSSIDOCTYPE: bool = stripSSIDOCTYPE
 		self.root: Path = (
 			root if isinstance(root, Path) else Path(root or ".")
 		).resolve()
+		self.translators: list[FileTranslator] = [
+			TypeScriptTranslator(),
+			PAMLTranslator(),
+			PCSSTranslator(),
+			MarkdownTranslator(),
+			SSITranslator(stripIncludedDoctype=stripSSIDOCTYPE),
+		]
 		self.canWrite: Callable[[HTTPRequest, Path], bool] = lambda r, p: False
 		self.canRead: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
 		self.canDelete: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
@@ -240,7 +247,7 @@ class FileService(Service):
 		else:
 			# Bypass translators if ?raw is requested
 			if not raw:
-				for t in self.TRANSLATORS:
+				for t in self.translators:
 					if isinstance(t, SSITranslator) and not self.enableSSI:
 						continue
 					p = t.match(self.root, path, localPath)

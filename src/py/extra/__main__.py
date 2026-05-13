@@ -32,7 +32,7 @@ def main(args: list[str] | None = None) -> None:
 		"-h",
 		"--host",
 		dest="host",
-		default="127.0.0.1",
+		default="0.0.0.0",
 		help="Host to bind",
 	)
 	parser.add_argument(
