@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SSI Full Template Example</title>
+    <style>
+      :root {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        line-height: 1.45;
+      }
+      body {
+        max-width: 760px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      .box {
+        border: 1px solid #d9d9d9;
+        border-radius: 8px;
+        padding: 1rem;
+        background: #fafafa;
+      }
+      code {
+        background: #f0f0f0;
+        padding: 0.1rem 0.35rem;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <!--#include virtual="/header.inc.html" -->
+
+    <main>
+      <h2>Full .shtml Page</h2>
+      <p>
+        This page is rendered from <code>index.shtml</code> and demonstrates
+        includes, variables, and conditionals.
+      </p>
+
+      <!--#set var="username" value="Extra Developer" -->
+      <p>Hello, <!--#echo var="username" -->.</p>
+
+      <!--#set var="env" value="dev" -->
+      <!--#if expr="$env = /dev/" -->
+      <div class="box">
+        <strong>Environment:</strong> development mode
+      </div>
+      <!--#elif expr="$env = /prod/" -->
+      <div class="box">
+        <strong>Environment:</strong> production mode
+      </div>
+      <!--#else -->
+      <div class="box">
+        <strong>Environment:</strong> unknown
+      </div>
+      <!--#endif -->
+    </main>
+
+    <!--#include virtual="/footer.inc.html" -->
+  </body>
+</html>

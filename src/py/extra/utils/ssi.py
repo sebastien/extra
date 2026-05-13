@@ -5,6 +5,7 @@ from pathlib import Path
 RE_DIRECTIVE = re.compile(r"<!--\s*#(.*?)\s*-->", re.DOTALL)
 RE_ATTR = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s]+)")
 RE_VAR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+RE_DOCTYPE = re.compile(r"<!DOCTYPE\b[^>]*>\s*", re.IGNORECASE)
 
 
 def _strip(value: str) -> str:
@@ -35,11 +36,22 @@ def _parseDirective(content: str) -> tuple[str, dict[str, str]] | None:
 	return name, attributes
 
 
+def _stripDoctype(source: str) -> str:
+	return RE_DOCTYPE.sub("", source)
+
+
 def _resolveTarget(kind: str, target: str, root: Path, current: Path) -> Path | None:
 	if kind == "file":
 		candidate = (current.parent / target).resolve(strict=False)
 	elif kind == "virtual":
-		candidate = (root / target.lstrip("/")).resolve(strict=False)
+		# Apache-style "virtual" is URL-rooted when absolute (/...).
+		# For compatibility, a relative virtual target is resolved from
+		# the current document directory.
+		candidate = (
+			(root / target.lstrip("/")).resolve(strict=False)
+			if target.startswith("/")
+			else (current.parent / target).resolve(strict=False)
+		)
 	else:
 		return None
 	if not candidate.is_relative_to(root):
@@ -177,6 +189,7 @@ def processSSI(
 	*,
 	root: Path,
 	current: Path,
+	stripIncludedDoctype: bool = True,
 	maxDepth: int = 16,
 	seen: set[Path] | None = None,
 	variables: dict[str, str] | None = None,
@@ -280,10 +293,13 @@ def processSSI(
 				included = resolved.read_text(encoding="utf8")
 			except (UnicodeDecodeError, OSError):
 				return f"<!--#{raw_directive}-->"
+			if stripIncludedDoctype:
+				included = _stripDoctype(included)
 			return processSSI(
 				included,
 				root=base_root,
 				current=resolved,
+				stripIncludedDoctype=stripIncludedDoctype,
 				maxDepth=maxDepth - 1,
 				seen=visited | {resolved},
 				variables=vars_map,

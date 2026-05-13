@@ -25,6 +25,7 @@ DAEMON_EXAMPLES: set[str] = {
 	"htmx.py",
 	"middleware.py",
 	"proxy.py",
+	"ssi.py",
 	"sse.py",
 	"upload.py",
 	"workers.py",
