@@ -215,7 +215,9 @@ class FileWatchService(Service):
 		if changed_path.is_absolute():
 			with suppress(ValueError):
 				changed_path = changed_path.relative_to(watched)
-		return FileWatchService.ShouldIgnorePath(changed_path)
+		return any(
+			part.startswith(".") for part in changed_path.parts if part not in ("", ".")
+		)
 
 	@on(GET="/watch")
 	@on(GET="/watch/{path:any}")
