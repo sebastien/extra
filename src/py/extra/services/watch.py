@@ -13,7 +13,7 @@ from ..decorators import on
 from ..http.model import HTTPRequest, HTTPResponse
 from ..model import Service
 from ..utils.json import json
-from ..utils.logging import info, warning
+from ..utils.logging import debug, info, warning
 
 JS_SCRIPT = Template(
 	"""(function () {
@@ -61,23 +61,8 @@ class WatchBackend(NamedTuple):
 class FileWatchService(Service):
 	"""Streams file system changes over Server-Sent Events."""
 
-	def __init__(
-		self,
-		root: str | Path | None = None,
-		*,
-		prefix: str | None = None,
-		followSymlinks: bool = False,
-	):
-		super().__init__(prefix=prefix)
-		self.root: Path = (
-			root if isinstance(root, Path) else Path(root or ".")
-		).resolve()
-		self.followSymlinks: bool = followSymlinks
-		self.aggregateWindow: float = 0.1
-		self.maxPendingPaths: int = 128
-
 	@staticmethod
-	async def terminateProcess(process: asyncio.subprocess.Process) -> int | None:
+	async def TerminateProcess(process: asyncio.subprocess.Process) -> int | None:
 		if process.returncode is not None:
 			return process.returncode
 		process.terminate()
@@ -89,7 +74,7 @@ class FileWatchService(Service):
 		return process.returncode
 
 	@staticmethod
-	def detectBackend(
+	def DetectBackend(
 		*,
 		platform: str = sys.platform,
 		which: Callable[[str], str | None] = shutil.which,
@@ -101,7 +86,7 @@ class FileWatchService(Service):
 		return None
 
 	@staticmethod
-	def makeBackend(name: str, path: Path) -> WatchBackend:
+	def MakeBackend(name: str, path: Path) -> WatchBackend:
 		if name == "inotifywait":
 			return WatchBackend(
 				name=name,
@@ -131,7 +116,7 @@ class FileWatchService(Service):
 			raise ValueError(f"Unsupported watch backend: {name}")
 
 	@staticmethod
-	def parseEventLine(line: str, backend: str) -> tuple[str, list[str]] | None:
+	def ParseEventLine(line: str, backend: str) -> tuple[str, list[str]] | None:
 		parts = line.strip().split("\t", 1)
 		if len(parts) != 2:
 			return None
@@ -143,13 +128,28 @@ class FileWatchService(Service):
 		else:
 			return path, [events]
 
+	def __init__(
+		self,
+		root: str | Path | None = None,
+		*,
+		prefix: str | None = None,
+		followSymlinks: bool = False,
+	):
+		super().__init__(prefix=prefix)
+		self.root: Path = (
+			root if isinstance(root, Path) else Path(root or ".")
+		).resolve()
+		self.followSymlinks: bool = followSymlinks
+		self.aggregateWindow: float = 0.1
+		self.maxPendingPaths: int = 128
+
 	def resolvePath(self, path: str) -> Path | None:
 		local_path = (self.root / path).resolve(strict=False)
 		if not local_path.is_relative_to(self.root):
 			return None
-		if not self.followSymlinks and not local_path.resolve(strict=False).is_relative_to(
-			self.root
-		):
+		if not self.followSymlinks and not local_path.resolve(
+			strict=False
+		).is_relative_to(self.root):
 			return None
 		if not local_path.exists():
 			return None
@@ -185,6 +185,16 @@ class FileWatchService(Service):
 		else:
 			pending[path] = list(events)
 
+	@staticmethod
+	def Skip(watched: Path, changed: str) -> bool:
+		changed_path = Path(changed)
+		if changed_path.is_absolute():
+			with suppress(ValueError):
+				changed_path = changed_path.relative_to(watched)
+		return any(
+			part.startswith(".") for part in changed_path.parts if part not in ("", ".")
+		)
+
 	@on(GET="/watch")
 	@on(GET="/watch/{path:any}")
 	def watch(self, request: HTTPRequest, path: str = ".") -> HTTPResponse:
@@ -193,14 +203,14 @@ class FileWatchService(Service):
 		if watched is None:
 			return request.notAuthorized(f"Not authorized to watch path: {path}")
 
-		backend_name = self.detectBackend()
+		backend_name = self.DetectBackend()
 		if backend_name is None:
 			return request.fail(
 				"No supported watcher tool found. Install inotifywait (Linux) or fswatch (macOS).",
 				status=503,
 			)
 
-		backend = self.makeBackend(backend_name, watched)
+		backend = self.MakeBackend(backend_name, watched)
 		window_param = request.param("window", None)
 		aggregate_window = self.aggregateWindow
 		if isinstance(window_param, str):
@@ -223,12 +233,14 @@ class FileWatchService(Service):
 			)
 			assert process.stdout is not None
 			assert process.stderr is not None
+			process_stdout = process.stdout
+			process_stderr = process.stderr
 			pending: OrderedDict[str, list[str]] = OrderedDict()
 			stderr_tail: bytearray = bytearray()
 
 			async def consumeStderr() -> None:
 				while True:
-					chunk = await process.stderr.read(4096)
+					chunk = await process_stderr.read(4096)
 					if not chunk:
 						break
 					if len(stderr_tail) < 8192:
@@ -251,7 +263,7 @@ class FileWatchService(Service):
 				while True:
 					try:
 						line = await asyncio.wait_for(
-							process.stdout.readline(), timeout=aggregate_window
+							process_stdout.readline(), timeout=aggregate_window
 						)
 					except TimeoutError:
 						if pending:
@@ -266,16 +278,18 @@ class FileWatchService(Service):
 					decoded = line.decode("utf8", errors="replace").strip()
 					if not decoded:
 						continue
-					parsed = self.parseEventLine(decoded, backend.name)
+					parsed = self.ParseEventLine(decoded, backend.name)
 					if parsed is None:
 						continue
 					changed, events = parsed
+					if self.Skip(watched, changed):
+						continue
 					self.mergeEvents(pending, changed, events)
 					if len(pending) >= self.maxPendingPaths:
 						async for chunk in flushPending():
 							yield chunk
 			finally:
-				await self.terminateProcess(process)
+				await self.TerminateProcess(process)
 				if not stderr_task.done():
 					stderr_task.cancel()
 					with suppress(asyncio.CancelledError):
@@ -284,14 +298,18 @@ class FileWatchService(Service):
 					await stderr_task
 				if process.returncode not in (0, -15):
 					stderr = bytes(stderr_tail)
+					code = process.returncode if process.returncode is not None else -1
 					warning(
 						"Watcher process exited",
-						Code=process.returncode,
+						Code=code,
 						Error=stderr.decode("utf8", errors="replace")[:200],
 					)
-				info("Stopping file watch stream", Path=str(watched))
+				debug("Stopping file watch stream", Path=str(watched))
 
-		return request.onClose(lambda _: info("File watch client disconnected")).respond(
+		def onClientClose(_: HTTPRequest) -> None:
+			debug("File watch client disconnected")
+
+		return request.onClose(onClientClose).respond(
 			stream(),
 			contentType="text/event-stream",
 			headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

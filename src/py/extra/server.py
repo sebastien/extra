@@ -111,10 +111,10 @@ class AIOSocketBodyReader(HTTPBodyReader):
 		self, timeout: float | None = 1.0, size: Union[int, None] = None
 	) -> Union[bytes, None]:
 		logged(debug) and debug(
-			"Reading Body",
-			Client=f"{id(self.socket):x}",
-			Size=size or self.size,
-			Timeout=timeout,
+				"Reading Body",
+				Client=f"{id(self.socket):x}",
+				Size=size or self.size,
+				Timeout=timeout if timeout is not None else "none",
 		)
 		if timeout is None:
 			return await self.loop.sock_recv(self.socket, size or self.size)
@@ -291,9 +291,9 @@ class AIOSocketServer:
 						res = await cls.SendResponse(req, app, writer)
 						if res:
 							res_count += 1
-							info("Request Sent", Iteration=iteration, Count=res_count)
+							debug("Request Sent", Iteration=iteration, Count=res_count)
 							if res.shouldClose:
-								info("Response wants to close connection")
+								debug("Response wants to close connection")
 								keep_alive = False
 						else:
 							warning(

@@ -11,7 +11,9 @@ def read_version() -> str:
 	content = version_file.read_text(encoding="utf-8")
 	match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
 	if not match:
-		raise RuntimeError("Unable to find version string in src/py/extra/__version__.py")
+		raise RuntimeError(
+			"Unable to find version string in src/py/extra/__version__.py"
+		)
 	return match.group(1)
 
 
@@ -66,6 +68,7 @@ setup(
 	version=VERSION,
 	author="Sébastien Pierre",
 	author_email="sebastien.pierre@gmail.com",
+	license="BSD-3-Clause",
 	description="A toolkit to write HTTP/1.1 web services and applications, with first class support for streaming",
 	long_description=readme(),
 	long_description_content_type="text/markdown",
@@ -81,7 +84,6 @@ setup(
 	classifiers=[
 		"Development Status :: 5 - Production/Stable",
 		"Intended Audience :: Developers",
-		"License :: OSI Approved :: MIT License",
 		"Operating System :: OS Independent",
 		"Programming Language :: Python :: 3",
 		"Programming Language :: Python :: 3.8",

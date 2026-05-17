@@ -118,9 +118,8 @@ compile: setup
 	@echo "=== $@"
 	@echo "Compiling $(MODULES_PY): $(SOURCES_PY)"
 	# NOTE: Output is going to be like 'extra/__init__.cpython-310-x86_64-linux-gnu.so'
-	@mkdir -p "build"
-	@$(foreach M,$(MODULES_PY),mkdir -p build/$M;)
-	@env -C build MYPYPATH=$(realpath .)/src/py $(UV) run mypyc -p extra
+	@mkdir -p ".run/uv-cache"
+	@UV_CACHE_DIR=$(realpath .)/.run/uv-cache uv run python setup.py build_ext --inplace --use-mypyc
 
 .PHONY: check
 check: check-bandit check-flakes check-strict
@@ -181,6 +180,16 @@ check-strict: setup
 .PHONY: lint
 lint: check-flakes
 	@
+
+.PHONY: clean
+clean:
+	@echo "=== $@"
+	@rm -rf build dist build-mypyc .mypy_cache .pytest_cache .ruff_cache
+	@find src/py/extra -type d -name '__pycache__' -prune -exec rm -rf {} +
+	@find src/py/extra -type f \( -name '*.pyc' -o -name '*.pyo' -o -name '*.pyd' \) -delete
+	@find src/py/extra -type f \( -name '*.so' -o -name '*.dylib' \) -delete
+	@find . -maxdepth 2 -type d -name '*.egg-info' -prune -exec rm -rf {} +
+	@echo "Clean complete"
 
 .PHONY: fmt
 fmt: setup

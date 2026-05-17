@@ -47,6 +47,19 @@ LOG_LEVEL_COLOR = {
 	LogLevel.Critical: 163,
 }
 
+LOG_LEVEL_NAMES: dict[str, LogLevel] = {
+	"debug": LogLevel.Debug,
+	"info": LogLevel.Info,
+	"checkpoint": LogLevel.Checkpoint,
+	"warning": LogLevel.Warning,
+	"error": LogLevel.Error,
+	"exception": LogLevel.Exception,
+	"alert": LogLevel.Alert,
+	"critical": LogLevel.Critical,
+}
+
+_CURRENT_LOG_LEVEL: LogLevel = LogLevel.Info
+
 
 class LogEntry(NamedTuple):
 	origin: str
@@ -229,7 +242,20 @@ def shutdown() -> None:
 
 
 def send(entry: LogEntry) -> LogEntry:
-	return DEFAULT_LOGGER.send(entry)
+	if entry.level.value >= _CURRENT_LOG_LEVEL.value:
+		return DEFAULT_LOGGER.send(entry)
+	return entry
+
+
+def setLevel(level: LogLevel) -> LogLevel:
+	global _CURRENT_LOG_LEVEL
+	previous = _CURRENT_LOG_LEVEL
+	_CURRENT_LOG_LEVEL = level
+	return previous
+
+
+def getLevel() -> LogLevel:
+	return _CURRENT_LOG_LEVEL
 
 
 def entry(
@@ -419,8 +445,19 @@ def logged(item: Any) -> bool:
 	"""Takes one of the logging function, and tells if it is currently
 	supported. This is used to guard against running the whole entry
 	building when not necessary."""
-	# TODO: Implement based on log level
-	return True
+	if item is debug:
+		level = LogLevel.Debug
+	elif item is info or item is event:
+		level = LogLevel.Info
+	elif item is warning:
+		level = LogLevel.Warning
+	elif item is error:
+		level = LogLevel.Error
+	elif item is exception:
+		level = LogLevel.Exception
+	else:
+		return True
+	return level.value >= _CURRENT_LOG_LEVEL.value
 
 
 atexit.register(shutdown)
@@ -429,6 +466,17 @@ atexit.register(shutdown)
 #   EXTRA_ASYNC_LOGS=1|true|yes|on
 if os.getenv("EXTRA_ASYNC_LOGS", "").strip().lower() in ("1", "true", "yes", "on"):
 	configure(asynchronous=True)
+
+
+if level := os.getenv("EXTRA_LOG_LEVEL", "").strip().lower():
+	if parsed := LOG_LEVEL_NAMES.get(level):
+		setLevel(parsed)
+	else:
+		warning(
+			"Invalid EXTRA_LOG_LEVEL value, keeping default",
+			Value=level,
+			Default=getLevel().name.lower(),
+		)
 
 
 # EOF
