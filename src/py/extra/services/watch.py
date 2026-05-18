@@ -16,7 +16,7 @@ from ..utils.json import json
 from ..utils.logging import debug, info, warning
 
 JS_SCRIPT = Template(
-	"""(function () {
+	"""function watch() {
   const watchPaths = $watch_paths;
   const debounceMs = Number($debounce) || 120;
   const streams = [];
@@ -48,7 +48,7 @@ JS_SCRIPT = Template(
   window.addEventListener('beforeunload', function () {
     for (const source of streams) source.close();
   });
-})();
+};watch();export default watch;
 """
 )
 
