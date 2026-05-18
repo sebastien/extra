@@ -74,7 +74,9 @@ class PortReservation:
 
 def parse_directives(path: Path) -> list[Directive]:
 	directives: list[Directive] = []
-	for index, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+	for index, line in enumerate(
+		path.read_text(encoding="utf-8").splitlines(), start=1
+	):
 		match = DIRECTIVE_PATTERN.match(line)
 		if match:
 			directives.append(
@@ -178,7 +180,9 @@ def run_example(path: Path) -> RunResult:
 			killed=False,
 			output="",
 			expected=[],
-			missing=["No directives found (# EXPECT:, # WAIT:, # TIMEOUT:, # GET:, # POST:)"],
+			missing=[
+				"No directives found (# EXPECT:, # WAIT:, # TIMEOUT:, # GET:, # POST:)"
+			],
 			error=None,
 		)
 
@@ -359,9 +363,13 @@ def main() -> int:
 		if result.timed_out:
 			has_runtime_failure = True
 		elif result.mode == "finite":
-			has_runtime_failure = result.returncode is not None and result.returncode != 0
+			has_runtime_failure = (
+				result.returncode is not None and result.returncode != 0
+			)
 		elif not result.killed:
-			has_runtime_failure = result.returncode is not None and result.returncode != 0
+			has_runtime_failure = (
+				result.returncode is not None and result.returncode != 0
+			)
 		is_failure = bool(result.missing) or has_runtime_failure
 		if result.error is not None:
 			is_failure = True

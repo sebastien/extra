@@ -79,9 +79,7 @@ class MHTMLDocument:
 		if not replacements:
 			return text
 		mapping = {src: dst for src, dst in replacements}
-		pattern = re.compile(
-			"|".join(re.escape(src) for src, _ in replacements)
-		)
+		pattern = re.compile("|".join(re.escape(src) for src, _ in replacements))
 		return pattern.sub(lambda m: mapping.get(m.group(0), m.group(0)), text)
 
 	def fallbackURL(self, subpath: str) -> str | None:

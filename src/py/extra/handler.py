@@ -123,8 +123,16 @@ class AWSLambdaEvent:
 	def AsRequest(event: dict[str, Any]) -> HTTPRequest:
 		request_context = cast(dict[str, Any], event.get("requestContext") or {})
 		http_context = cast(dict[str, Any], request_context.get("http") or {})
-		method = cast(str, event.get("httpMethod") or http_context.get("method") or "GET")
-		path = cast(str, event.get("path") or event.get("rawPath") or http_context.get("path") or "/")
+		method = cast(
+			str, event.get("httpMethod") or http_context.get("method") or "GET"
+		)
+		path = cast(
+			str,
+			event.get("path")
+			or event.get("rawPath")
+			or http_context.get("path")
+			or "/",
+		)
 		raw_body = event.get("body")
 		if raw_body is None:
 			body: bytes = b""

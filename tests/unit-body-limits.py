@@ -1,6 +1,11 @@
 import asyncio
 
-from extra.http.model import HTTPBodyLimitError, HTTPBodyReader, HTTPHeaders, HTTPRequest
+from extra.http.model import (
+	HTTPBodyLimitError,
+	HTTPBodyReader,
+	HTTPHeaders,
+	HTTPRequest,
+)
 
 
 class FakeBodyReader(HTTPBodyReader):
@@ -35,7 +40,9 @@ async def testLimitExceeded() -> None:
 
 async def testRequestSpool() -> None:
 	reader = FakeBodyReader([b"a" * 1200])
-	req = HTTPRequest("POST", "/upload", None, HTTPHeaders({"Content-Length": "1200"}, None, 1200))
+	req = HTTPRequest(
+		"POST", "/upload", None, HTTPHeaders({"Content-Length": "1200"}, None, 1200)
+	)
 	req._reader = reader
 	f = await req.spool(maxSize=128)
 	try:

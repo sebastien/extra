@@ -10,8 +10,7 @@ RE_DOCTYPE = re.compile(r"<!DOCTYPE\b[^>]*>\s*", re.IGNORECASE)
 
 def _strip(value: str) -> str:
 	if len(value) >= 2 and (
-		(value[0] == '"' and value[-1] == '"')
-		or (value[0] == "'" and value[-1] == "'")
+		(value[0] == '"' and value[-1] == '"') or (value[0] == "'" and value[-1] == "'")
 	):
 		return value[1:-1]
 	return value
@@ -268,7 +267,9 @@ def processSSI(
 			return "\n".join(f"{k}={v}" for k, v in sorted(vars_map.items()))
 
 		if name in ("fsize", "flastmod"):
-			kind = "file" if "file" in attrs else "virtual" if "virtual" in attrs else None
+			kind = (
+				"file" if "file" in attrs else "virtual" if "virtual" in attrs else None
+			)
 			if not kind:
 				return cfg["errmsg"]
 			target = _interpolate(attrs[kind], vars_map)
@@ -282,12 +283,19 @@ def processSSI(
 			)
 
 		if name == "include":
-			kind = "file" if "file" in attrs else "virtual" if "virtual" in attrs else None
+			kind = (
+				"file" if "file" in attrs else "virtual" if "virtual" in attrs else None
+			)
 			if not kind:
 				return f"<!--#{raw_directive}-->"
 			target = _interpolate(attrs[kind], vars_map)
 			resolved = _resolveTarget(kind, target, base_root, current)
-			if not resolved or resolved in visited or not resolved.exists() or not resolved.is_file():
+			if (
+				not resolved
+				or resolved in visited
+				or not resolved.exists()
+				or not resolved.is_file()
+			):
 				return f"<!--#{raw_directive}-->"
 			try:
 				included = resolved.read_text(encoding="utf8")

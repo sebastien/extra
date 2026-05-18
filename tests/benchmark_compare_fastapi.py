@@ -5,7 +5,12 @@ import sys
 from pathlib import Path
 from time import perf_counter_ns
 
-from benchmark_compare_common import bench_server, benchmark_loop, build_routing_scenarios, print_result
+from benchmark_compare_common import (
+	bench_server,
+	benchmark_loop,
+	build_routing_scenarios,
+	print_result,
+)
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -18,7 +23,11 @@ try:
 	from fastapi.responses import PlainTextResponse as FAPlainTextResponse
 	from starlette.responses import JSONResponse as SJSONResponse
 	from starlette.responses import PlainTextResponse as SPlainTextResponse
-	from starlette.routing import Match, Route as StarletteRoute, Router as StarletteRouter
+	from starlette.routing import (
+		Match,
+		Route as StarletteRoute,
+		Router as StarletteRouter,
+	)
 
 	AVAILABLE = True
 except ImportError:
@@ -28,7 +37,9 @@ except ImportError:
 def ensure_available() -> None:
 	if AVAILABLE:
 		return
-	raise RuntimeError("fastapi/starlette not installed. Install with: python -m pip install fastapi uvicorn")
+	raise RuntimeError(
+		"fastapi/starlette not installed. Install with: python -m pip install fastapi uvicorn"
+	)
 
 
 def run_routing(args) -> dict[str, float]:
@@ -51,9 +62,17 @@ def run_routing(args) -> dict[str, float]:
 		return False
 
 	def make_scope(path: str) -> dict:
-		return {"type": "http", "method": "GET", "path": path, "root_path": "", "path_params": {}}
+		return {
+			"type": "http",
+			"method": "GET",
+			"path": path,
+			"root_path": "",
+			"path_params": {},
+		}
 
-	scenarios = build_routing_scenarios(args.static_routes, args.param_routes, args.sample_size)
+	scenarios = build_routing_scenarios(
+		args.static_routes, args.param_routes, args.sample_size
+	)
 	results: dict[str, float] = {}
 	for name, paths in scenarios.items():
 		scopes = [make_scope(p) for p in paths]
@@ -155,15 +174,23 @@ def run_reqres(args) -> tuple[dict[str, float], dict[str, float]]:
 	starlette_results: dict[str, float] = {}
 	for name, paths in scenarios.items():
 		scopes = [make_asgi_scope(p, starlette) for p in paths]
-		elapsed = asyncio.run(_bench_asgi(starlette, scopes, args.iterations, args.warmup))
-		starlette_results[name] = print_result(f"starlette/{name}", args.iterations, elapsed)
+		elapsed = asyncio.run(
+			_bench_asgi(starlette, scopes, args.iterations, args.warmup)
+		)
+		starlette_results[name] = print_result(
+			f"starlette/{name}", args.iterations, elapsed
+		)
 
 	fastapi = make_fastapi_app()
 	fastapi_results: dict[str, float] = {}
 	for name, paths in scenarios.items():
 		scopes = [make_asgi_scope(p, fastapi) for p in paths]
-		elapsed = asyncio.run(_bench_asgi(fastapi, scopes, args.iterations, args.warmup))
-		fastapi_results[name] = print_result(f"fastapi/{name}", args.iterations, elapsed)
+		elapsed = asyncio.run(
+			_bench_asgi(fastapi, scopes, args.iterations, args.warmup)
+		)
+		fastapi_results[name] = print_result(
+			f"fastapi/{name}", args.iterations, elapsed
+		)
 
 	return starlette_results, fastapi_results
 
@@ -184,7 +211,16 @@ def run_server(args, modes: tuple[str, ...]) -> dict[str, float | None] | None:
 	tests = ROOT / "tests"
 	env = dict(os.environ)
 	env["PYTHONPATH"] = f"{tests}:{SRC_PY}:{env.get('PYTHONPATH', '')}"
-	return bench_server(BACKEND_NAME, cmd, env, "127.0.0.1", args.port, args.server_requests, args.server_concurrency, modes)
+	return bench_server(
+		BACKEND_NAME,
+		cmd,
+		env,
+		"127.0.0.1",
+		args.port,
+		args.server_requests,
+		args.server_concurrency,
+		modes,
+	)
 
 
 # EOF

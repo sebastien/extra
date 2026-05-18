@@ -72,24 +72,45 @@ def mk_env() -> dict[str, str]:
 	return env
 
 
-def run_core(label: str, routing_args: list[str], reqres_args: list[str], env: dict[str, str]) -> int:
+def run_core(
+	label: str, routing_args: list[str], reqres_args: list[str], env: dict[str, str]
+) -> int:
 	print(f"=== Running core benchmarks ({label})", flush=True)
-	with tempfile.NamedTemporaryFile(mode="wt", delete=False) as routing_out, tempfile.NamedTemporaryFile(
-		mode="wt", delete=False
-	) as reqres_out:
+	with (
+		tempfile.NamedTemporaryFile(mode="wt", delete=False) as routing_out,
+		tempfile.NamedTemporaryFile(mode="wt", delete=False) as reqres_out,
+	):
 		routing_path = routing_out.name
 		reqres_path = reqres_out.name
 	try:
-		routing_cmd = [sys.executable, str(TESTS / "benchmark-routing.py"), *routing_args]
+		routing_cmd = [
+			sys.executable,
+			str(TESTS / "benchmark-routing.py"),
+			*routing_args,
+		]
 		reqres_cmd = [sys.executable, str(TESTS / "benchmark-reqres.py"), *reqres_args]
-		routing_result = subprocess.run(routing_cmd, env=env, check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+		routing_result = subprocess.run(
+			routing_cmd,
+			env=env,
+			check=False,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.STDOUT,
+			text=True,
+		)
 		if routing_result.returncode != 0:
 			print(routing_result.stdout.rstrip())
 			print("ERR benchmark-routing failed")
 			return routing_result.returncode
 		Path(routing_path).write_text(routing_result.stdout, encoding="utf8")
 
-		reqres_result = subprocess.run(reqres_cmd, env=env, check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+		reqres_result = subprocess.run(
+			reqres_cmd,
+			env=env,
+			check=False,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.STDOUT,
+			text=True,
+		)
 		if reqres_result.returncode != 0:
 			print(reqres_result.stdout.rstrip())
 			print("ERR benchmark-reqres failed")
@@ -159,7 +180,9 @@ def parse_modes(raw: str) -> tuple[str, ...]:
 	return tuple(modes)
 
 
-def build_mode_command(mode: str, host: str, port: int, requests: int, concurrency: int) -> list[str]:
+def build_mode_command(
+	mode: str, host: str, port: int, requests: int, concurrency: int
+) -> list[str]:
 	url = f"http://{host}:{port}/"
 	if mode == "h10_close_legacy":
 		return ["ab", f"-n{requests}", f"-c{concurrency}", url]
@@ -281,7 +304,9 @@ def run_server_suite(
 	print("name\tstatus\tnote\t" + "\t".join(modes))
 	failures = 0
 	for bench in SERVERS:
-		status, cells, note = run_server_bench(bench, env, host, port, requests, concurrency, modes)
+		status, cells, note = run_server_bench(
+			bench, env, host, port, requests, concurrency, modes
+		)
 		row = [bench.name, status, note]
 		row.extend(cells[mode] for mode in modes)
 		print("\t".join(row))
@@ -293,10 +318,18 @@ def run_server_suite(
 
 def main() -> int:
 	parser = argparse.ArgumentParser(description="Run all project benchmarks")
-	parser.add_argument("--fast", action="store_true", help="Use lower iteration counts")
-	parser.add_argument("--core-only", action="store_true", help="Skip server throughput suite")
-	parser.add_argument("--requests", type=int, default=10_000, help="Requests per server benchmark")
-	parser.add_argument("--concurrency", type=int, default=100, help="Concurrency for load tools")
+	parser.add_argument(
+		"--fast", action="store_true", help="Use lower iteration counts"
+	)
+	parser.add_argument(
+		"--core-only", action="store_true", help="Skip server throughput suite"
+	)
+	parser.add_argument(
+		"--requests", type=int, default=10_000, help="Requests per server benchmark"
+	)
+	parser.add_argument(
+		"--concurrency", type=int, default=100, help="Concurrency for load tools"
+	)
 	parser.add_argument("--host", default="localhost", help="Benchmark host")
 	parser.add_argument("--port", type=int, default=8000, help="Benchmark port")
 	parser.add_argument(
@@ -367,7 +400,9 @@ def main() -> int:
 	if args.core_only:
 		return 0
 
-	return run_server_suite(env, args.requests, args.concurrency, args.host, args.port, modes)
+	return run_server_suite(
+		env, args.requests, args.concurrency, args.host, args.port, modes
+	)
 
 
 if __name__ == "__main__":

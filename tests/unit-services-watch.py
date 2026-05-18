@@ -18,12 +18,18 @@ svc = FileWatchService(root=Path("."))
 
 # Backend detection
 expect(
-	FileWatchService.DetectBackend(platform="linux", which=lambda n: "/usr/bin/inotifywait" if n == "inotifywait" else None)
+	FileWatchService.DetectBackend(
+		platform="linux",
+		which=lambda n: "/usr/bin/inotifywait" if n == "inotifywait" else None,
+	)
 	== "inotifywait",
 	"Linux should pick inotifywait",
 )
 expect(
-	FileWatchService.DetectBackend(platform="darwin", which=lambda n: "/opt/homebrew/bin/fswatch" if n == "fswatch" else None)
+	FileWatchService.DetectBackend(
+		platform="darwin",
+		which=lambda n: "/opt/homebrew/bin/fswatch" if n == "fswatch" else None,
+	)
 	== "fswatch",
 	"macOS should pick fswatch",
 )
@@ -34,9 +40,8 @@ expect(
 
 # Ignore rules
 expect(
-    FileWatchService.IgnorePattern()
-    == r"(^|/)(\.[^/]+|build|dist|node_modules)(/|$)",
-    "inotifywait exclude pattern should use ERE groups",
+	FileWatchService.IgnorePattern() == r"(^|/)(\.[^/]+|build|dist|node_modules)(/|$)",
+	"inotifywait exclude pattern should use ERE groups",
 )
 expect(FileWatchService.ShouldIgnorePath(".git"), "dot dirs should be ignored")
 expect(

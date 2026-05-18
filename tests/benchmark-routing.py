@@ -24,7 +24,9 @@ def build_dispatcher(static_routes: int, param_routes: int) -> Dispatcher:
 		handler = Handler(noop, methods=[("GET", f"/static/{i}")])
 		dispatcher.register(handler)
 	for i in range(param_routes):
-		handler = Handler(noop, methods=[("GET", f"/users/{i}/{{id:int}}/{{slug:name}}")])
+		handler = Handler(
+			noop, methods=[("GET", f"/users/{i}/{{id:int}}/{{slug:name}}")]
+		)
 		dispatcher.register(handler)
 	dispatcher.prepare()
 	return dispatcher

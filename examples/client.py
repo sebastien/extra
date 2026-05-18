@@ -60,7 +60,9 @@ async def make_requests(url_str: str, num_requests: int = 3):
 					elif hasattr(atom, "payload"):
 						# Truncate long responses for readability
 						payload_size = len(atom.payload)
-						preview = atom.payload[:100] if payload_size > 100 else atom.payload
+						preview = (
+							atom.payload[:100] if payload_size > 100 else atom.payload
+						)
 						info(
 							"Response data",
 							Type=atom_type,

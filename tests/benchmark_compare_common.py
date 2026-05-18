@@ -55,7 +55,9 @@ def print_result(name: str, iterations: int, elapsed_ns: int, extra: str = "") -
 	return ns_op
 
 
-def print_comparison(label: str, baseline_ns: float, other_ns: float, other_name: str) -> None:
+def print_comparison(
+	label: str, baseline_ns: float, other_ns: float, other_name: str
+) -> None:
 	if baseline_ns <= 0 or other_ns <= 0:
 		return
 	ratio = other_ns / baseline_ns
@@ -67,17 +69,25 @@ def print_comparison(label: str, baseline_ns: float, other_ns: float, other_name
 	else:
 		print(
 			f"  {label:26} baseline: {baseline_ns:10.1f}  {other_name}: {other_ns:10.1f} ns/op "
-			f" => {other_name} is {1/ratio:.1f}x faster"
+			f" => {other_name} is {1 / ratio:.1f}x faster"
 		)
 
 
-def build_routing_scenarios(static_routes: int, param_routes: int, sample_size: int) -> dict[str, list[str]]:
+def build_routing_scenarios(
+	static_routes: int, param_routes: int, sample_size: int
+) -> dict[str, list[str]]:
 	scenarios: dict[str, list[str]] = {
 		"static-hit": [f"/static/{i % static_routes}" for i in range(sample_size)],
-		"param-hit": [f"/users/{i % param_routes}/{(i * 7) % 10_000}" for i in range(sample_size)],
+		"param-hit": [
+			f"/users/{i % param_routes}/{(i * 7) % 10_000}" for i in range(sample_size)
+		],
 		"miss": [f"/missing/{i}/path" for i in range(sample_size)],
 	}
-	mixed = list(scenarios["static-hit"]) + list(scenarios["param-hit"]) + list(scenarios["miss"])
+	mixed = (
+		list(scenarios["static-hit"])
+		+ list(scenarios["param-hit"])
+		+ list(scenarios["miss"])
+	)
 	random.Random(42).shuffle(mixed)
 	scenarios["mixed"] = mixed
 	return scenarios
@@ -130,7 +140,9 @@ def stop_process(proc: subprocess.Popen[str]) -> None:
 		proc.wait(timeout=3)
 
 
-def run_ab(host: str, port: int, path: str, requests: int, concurrency: int) -> float | None:
+def run_ab(
+	host: str, port: int, path: str, requests: int, concurrency: int
+) -> float | None:
 	cmd = ["ab", f"-n{requests}", f"-c{concurrency}", f"http://{host}:{port}{path}"]
 	result = subprocess.run(cmd, capture_output=True, text=True)
 	if result.returncode != 0:
@@ -167,7 +179,9 @@ def required_tools_for_modes(modes: tuple[str, ...]) -> tuple[str, ...]:
 	return tuple(sorted({MODE_TOOLS[mode] for mode in modes}))
 
 
-def build_mode_command(mode: str, host: str, port: int, path: str, requests: int, concurrency: int) -> list[str]:
+def build_mode_command(
+	mode: str, host: str, port: int, path: str, requests: int, concurrency: int
+) -> list[str]:
 	url = f"http://{host}:{port}{path}"
 	if mode == "h10_close_legacy":
 		return ["ab", f"-n{requests}", f"-c{concurrency}", url]
@@ -198,7 +212,9 @@ def parse_mode_rps(mode: str, output: str) -> float | None:
 	return parse_h2load_rps(output)
 
 
-def run_mode(mode: str, host: str, port: int, path: str, requests: int, concurrency: int) -> float | None:
+def run_mode(
+	mode: str, host: str, port: int, path: str, requests: int, concurrency: int
+) -> float | None:
 	cmd = build_mode_command(mode, host, port, path, requests, concurrency)
 	result = subprocess.run(cmd, capture_output=True, text=True)
 	output = f"{result.stdout}\n{result.stderr}"
@@ -220,7 +236,9 @@ def bench_server(
 	concurrency: int,
 	modes: tuple[str, ...],
 ) -> dict[str, float | None] | None:
-	proc = subprocess.Popen(command, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+	proc = subprocess.Popen(
+		command, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
+	)
 	try:
 		if not wait_for_port(host, port):
 			stderr = proc.stderr.read().strip() if proc.stderr else ""

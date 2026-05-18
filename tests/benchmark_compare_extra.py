@@ -15,7 +15,12 @@ import extra.routing as routing  # noqa: E402
 from extra.decorators import on  # noqa: E402
 from extra.http.model import HTTPBodyBlob, HTTPHeaders, HTTPRequest, HTTPResponse  # noqa: E402
 from extra.model import Service, mount  # noqa: E402
-from benchmark_compare_common import bench_server, benchmark_loop, build_routing_scenarios, print_result  # noqa: E402
+from benchmark_compare_common import (
+	bench_server,
+	benchmark_loop,
+	build_routing_scenarios,
+	print_result,
+)  # noqa: E402
 
 
 BACKEND_NAME = "extra"
@@ -30,14 +35,20 @@ def run_routing(args) -> dict[str, float]:
 		handler = Handler(lambda req, **kw: None, methods=[("GET", f"/static/{i}")])
 		dispatcher.register(handler)
 	for i in range(args.param_routes):
-		handler = Handler(lambda req, **kw: None, methods=[("GET", f"/users/{i}/{{id:int}}")])
+		handler = Handler(
+			lambda req, **kw: None, methods=[("GET", f"/users/{i}/{{id:int}}")]
+		)
 		dispatcher.register(handler)
 	dispatcher.prepare()
 
-	scenarios = build_routing_scenarios(args.static_routes, args.param_routes, args.sample_size)
+	scenarios = build_routing_scenarios(
+		args.static_routes, args.param_routes, args.sample_size
+	)
 	results: dict[str, float] = {}
 	for name, paths in scenarios.items():
-		elapsed = benchmark_loop(lambda p: dispatcher.match("GET", p), paths, args.iterations, args.warmup)
+		elapsed = benchmark_loop(
+			lambda p: dispatcher.match("GET", p), paths, args.iterations, args.warmup
+		)
 		results[name] = print_result(f"extra/{name}", args.iterations, elapsed)
 	return results
 
@@ -74,7 +85,9 @@ def _make_request(path: str) -> HTTPRequest:
 	)
 
 
-async def _bench_reqres(app, requests: list[HTTPRequest], iterations: int, warmup: int) -> int:
+async def _bench_reqres(
+	app, requests: list[HTTPRequest], iterations: int, warmup: int
+) -> int:
 	n = len(requests)
 	for i in range(warmup):
 		res = app.process(requests[i % n])
@@ -111,7 +124,16 @@ def run_server(args, modes: tuple[str, ...]) -> dict[str, float | None] | None:
 	env["PYTHONPATH"] = f"{SRC_PY}:{env.get('PYTHONPATH', '')}"
 	env["HTTP_PORT"] = str(args.port)
 	cmd = [sys.executable, str(tests / "benchmark-extra-aio.py")]
-	return bench_server(BACKEND_NAME, cmd, env, "127.0.0.1", args.port, args.server_requests, args.server_concurrency, modes)
+	return bench_server(
+		BACKEND_NAME,
+		cmd,
+		env,
+		"127.0.0.1",
+		args.port,
+		args.server_requests,
+		args.server_concurrency,
+		modes,
+	)
 
 
 # EOF

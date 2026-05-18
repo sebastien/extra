@@ -335,7 +335,9 @@ class HTTPParser:
 						):
 							line = self.requestLine
 							if headers.contentLength is None:
-								transfer_encoding = headers.headers.get("Transfer-Encoding")
+								transfer_encoding = headers.headers.get(
+									"Transfer-Encoding"
+								)
 								if (
 									transfer_encoding
 									and transfer_encoding.strip().lower() != "identity"

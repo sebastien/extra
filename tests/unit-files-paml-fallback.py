@@ -40,7 +40,9 @@ with tempfile.TemporaryDirectory(prefix="extra-files-paml-") as tmp:
 
 		res = svc.read(makeRequest("/page.html"), "page.html")
 		if res.status != 403:
-			print("FAIL: expected .html request to stay unauthorized when Paml is disabled")
+			print(
+				"FAIL: expected .html request to stay unauthorized when Paml is disabled"
+			)
 			failed += 1
 
 if failed:

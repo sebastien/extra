@@ -4,13 +4,20 @@
 Usage:
 	python tests/benchmark_compare.py [--level routing|reqres|server|all]
 """
+
 import argparse
 import shutil
 import sys
 
 import benchmark_compare_extra as extra_backend
 import benchmark_compare_fastapi as fastapi_backend
-from benchmark_compare_common import MODE_LABELS, parse_modes, print_comparison, print_header, required_tools_for_modes
+from benchmark_compare_common import (
+	MODE_LABELS,
+	parse_modes,
+	print_comparison,
+	print_header,
+	required_tools_for_modes,
+)
 
 
 def run_routing(args: argparse.Namespace) -> None:
@@ -31,7 +38,9 @@ def run_routing(args: argparse.Namespace) -> None:
 	print()
 	print("--- Comparison (ns/op) ---")
 	for scenario in extra_results:
-		print_comparison(scenario, extra_results[scenario], starlette_results[scenario], "Starlette")
+		print_comparison(
+			scenario, extra_results[scenario], starlette_results[scenario], "Starlette"
+		)
 
 
 def run_reqres(args: argparse.Namespace) -> None:
@@ -49,22 +58,32 @@ def run_reqres(args: argparse.Namespace) -> None:
 	print()
 	print("--- Comparison: Extra vs Starlette Router (ns/op) ---")
 	for scenario in extra_results:
-		print_comparison(scenario, extra_results[scenario], starlette_results[scenario], "Starlette")
+		print_comparison(
+			scenario, extra_results[scenario], starlette_results[scenario], "Starlette"
+		)
 
 	print()
 	print("--- Comparison: Extra vs FastAPI full-stack (ns/op) ---")
 	for scenario in extra_results:
-		print_comparison(scenario, extra_results[scenario], fastapi_results[scenario], "FastAPI")
+		print_comparison(
+			scenario, extra_results[scenario], fastapi_results[scenario], "FastAPI"
+		)
 
 
 def run_server(args: argparse.Namespace) -> None:
 	print_header("Level 3: Server Throughput Benchmark")
-	missing = [tool for tool in required_tools_for_modes(args.server_modes) if not shutil.which(tool)]
+	missing = [
+		tool
+		for tool in required_tools_for_modes(args.server_modes)
+		if not shutil.which(tool)
+	]
 	if missing:
 		print(f"  SKIP: missing tools: {', '.join(missing)}")
 		return
 
-	print(f"requests: {args.server_requests}, concurrency: {args.server_concurrency}, port: {args.port}")
+	print(
+		f"requests: {args.server_requests}, concurrency: {args.server_concurrency}, port: {args.port}"
+	)
 	print("modes:")
 	for mode in args.server_modes:
 		print(f"  - {mode}: {MODE_LABELS[mode]}")
@@ -100,13 +119,19 @@ def run_server(args: argparse.Namespace) -> None:
 				continue
 			ratio = extra_val / fastapi_val
 			if ratio >= 1:
-				print(f"  {mode:24} Extra is {ratio:.2f}x faster ({extra_val:,.1f} vs {fastapi_val:,.1f})")
+				print(
+					f"  {mode:24} Extra is {ratio:.2f}x faster ({extra_val:,.1f} vs {fastapi_val:,.1f})"
+				)
 			else:
-				print(f"  {mode:24} FastAPI is {1 / ratio:.2f}x faster ({extra_val:,.1f} vs {fastapi_val:,.1f})")
+				print(
+					f"  {mode:24} FastAPI is {1 / ratio:.2f}x faster ({extra_val:,.1f} vs {fastapi_val:,.1f})"
+				)
 
 
 def main() -> None:
-	parser = argparse.ArgumentParser(description="Comparative benchmark: Extra vs FastAPI/Starlette")
+	parser = argparse.ArgumentParser(
+		description="Comparative benchmark: Extra vs FastAPI/Starlette"
+	)
 	parser.add_argument(
 		"--level",
 		choices=["routing", "reqres", "server", "all"],
@@ -126,7 +151,9 @@ def main() -> None:
 		default="all",
 		help="Comma-separated server benchmark modes or 'all'",
 	)
-	parser.add_argument("--fast", action="store_true", help="Reduce iterations for quick check")
+	parser.add_argument(
+		"--fast", action="store_true", help="Reduce iterations for quick check"
+	)
 	args = parser.parse_args()
 
 	try:

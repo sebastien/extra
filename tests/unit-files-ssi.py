@@ -21,16 +21,16 @@ with tempfile.TemporaryDirectory(prefix="extra-files-ssi-") as tmp:
 	(root / "nested").mkdir()
 	(root / "nested" / "local.txt").write_text("<em>local</em>", encoding="utf8")
 	(root / "nested" / "page.shtml").write_text(
-		"A<!--#include file=\"local.txt\" -->B<!--#include virtual=\"/frag.html\" -->C",
+		'A<!--#include file="local.txt" -->B<!--#include virtual="/frag.html" -->C',
 		encoding="utf8",
 	)
 
 	(root / "unsafe.shtml").write_text(
-		"X<!--#include virtual=\"/../etc/passwd\" -->Y", encoding="utf8"
+		'X<!--#include virtual="/../etc/passwd" -->Y', encoding="utf8"
 	)
 
 	(root / "loop.shtml").write_text(
-		"L<!--#include file=\"loop.shtml\" -->R", encoding="utf8"
+		'L<!--#include file="loop.shtml" -->R', encoding="utf8"
 	)
 	(root / "meta.txt").write_text("abcdef", encoding="utf8")
 	(root / "vars.shtml").write_text(
@@ -52,9 +52,7 @@ with tempfile.TemporaryDirectory(prefix="extra-files-ssi-") as tmp:
 		encoding="utf8",
 	)
 	(root / "env.shtml").write_text("<!--#printenv -->", encoding="utf8")
-	(root / "exec.shtml").write_text(
-		"A<!--#exec cmd=\"echo hi\" -->B", encoding="utf8"
-	)
+	(root / "exec.shtml").write_text('A<!--#exec cmd="echo hi" -->B', encoding="utf8")
 
 	(root / "blog").mkdir()
 	(root / "blog" / "index.shtml").write_text("<h1>Blog</h1>", encoding="utf8")
@@ -72,7 +70,10 @@ with tempfile.TemporaryDirectory(prefix="extra-files-ssi-") as tmp:
 		failed += 1
 
 	resolved_index, redirect = svc.resolvePath("blog")
-	if resolved_index != (root / "blog" / "index.shtml").resolve() or redirect != "/blog/index.shtml":
+	if (
+		resolved_index != (root / "blog" / "index.shtml").resolve()
+		or redirect != "/blog/index.shtml"
+	):
 		print("FAIL: expected directory to resolve index.shtml with redirect")
 		failed += 1
 
@@ -84,19 +85,24 @@ with tempfile.TemporaryDirectory(prefix="extra-files-ssi-") as tmp:
 
 	res_unsafe = svc.read(makeRequest("/unsafe.shtml"), "unsafe.shtml")
 	body_unsafe = res_unsafe.body.payload.decode("utf8") if res_unsafe.body else ""
-	if "#include virtual=\"/../etc/passwd\"" not in body_unsafe:
+	if '#include virtual="/../etc/passwd"' not in body_unsafe:
 		print("FAIL: expected unsafe include to be preserved")
 		failed += 1
 
 	res_loop = svc.read(makeRequest("/loop.shtml"), "loop.shtml")
 	body_loop = res_loop.body.payload.decode("utf8") if res_loop.body else ""
-	if "#include file=\"loop.shtml\"" not in body_loop:
+	if '#include file="loop.shtml"' not in body_loop:
 		print("FAIL: expected cyclic include to be preserved")
 		failed += 1
 
 	res_vars = svc.read(makeRequest("/vars.shtml"), "vars.shtml")
 	body_vars = res_vars.body.payload.decode("utf8") if res_vars.body else ""
-	if "XExtraY" not in body_vars or "OK" not in body_vars or "R1" not in body_vars or "R2" not in body_vars:
+	if (
+		"XExtraY" not in body_vars
+		or "OK" not in body_vars
+		or "R1" not in body_vars
+		or "R2" not in body_vars
+	):
 		print("FAIL: expected SSI set/echo/if directives to work")
 		failed += 1
 	if "BAD" in body_vars:
@@ -120,7 +126,7 @@ with tempfile.TemporaryDirectory(prefix="extra-files-ssi-") as tmp:
 
 	res_exec = svc.read(makeRequest("/exec.shtml"), "exec.shtml")
 	body_exec = res_exec.body.payload.decode("utf8") if res_exec.body else ""
-	if "#exec cmd=\"echo hi\"" not in body_exec:
+	if '#exec cmd="echo hi"' not in body_exec:
 		print("FAIL: expected SSI exec directive to stay unprocessed")
 		failed += 1
 

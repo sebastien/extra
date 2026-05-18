@@ -121,10 +121,10 @@ class AIOSocketBodyReader(HTTPBodyReader):
 		self, timeout: float | None = 1.0, size: Union[int, None] = None
 	) -> Union[bytes, None]:
 		logged(debug) and debug(
-				"Reading Body",
-				Client=f"{id(self.socket):x}",
-				Size=size or self.size,
-				Timeout=timeout if timeout is not None else "none",
+			"Reading Body",
+			Client=f"{id(self.socket):x}",
+			Size=size or self.size,
+			Timeout=timeout if timeout is not None else "none",
 		)
 		if timeout is None:
 			return await self.loop.sock_recv(self.socket, size or self.size)
@@ -168,9 +168,7 @@ class AIOSocketBodyWriter(HTTPBodyWriter):
 			if start is not None and end is not None:
 				# Partial file: use offset and count with sendfile
 				count = end - start + 1
-				await self.loop.sock_sendfile(
-					self.client, f, offset=start, count=count
-				)
+				await self.loop.sock_sendfile(self.client, f, offset=start, count=count)
 			else:
 				# Full file
 				await self.loop.sock_sendfile(self.client, f)
@@ -296,7 +294,11 @@ class AIOSocketServer:
 						# the request may need more than what was available
 						# from the socket.
 						req._reader = reader
-						already_read = req._body.length if isinstance(req._body, HTTPBodyBlob) else 0
+						already_read = (
+							req._body.length
+							if isinstance(req._body, HTTPBodyBlob)
+							else 0
+						)
 						reader.setLimit(options.maxBodyBytes, alreadyRead=already_read)
 						# Logs the request method
 						if options.logRequests:

@@ -160,7 +160,10 @@ class MarkdownTranslator(FileTranslator):
 				H.html(
 					H.head(
 						H.meta(charset="utf-8"),
-						H.meta(name="viewport", content="width=device-width, initial-scale=1.0"),
+						H.meta(
+							name="viewport",
+							content="width=device-width, initial-scale=1.0",
+						),
 						H.title(path.name),
 						H.link(rel="stylesheet", href=self.GITHUB_MARKDOWN_CSS),
 						H.style(
@@ -528,7 +531,9 @@ class FileService(Service):
 		elif not local_path.exists():
 			response = request.notFound()
 		else:
-			response = self.renderPath(request, path, local_path, format=format, raw=raw)
+			response = self.renderPath(
+				request, path, local_path, format=format, raw=raw
+			)
 		return (
 			setCORSHeaders(response, origin=request.getHeader("Origin"))
 			if self.enableCORS

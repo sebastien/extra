@@ -46,7 +46,9 @@ def check_partial(host: str, port: int) -> None:
 
 
 def main() -> int:
-	parser = argparse.ArgumentParser(description="Check server with dynamic port fallback")
+	parser = argparse.ArgumentParser(
+		description="Check server with dynamic port fallback"
+	)
 	parser.add_argument("--server", required=True)
 	parser.add_argument("--mode", choices=("complete", "partial"), required=True)
 	parser.add_argument("--timeout", type=float, default=20.0)

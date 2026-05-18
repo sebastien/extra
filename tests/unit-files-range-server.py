@@ -34,7 +34,11 @@ def main() -> int:
 	blocker.listen(1)
 
 	env = dict(os.environ)
-	env["PYTHONPATH"] = f"{root / 'src' / 'py'}{os.pathsep}{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(root / "src" / "py")
+	env["PYTHONPATH"] = (
+		f"{root / 'src' / 'py'}{os.pathsep}{env['PYTHONPATH']}"
+		if env.get("PYTHONPATH")
+		else str(root / "src" / "py")
+	)
 	process = subprocess.Popen(
 		[
 			sys.executable,
@@ -72,7 +76,9 @@ def main() -> int:
 				time.sleep(0.05)
 
 		if selected_port is None:
-			raise RuntimeError(f"timed out waiting for server port; output={''.join(output)!r}")
+			raise RuntimeError(
+				f"timed out waiting for server port; output={''.join(output)!r}"
+			)
 		if selected_port == blocked_port:
 			raise RuntimeError("server did not fall back to an alternate port")
 

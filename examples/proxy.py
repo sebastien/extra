@@ -137,7 +137,9 @@ if __name__ == "__main__":
 	info("Test endpoints:")
 	info("  curl -v http://localhost:8000/get")
 	info("  curl -v http://localhost:8000/headers")
-	info("  curl -v -X POST -d '{\"key\":\"value\"}' -H 'Content-Type: application/json' http://localhost:8000/post")
+	info(
+		"  curl -v -X POST -d '{\"key\":\"value\"}' -H 'Content-Type: application/json' http://localhost:8000/post"
+	)
 	run(Proxy())
 
 # EOF

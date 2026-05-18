@@ -259,9 +259,7 @@ class Routes:
 		# We wrap that in a prefix tree so that we get a tree of strings
 		# based on their common prefix.
 		route_list = list(routes)
-		tree = Prefix.Make(
-			[f"{r}(?P<R_0_{i}>$)" for i, r in enumerate(route_list)]
-		)
+		tree = Prefix.Make([f"{r}(?P<R_0_{i}>$)" for i, r in enumerate(route_list)])
 		j: int = 0
 		chunks: list[str] = []
 		# Now we iterate on the regular expression version of the prefix
@@ -314,8 +312,7 @@ class Routes:
 		# Pre-compute marker group numeric indices for fast scanning
 		# via match.regs (C-level tuple access).
 		self._marker_info: tuple[tuple[int, int], ...] = tuple(
-			(self.regexp.groupindex[mn], idx)
-			for idx, mn in enumerate(self._markers)
+			(self.regexp.groupindex[mn], idx) for idx, mn in enumerate(self._markers)
 		)
 		# Pre-compute param extraction plan per route:
 		# (param_name, extractor, candidate_group_indices).
@@ -561,9 +558,7 @@ class Handler:
 		else:
 			return self._callSync(request, params)
 
-	def _callSync(
-		self, request: HTTPRequest, params: dict[str, Any]
-	) -> HTTPResponse:
+	def _callSync(self, request: HTTPRequest, params: dict[str, Any]) -> HTTPResponse:
 		"""Fast path for synchronous handlers -- no coroutine overhead."""
 		if self.pre:
 			for i, t in enumerate(self.pre):
@@ -790,5 +785,6 @@ class Dispatcher:
 		if static_route is not None:
 			return (static_route, {})
 		return (None, None)
+
 
 # EOF

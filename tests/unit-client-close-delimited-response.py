@@ -26,12 +26,7 @@ async def _serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> 
 		if not chunk:
 			break
 		buffer += chunk
-	writer.write(
-		b"HTTP/1.1 200 OK\r\n"
-		b"Content-Type: text/plain\r\n"
-		b"\r\n"
-		+ BODY
-	)
+	writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n" + BODY)
 	await writer.drain()
 	writer.close()
 	await writer.wait_closed()
