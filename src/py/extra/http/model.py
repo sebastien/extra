@@ -143,6 +143,15 @@ class HTTPRequestError(Exception):
 		self.payload: TPrimitive | bytes | None = payload
 
 
+class HTTPBodyLimitError(Exception):
+	"""Raised when the incoming request body exceeds the configured limit."""
+
+	def __init__(self, limit: int, read: int):
+		super().__init__(f"Request body exceeds limit ({read}>{limit})")
+		self.limit: int = limit
+		self.read: int = read
+
+
 # -----------------------------------------------------------------------------
 #
 # BODY
@@ -307,15 +316,26 @@ class HTTPBodyReader(ABC):
 	"""A base class for being able to read a request body, typically from a
 	socket."""
 
-	__slots__ = ["transform"]
+	__slots__ = ["transform", "maxBytes", "bytesRead"]
 
 	def __init__(self, transform: BytesTransform | None = None) -> None:
 		self.transform: BytesTransform | None = transform
+		self.maxBytes: int | None = None
+		self.bytesRead: int = 0
+
+	def setLimit(self, limit: int | None, alreadyRead: int = 0) -> "HTTPBodyReader":
+		self.maxBytes = limit
+		self.bytesRead = alreadyRead
+		return self
 
 	async def read(
 		self, timeout: float | None = BODY_READER_TIMEOUT, size: int | None = None
 	) -> bytes | None:
 		chunk = await self._read(timeout=timeout, size=size)
+		if chunk is not None:
+			self.bytesRead += len(chunk)
+			if self.maxBytes is not None and self.bytesRead > self.maxBytes:
+				raise HTTPBodyLimitError(self.maxBytes, self.bytesRead)
 		if chunk is not None and self.transform:
 			res = self.transform.feed(chunk)
 			return res if res else None
@@ -350,10 +370,12 @@ class HTTPBodyReader(ABC):
 		return bytes(data)
 
 	async def spool(
-		self, timeout: float | None = BODY_READER_TIMEOUT
+		self,
+		timeout: float | None = BODY_READER_TIMEOUT,
+		maxSize: int = 1_000_000,
 	) -> SpooledTemporaryFile[bytes]:
 		"""The safer way to load a body especially if the file exceeds a given size."""
-		f = SpooledTemporaryFile(prefix="extra", suffix="raw")
+		f = SpooledTemporaryFile(max_size=maxSize, prefix="extra", suffix="raw")
 		try:
 			while True:
 				chunk = await self.read(timeout)
@@ -559,7 +581,7 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
 		if self._body is None:
 			if not self._reader:
 				raise RuntimeError("Request has no reader, can't read body")
-			self._body = HTTPBodyIO(self._reader)
+			self._body = HTTPBodyIO(self._reader, expected=self.contentLength)
 		elif isinstance(self._body, HTTPBodyBlob) and self._body.remaining:
 			if not self._reader:
 				raise RuntimeError("Request has no reader, can't read body")
@@ -589,6 +611,28 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
 				yield chunk
 				if chunk is None:
 					break
+
+	async def spool(self, maxSize: int = 1_000_000) -> SpooledTemporaryFile[bytes]:
+		if not self._reader:
+			raise RuntimeError("Request has no reader, can't spool body")
+		body = self.body
+		if isinstance(body, HTTPBodyBlob):
+			f = SpooledTemporaryFile(max_size=maxSize, prefix="extra", suffix="raw")
+			f.write(body.raw)
+			f.seek(0)
+			return f
+		f = SpooledTemporaryFile(max_size=maxSize, prefix="extra", suffix="raw")
+		try:
+			while True:
+				chunk = await body._read()
+				if not chunk:
+					break
+				f.write(chunk)
+			f.seek(0)
+			return f
+		except Exception:
+			f.close()
+			raise
 
 	def respond(
 		self,

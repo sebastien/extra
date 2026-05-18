@@ -9,6 +9,7 @@ from typing import Any, Callable, Coroutine, Literal, NamedTuple, Union
 from .config import HOST, PORT
 from .http.model import (
 	HTTPBodyBlob,
+	HTTPBodyLimitError,
 	HTTPBodyReader,
 	HTTPBodyWriter,
 	HTTPProcessingStatus,
@@ -47,6 +48,7 @@ class ServerOptions(NamedTuple):
 	# good
 	polling: float = 1.0
 	readsize: int = 4_096
+	maxBodyBytes: int = 64 * 1024 * 1024
 	# NOTE: Make sure this matches the ALB configuration,
 	# «The target closed the connection with a TCP RST or a TCP FIN while the load
 	# balancer had an outstanding request to the target. Check whether the
@@ -86,6 +88,14 @@ SERVER_BAD_REQUEST: bytes = (
 	b"Connection: close\r\n"
 	b"\r\n"
 	b"Bad Request"
+)
+SERVER_PAYLOAD_TOO_LARGE: bytes = (
+	b"HTTP/1.1 413 Payload Too Large\r\n"
+	b"Content-Type: text/plain\r\n"
+	b"Content-Length: 17\r\n"
+	b"Connection: close\r\n"
+	b"\r\n"
+	b"Payload Too Large"
 )
 
 
@@ -275,10 +285,18 @@ class AIOSocketServer:
 						break
 					elif isinstance(atom, HTTPRequest):
 						req = atom
+						if req.contentLength is not None:
+							if req.contentLength > options.maxBodyBytes:
+								await writer.write(SERVER_PAYLOAD_TOO_LARGE)
+								res_count += 1
+								keep_alive = False
+								break
 						# We pass the reader to the request, as for instance
 						# the request may need more than what was available
 						# from the socket.
 						req._reader = reader
+						already_read = req._body.length if isinstance(req._body, HTTPBodyBlob) else 0
+						reader.setLimit(options.maxBodyBytes, alreadyRead=already_read)
 						# Logs the request method
 						if options.logRequests:
 							event(req.method, req.path)
@@ -398,6 +416,9 @@ class AIOSocketServer:
 				sent = True
 			except BrokenPipeError:
 				# Client did an early close
+				sent = True
+			except HTTPBodyLimitError:
+				await writer.write(SERVER_PAYLOAD_TOO_LARGE)
 				sent = True
 			except Exception as e:
 				exception(e)
@@ -535,6 +556,7 @@ def run(
 	polling: float = OPTIONS.polling,
 	logRequests: bool = OPTIONS.logRequests,
 	keepalive: float = OPTIONS.keepalive,
+	maxBodyBytes: int = OPTIONS.maxBodyBytes,
 ) -> None:
 	"""High level function to run the server."""
 	unlimit(LimitType.Files)
@@ -547,6 +569,7 @@ def run(
 		polling=polling,
 		logRequests=logRequests,
 		keepalive=keepalive,
+		maxBodyBytes=maxBodyBytes,
 	)
 	app = mount(*components)
 	try:
