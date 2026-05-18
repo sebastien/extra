@@ -10,6 +10,8 @@ mimetypes.init()
 MIME_TYPES: dict[str, str] = dict(
 	bz2="application/x-bzip",
 	gz="application/x-gzip",
+	mht="multipart/related",
+	mhtml="multipart/related",
 )
 
 

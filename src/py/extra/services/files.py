@@ -13,6 +13,7 @@ from ..http.model import HTTPRequest, HTTPResponse
 from ..model import Service
 from ..utils.files import FileEntry, contentType, resolveSuffix
 from ..utils.htmpl import H, Node, html, raw
+from ..utils.mhtml import parseMHTML
 from ..utils.shell import shell
 from ..utils.ssi import processSSI
 
@@ -245,6 +246,8 @@ class FileService(Service):
 				case _:
 					return self.renderDir(request, path, localPath)
 		else:
+			if not raw and localPath.suffix.lower() in (".mhtml", ".mht"):
+				return self.respondMHTML(request, path, localPath)
 			# Bypass translators if ?raw is requested
 			if not raw:
 				for t in self.translators:
@@ -256,9 +259,50 @@ class FileService(Service):
 						return request.respond(b, contentType=c)
 			return self.respondFile(request, localPath)
 
+	def respondMHTML(
+		self, request: HTTPRequest, routePath: str, path: Path
+	) -> HTTPResponse:
+		doc = parseMHTML(path)
+		payload = doc.render(routePath)
+		return request.respondText(payload, contentType="text/html")
+
+	def respondMHTMLAsset(
+		self, request: HTTPRequest, routePath: str, subpath: str
+	) -> HTTPResponse | None:
+		route = routePath.strip("/")
+		local_path, _ = self.resolvePath(route)
+		if not local_path or not local_path.exists():
+			return None
+		if local_path.suffix.lower() not in (".mhtml", ".mht"):
+			return None
+		doc = parseMHTML(local_path)
+		asset = doc.byVirtualPath.get(subpath.strip("/"))
+		if not asset:
+			if fallback := doc.fallbackURL(subpath):
+				return request.redirect(fallback)
+			return None
+		return request.respond(
+			doc.payloadFor(asset, route), contentType=asset.contentType
+		)
+
+	def splitMHTMLAssetPath(self, path: str) -> tuple[str, str] | None:
+		clean = path.strip("/")
+		for ext in (".mhtml/", ".mht/"):
+			idx = clean.lower().find(ext)
+			if idx != -1:
+				doc = clean[: idx + len(ext) - 1]
+				asset = clean[idx + len(ext) :]
+				if doc and asset:
+					return doc, asset
+		return None
+
 	def respondFile(self, request: HTTPRequest, path: Path) -> HTTPResponse:
+		headers: dict[str, str] | None = None
+		if path.suffix.lower() in (".mhtml", ".mht"):
+			headers = {"Content-Disposition": "inline"}
 		return request.respondFile(
 			path,
+			headers=headers,
 			contentType=self.guessContentType(path),
 			acceptEncoding=request.header("Accept-Encoding"),
 			ifNoneMatch=request.header("If-None-Match"),
@@ -383,6 +427,20 @@ class FileService(Service):
 	@on(HEAD=("/", "/{path:any}"))
 	def head(self, request: HTTPRequest, path: str) -> HTTPResponse:
 		response: HTTPResponse
+		raw: bool = request.param("raw") is not None
+		if not raw and (mhtml := self.splitMHTMLAssetPath(path)):
+			route_path, asset_path = mhtml
+			asset_response = self.respondMHTMLAsset(request, route_path, asset_path)
+			if asset_response is None:
+				response = request.notFound()
+			else:
+				response = asset_response
+				response.body = None
+			return (
+				setCORSHeaders(response, origin=request.getHeader("Origin"))
+				if self.enableCORS
+				else response
+			)
 		local_path, redirect_path = self.resolvePath(path)
 		if redirect_path:
 			response = request.redirect(redirect_path)
@@ -394,6 +452,9 @@ class FileService(Service):
 			if local_path.is_dir():
 				# Directory listing HEAD response
 				response = request.respond("", contentType="text/html")
+			elif not raw and local_path.suffix.lower() in (".mhtml", ".mht"):
+				response = self.respondMHTML(request, path.strip("/"), local_path)
+				response.body = None
 			else:
 				response = self.respondFile(request, local_path)
 				response.body = None
@@ -408,6 +469,15 @@ class FileService(Service):
 		format: str = request.param("format", "html") or "html"
 		raw: bool = request.param("raw") is not None
 		response: HTTPResponse
+		if not raw and (mhtml := self.splitMHTMLAssetPath(path)):
+			route_path, asset_path = mhtml
+			asset_response = self.respondMHTMLAsset(request, route_path, asset_path)
+			response = asset_response if asset_response else request.notFound()
+			return (
+				setCORSHeaders(response, origin=request.getHeader("Origin"))
+				if self.enableCORS
+				else response
+			)
 		local_path, redirect_path = self.resolvePath(path)
 		if redirect_path:
 			response = request.redirect(redirect_path)
