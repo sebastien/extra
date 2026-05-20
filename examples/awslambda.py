@@ -30,7 +30,6 @@ Local demo:
 # EXPECT: Dispatcher /hello response:
 # EXPECT: Dispatcher /stream response:
 
-import asyncio
 from typing import Iterator, Any
 import json
 
@@ -104,15 +103,15 @@ if __name__ == "__main__":
 	print(json.dumps(streaming_result, indent=2))
 
 	dispatcher_hello_event = event("GET", "/hello?name=lambda")
-	dispatcher_hello_result: dict[str, Any] = asyncio.run(
-		lambda_dispatcher_handler(dispatcher_hello_event, None)
+	dispatcher_hello_result: dict[str, Any] = lambda_dispatcher_handler(
+		dispatcher_hello_event, None
 	)
 	print("\nDispatcher /hello response:")
 	print(json.dumps(dispatcher_hello_result, indent=2))
 
 	dispatcher_stream_event = event("GET", "/stream")
-	dispatcher_stream_result: dict[str, Any] = asyncio.run(
-		lambda_dispatcher_handler(dispatcher_stream_event, None)
+	dispatcher_stream_result: dict[str, Any] = lambda_dispatcher_handler(
+		dispatcher_stream_event, None
 	)
 	print("\nDispatcher /stream response:")
 	print(json.dumps(dispatcher_stream_result, indent=2))

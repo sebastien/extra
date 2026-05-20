@@ -38,6 +38,8 @@ Highlights:
 - Configurable proxy support
 - Integrated logging
 - Regexp-based tree router
+- Server-Side Include (SSI) support
+- Multi-part HTML (MHTML) support
 
 Extra is the successor of [Retro](https://github.com/sebastien/retro),
 one of the oldest decorator-based framework for HTTP applications and

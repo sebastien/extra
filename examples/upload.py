@@ -58,25 +58,29 @@ class UploadService(Service):
 	async def upload(self, request: HTTPRequest) -> HTTPResponse:
 		"""Handles file upload and returns upload statistics."""
 		try:
-			# Load the request body (multipart form data)
-			body_data = await request.body.load()
+			# Spool body to memory/disk for safer large upload handling.
+			body_file = await request.spool(maxSize=1_000_000)
+			body_file.seek(0, 2)
+			body_size = body_file.tell()
+			body_file.seek(0)
+			body_preview_bytes = body_file.read(100)
 			content_type = request.headers.get("content-type", "")
 
 			info(
 				"File upload received",
 				Client=request.peer,
 				ContentType=content_type,
-				BodySize=len(body_data),
+				BodySize=body_size,
 			)
 
 			# Basic upload processing
 			upload_info = {
 				"status": "success",
 				"content_type": content_type,
-				"body_size": len(body_data),
-				"body_preview": str(body_data[:100]) + "..."
-				if len(body_data) > 100
-				else str(body_data),
+				"body_size": body_size,
+				"body_preview": str(body_preview_bytes) + "..."
+				if body_size > 100
+				else str(body_preview_bytes),
 			}
 
 			# In a real application, you would:

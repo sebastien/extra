@@ -19,6 +19,9 @@ Test with:
     open http://localhost:8000/
 """
 # EXPECT: Starting filesystem watch service
+# WAIT: 0.8s
+# GET: /
+# EXPECT: Filesystem Watch + Auto Reload
 
 from extra import HTTPRequest, HTTPResponse, on, run
 from extra.services.watch import FileWatchService

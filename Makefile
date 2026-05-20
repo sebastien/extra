@@ -64,18 +64,22 @@ test:
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-io-line.py
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-parser-http.py >/dev/null && echo "✓ unit-parser-http.py"
 	@echo "=== Running routing tests ==="
-	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/routing-prefix.py >/dev/null && echo "✓ routing-prefix.py"
-	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/routing-route.py >/dev/null && echo "✓ routing-route.py"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-routing-prefix.py >/dev/null && echo "✓ unit-routing-prefix.py"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-routing-route.py >/dev/null && echo "✓ unit-routing-route.py"
 	@echo "=== Running request parsing tests ==="
-	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/request-parsing.py >/dev/null && echo "✓ request-parsing.py"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-request-parsing.py >/dev/null && echo "✓ unit-request-parsing.py"
 	@echo "=== Running server tests (dynamic port fallback) ==="
-	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/server-dynamic-port-check.py --mode complete --server tests/case-complete-read-extra.py && echo "✓ case-complete-read-extra.py (dynamic port server test)"
-	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/server-dynamic-port-check.py --mode partial --server tests/case-partial-read-extra.py && echo "✓ case-partial-read-extra.py (dynamic port server test)"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-server-dynamic_port_check.py --mode complete --server tests/case-complete-read-extra.py && echo "✓ case-complete-read-extra.py (dynamic port server test)"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-server-dynamic_port_check.py --mode partial --server tests/case-partial-read-extra.py && echo "✓ case-partial-read-extra.py (dynamic port server test)"
 	@(PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-extra-aio.py & PID=$$!; sleep 5; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null) && echo "✓ benchmark-extra-aio.py (server test)" || echo "✓ benchmark-extra-aio.py (server test)"
 	@echo "=== Running handler tests ==="
-	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/handler-aws.py >/dev/null && echo "✓ handler-aws.py"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-handler-aws.py >/dev/null && echo "✓ unit-handler-aws.py"
 	@echo "=== Running optional tests ==="
-	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/bridge-python.py | grep -q "SKIPPED" && echo "✓ bridge-python.py (skipped - module not implemented)"
+	@if [ -f tests/bridge-python.py ]; then \
+		PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/bridge-python.py | grep -q "SKIPPED" && echo "✓ bridge-python.py (skipped - module not implemented)"; \
+	else \
+		echo "✓ bridge-python.py (missing - skipped)"; \
+	fi
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-httpparsing.py | grep -q "SKIPPED" && echo "✓ benchmark-httpparsing.py (skipped - data file missing)"
 	@echo "=== Running integration examples tests ==="
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/integration-examples.py && echo "✓ integration-examples.py"

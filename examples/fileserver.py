@@ -19,6 +19,9 @@ The server will serve files from the current working directory.
 """
 # EXPECT: Starting static file server
 # EXPECT: Serving files from current working directory
+# WAIT: 0.3s
+# GET: /README.md
+# EXPECT: Extra
 
 from extra import run
 from extra.services.files import FileService

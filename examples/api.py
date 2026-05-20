@@ -22,6 +22,9 @@ Test with:
 """
 # EXPECT: Starting JSON API service
 # EXPECT: Test commands:
+# WAIT: 0.5s
+# GET: /api/counter
+# EXPECT: "counter"
 
 from extra import Service, HTTPRequest, HTTPResponse, on, expose, run
 from extra.utils.logging import info
