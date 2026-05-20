@@ -167,9 +167,10 @@ class AIOSocketBodyWriter(HTTPBodyWriter):
 		with open(path, "rb") as f:
 			if start is not None and end is not None:
 				# Partial file: use offset and count with sendfile
-				f.seek(start)
 				count = end - start + 1
-				await self.loop.sock_sendfile(self.client, f, offset=0, count=count)
+				await self.loop.sock_sendfile(
+					self.client, f, offset=start, count=count
+				)
 			else:
 				# Full file
 				await self.loop.sock_sendfile(self.client, f)

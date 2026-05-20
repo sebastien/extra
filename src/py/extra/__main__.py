@@ -62,7 +62,9 @@ def main(args: list[str] | None = None) -> None:
 		help="Enable SSI expansion (default: true, use --ssi=false to disable)",
 	)
 	options = parser.parse_args(args=args)
-	info("Starting Extra in standalone local file server with watch service")
+	info(
+		f"Starting Extra {__version__} in standalone local file server with watch service"
+	)
 	run(
 		FileService(enableCORS=options.cors, enableSSI=options.ssi),
 		FileWatchService(),

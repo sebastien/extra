@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 from extra.handler import AWSLambdaEvent
 from extra.http.model import HTTPBodyFile
 from extra.services.files import FileService
+from extra.server import AIOSocketBodyWriter
 
 
 def makeRequest(method: str, headers: dict[str, str] | None = None):
@@ -48,5 +49,27 @@ with TemporaryDirectory() as tmp:
 	assert response.getHeader("Accept-Ranges") == "bytes"
 	assert response.getHeader("Content-Range") == "bytes 1-3/10"
 	assert response.getHeader("Content-Length") == "3"
+
+	class FakeLoop:
+		def __init__(self) -> None:
+			self.calls: list[tuple[object, int, int | None]] = []
+			self.data: bytearray = bytearray()
+
+		async def sock_sendfile(
+			self,
+			client: object,
+			file: object,
+			offset: int = 0,
+			count: int | None = None,
+		) -> None:
+			self.calls.append((client, offset, count))
+			file.seek(offset)  # type: ignore[attr-defined]
+			self.data.extend(file.read(count))  # type: ignore[attr-defined]
+
+	loop = FakeLoop()
+	writer = AIOSocketBodyWriter(object(), loop)
+	asyncio.run(writer._writeFile(path, start=2, end=5))
+	assert loop.calls == [(writer.client, 2, 4)]
+	assert bytes(loop.data) == b"2345"
 
 # EOF
