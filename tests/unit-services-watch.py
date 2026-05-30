@@ -18,22 +18,34 @@ svc = FileWatchService(root=Path("."))
 
 # Backend detection
 expect(
-	FileWatchService.detectBackend(platform="linux", which=lambda n: "/usr/bin/inotifywait" if n == "inotifywait" else None)
+	FileWatchService.DetectBackend(platform="linux", which=lambda n: "/usr/bin/inotifywait" if n == "inotifywait" else None)
 	== "inotifywait",
 	"Linux should pick inotifywait",
 )
 expect(
-	FileWatchService.detectBackend(platform="darwin", which=lambda n: "/opt/homebrew/bin/fswatch" if n == "fswatch" else None)
+	FileWatchService.DetectBackend(platform="darwin", which=lambda n: "/opt/homebrew/bin/fswatch" if n == "fswatch" else None)
 	== "fswatch",
 	"macOS should pick fswatch",
 )
 expect(
-	FileWatchService.detectBackend(platform="darwin", which=lambda _: None) is None,
+	FileWatchService.DetectBackend(platform="darwin", which=lambda _: None) is None,
 	"No backend should return None",
 )
 
+# Ignore rules
+expect(FileWatchService.ShouldIgnorePath(".git"), "dot dirs should be ignored")
+expect(
+	FileWatchService.ShouldIgnorePath("src/node_modules/pkg"),
+	"node_modules should be ignored",
+)
+expect(FileWatchService.ShouldIgnorePath("dist/app.js"), "dist should be ignored")
+expect(
+	not FileWatchService.ShouldIgnorePath("src/py/app.py"),
+	"regular paths should be watched",
+)
+
 # Parsing
-parsed_inotify = FileWatchService.parseEventLine(
+parsed_inotify = FileWatchService.ParseEventLine(
 	"/tmp/demo.txt\tMODIFY,CREATE", "inotifywait"
 )
 expect(parsed_inotify is not None, "inotify line should parse")
@@ -41,7 +53,7 @@ if parsed_inotify:
 	expect(parsed_inotify[0] == "/tmp/demo.txt", "inotify path parse")
 	expect(parsed_inotify[1] == ["MODIFY", "CREATE"], "inotify events parse")
 
-parsed_fswatch = FileWatchService.parseEventLine(
+parsed_fswatch = FileWatchService.ParseEventLine(
 	"/tmp/demo.txt\tUpdated IsFile", "fswatch"
 )
 expect(parsed_fswatch is not None, "fswatch line should parse")
@@ -79,8 +91,20 @@ class FakeRequest:
 paths = svc.watchPathsFromRequest(FakeRequest({"src/js": "", "tests": ""}))
 expect(paths == ["src/js", "tests"], "watch script should parse key paths")
 
+paths = svc.watchPathsFromRequest(
+	FakeRequest({"node_modules": "", "dist": "", "src/py": ""})
+)
+expect(paths == ["src/py"], "watch script should ignore generated paths")
+
 paths = svc.watchPathsFromRequest(FakeRequest({"path": "src/py"}))
 expect(paths == ["src/py"], "watch script should use path query fallback")
+
+backend = FileWatchService.MakeBackend("inotifywait", Path("."))
+expect("--exclude" in backend.command, "inotify backend should exclude ignored paths")
+expect(
+	FileWatchService.Skip(Path("."), "src/node_modules/pkg/index.js"),
+	"ignored event paths should be skipped",
+)
 
 if failed:
 	print(f"FAIL {failed} tests failed")

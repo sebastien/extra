@@ -14,6 +14,7 @@ from ..model import Service
 from ..utils.files import FileEntry, contentType, resolveSuffix
 from ..utils.htmpl import H, Node, html, raw
 from ..utils.mhtml import parseMHTML
+from ..utils.json import json as jsonBytes
 from ..utils.shell import shell
 from ..utils.ssi import processSSI
 
@@ -26,6 +27,11 @@ try:
 	import pcss as _pcss  # type: ignore[import-untyped]
 except ImportError:
 	_pcss = None
+
+try:
+	from toon_format import decode as _toon_decode  # type: ignore[import-untyped]
+except ImportError:
+	_toon_decode = None
 
 FILE_CSS: str = """
 :root {
@@ -122,6 +128,20 @@ class PCSSTranslator(FileTranslator):
 		return "text/css", _pcss.process(source, path=str(path))
 
 
+class ToonTranslator(FileTranslator):
+	"""Transforms TOON files to JSON."""
+
+	def match(self, base: Path, path: str, local: Path) -> Path | None:
+		if _toon_decode is None:
+			return None
+		name = local.name.lower()
+		return local if name.endswith(".toon") or name.endswith(".toon.json") else None
+
+	def translate(self, path: Path) -> tuple[str, bytes | str]:
+		source = path.read_text(encoding="utf8")
+		return "application/json", jsonBytes(_toon_decode(source))
+
+
 class MarkdownTranslator(FileTranslator):
 	"""Transforms Markdown files to HTML using pandoc."""
 
@@ -204,6 +224,7 @@ class FileService(Service):
 			TypeScriptTranslator(),
 			PAMLTranslator(),
 			PCSSTranslator(),
+			ToonTranslator(),
 			MarkdownTranslator(),
 			SSITranslator(stripIncludedDoctype=stripSSIDOCTYPE),
 		]
@@ -219,6 +240,8 @@ class FileService(Service):
 			".paml",
 			".paml.xml",
 			".paml.js",
+			".toon",
+			".toon.json",
 			".txt",
 			".md",
 			".ts",
@@ -248,16 +271,29 @@ class FileService(Service):
 		else:
 			if not raw and localPath.suffix.lower() in (".mhtml", ".mht"):
 				return self.respondMHTML(request, path, localPath)
-			# Bypass translators if ?raw is requested
-			if not raw:
-				for t in self.translators:
-					if isinstance(t, SSITranslator) and not self.enableSSI:
-						continue
-					p = t.match(self.root, path, localPath)
-					if p:
-						c, b = t.translate(p)
-						return request.respond(b, contentType=c)
+			translated = self.renderTranslated(request, path, localPath, raw=raw)
+			if translated is not None:
+				return translated
 			return self.respondFile(request, localPath)
+
+	def renderTranslated(
+		self,
+		request: HTTPRequest,
+		path: str,
+		localPath: Path,
+		raw: bool = False,
+	) -> HTTPResponse | None:
+		# Bypass translators if ?raw is requested.
+		if raw:
+			return None
+		for t in self.translators:
+			if isinstance(t, SSITranslator) and not self.enableSSI:
+				continue
+			p = t.match(self.root, path, localPath)
+			if p:
+				c, b = t.translate(p)
+				return request.respond(b, contentType=c)
+		return None
 
 	def respondMHTML(
 		self, request: HTTPRequest, routePath: str, path: Path
@@ -314,6 +350,10 @@ class FileService(Service):
 	def guessContentType(self, path: Path) -> str | None:
 		if path.name == "importmap.json":
 			return "application/importmap+json"
+		elif path.name.lower().endswith(".toon") or path.name.lower().endswith(
+			".toon.json"
+		):
+			return "text/toon"
 		else:
 			return contentType(path)
 
@@ -456,7 +496,9 @@ class FileService(Service):
 				response = self.respondMHTML(request, path.strip("/"), local_path)
 				response.body = None
 			else:
-				response = self.respondFile(request, local_path)
+				response = self.renderTranslated(request, path, local_path, raw=raw)
+				if response is None:
+					response = self.respondFile(request, local_path)
 				response.body = None
 		return (
 			setCORSHeaders(response, origin=request.getHeader("Origin"))
@@ -559,6 +601,8 @@ class FileService(Service):
 					".paml",
 					".paml.xml",
 					".paml.js",
+					".toon",
+					".toon.json",
 					".ts",
 					".tsx",
 					".js",
@@ -569,6 +613,18 @@ class FileService(Service):
 					with_redirect = True
 
 		# Finally return the original path if it exists, or None if it doesn't
+		if (
+			_paml_engine is not None
+			and not local_path.exists()
+			and original_path.suffix.lower() in (".html", ".htm")
+		):
+			if match := resolveSuffix(original_path, [".paml"], replace=True):
+				local_path, _ = match
+		if not local_path.exists() and original_path.suffix.lower() == ".json":
+			if match := resolveSuffix(
+				original_path, [".toon.json", ".toon"], replace=True
+			):
+				local_path, _ = match
 		if not local_path.exists():
 			return None, None
 		elif local_path != original_path:

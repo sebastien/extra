@@ -15,6 +15,9 @@ from ..model import Service
 from ..utils.json import json
 from ..utils.logging import debug, info, warning
 
+WATCH_IGNORED_DIRS = {"build", "dist", "node_modules"}
+WATCH_IGNORED_PATTERN = r"(^|/)(?:\.[^/]+|build|dist|node_modules)(?:/|$)"
+
 JS_SCRIPT = Template(
 	"""function watch() {
   const watchPaths = $watch_paths;
@@ -62,6 +65,20 @@ class FileWatchService(Service):
 	"""Streams file system changes over Server-Sent Events."""
 
 	@staticmethod
+	def IgnorePattern() -> str:
+		return WATCH_IGNORED_PATTERN
+
+	@staticmethod
+	def ShouldIgnorePath(path: str | Path) -> bool:
+		parts = path.parts if isinstance(path, Path) else Path(path).parts
+		for part in parts:
+			if part in ("", ".", ".."):
+				continue
+			if part.startswith(".") or part in WATCH_IGNORED_DIRS:
+				return True
+		return False
+
+	@staticmethod
 	async def TerminateProcess(process: asyncio.subprocess.Process) -> int | None:
 		if process.returncode is not None:
 			return process.returncode
@@ -87,6 +104,7 @@ class FileWatchService(Service):
 
 	@staticmethod
 	def MakeBackend(name: str, path: Path) -> WatchBackend:
+		exclude_pattern = FileWatchService.IgnorePattern()
 		if name == "inotifywait":
 			return WatchBackend(
 				name=name,
@@ -94,6 +112,8 @@ class FileWatchService(Service):
 					"inotifywait",
 					"-m",
 					"-r",
+					"--exclude",
+					exclude_pattern,
 					"--format",
 					"%w%f\t%e",
 					"-e",
@@ -107,6 +127,8 @@ class FileWatchService(Service):
 				command=[
 					"fswatch",
 					"-xr",
+					"--exclude",
+					exclude_pattern,
 					"--format",
 					"%p\t%f",
 					str(path),
@@ -144,6 +166,8 @@ class FileWatchService(Service):
 		self.maxPendingPaths: int = 128
 
 	def resolvePath(self, path: str) -> Path | None:
+		if self.ShouldIgnorePath(path):
+			return None
 		local_path = (self.root / path).resolve(strict=False)
 		if not local_path.is_relative_to(self.root):
 			return None
@@ -191,9 +215,7 @@ class FileWatchService(Service):
 		if changed_path.is_absolute():
 			with suppress(ValueError):
 				changed_path = changed_path.relative_to(watched)
-		return any(
-			part.startswith(".") for part in changed_path.parts if part not in ("", ".")
-		)
+		return FileWatchService.ShouldIgnorePath(changed_path)
 
 	@on(GET="/watch")
 	@on(GET="/watch/{path:any}")
@@ -323,13 +345,13 @@ class FileWatchService(Service):
 		for key, value in request.query.items():
 			if key in reserved:
 				continue
-			if key:
-				paths.append(key)
-			elif value:
-				paths.append(value)
+			candidate = key if key else value
+			if candidate and not self.ShouldIgnorePath(candidate):
+				paths.append(candidate)
 		if not paths and (query_path := request.param("path", None)):
-			paths.append(query_path)
-		return paths or ["."]
+			if not self.ShouldIgnorePath(query_path):
+				paths.append(query_path)
+		return paths
 
 	@on(GET="/watch.js")
 	def watchScript(self, request: HTTPRequest) -> HTTPResponse:
@@ -348,6 +370,14 @@ class FileWatchService(Service):
 			contentType="text/javascript; charset=utf-8",
 			headers={"Cache-Control": "no-cache"},
 		)
+
+
+FileWatchService.ignorePattern = FileWatchService.IgnorePattern
+FileWatchService.shouldIgnorePath = FileWatchService.ShouldIgnorePath
+FileWatchService.detectBackend = FileWatchService.DetectBackend
+FileWatchService.makeBackend = FileWatchService.MakeBackend
+FileWatchService.parseEventLine = FileWatchService.ParseEventLine
+FileWatchService.skip = FileWatchService.Skip
 
 
 # EOF
