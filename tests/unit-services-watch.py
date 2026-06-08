@@ -33,6 +33,11 @@ expect(
 )
 
 # Ignore rules
+expect(
+    FileWatchService.IgnorePattern()
+    == r"(^|/)(\.[^/]+|build|dist|node_modules)(/|$)",
+    "inotifywait exclude pattern should use ERE groups",
+)
 expect(FileWatchService.ShouldIgnorePath(".git"), "dot dirs should be ignored")
 expect(
 	FileWatchService.ShouldIgnorePath("src/node_modules/pkg"),

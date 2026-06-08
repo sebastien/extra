@@ -16,7 +16,7 @@ from ..utils.json import json
 from ..utils.logging import debug, info, warning
 
 WATCH_IGNORED_DIRS = {"build", "dist", "node_modules"}
-WATCH_IGNORED_PATTERN = r"(^|/)(?:\.[^/]+|build|dist|node_modules)(?:/|$)"
+WATCH_IGNORED_PATTERN = r"(^|/)(\.[^/]+|build|dist|node_modules)(/|$)"
 
 JS_SCRIPT = Template(
 	"""function watch() {
