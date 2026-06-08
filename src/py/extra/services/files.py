@@ -29,7 +29,7 @@ except ImportError:
 	_pcss = None
 
 try:
-	from toon_format import decode as _toon_decode  # type: ignore[import-untyped]
+	from toon_format import decode as _toon_decode  # type: ignore[import-not-found]
 except ImportError:
 	_toon_decode = None
 
@@ -499,9 +499,8 @@ class FileService(Service):
 				response = self.respondMHTML(request, path.strip("/"), local_path)
 				response.body = None
 			else:
-				response = self.renderTranslated(request, path, local_path, raw=raw)
-				if response is None:
-					response = self.respondFile(request, local_path)
+				translated = self.renderTranslated(request, path, local_path, raw=raw)
+				response = translated if translated is not None else self.respondFile(request, local_path)
 				response.body = None
 		return (
 			setCORSHeaders(response, origin=request.getHeader("Origin"))

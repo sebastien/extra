@@ -433,12 +433,12 @@ class HTTPClient:
 					and cxn.parser.requestHeaders is not None
 					and cxn.parser.parser is cxn.parser.bodyRest
 				):
-					line = cxn.parser.requestLine
+					response_line = cxn.parser.requestLine
 					body = cxn.parser.bodyRest.flush()
 					res = HTTPResponse(
-						protocol=line.protocol,
-						status=line.status,
-						message=line.message,
+						protocol=response_line.protocol,
+						status=response_line.status,
+						message=response_line.message,
 						headers=cxn.parser.requestHeaders,
 						body=body,
 					)
@@ -632,6 +632,8 @@ async def request(
 	streaming: Union[bool, None] = None,
 	keepalive: bool = False,
 ) -> AsyncGenerator[HTTPAtom, None]:
+	response: HTTPResponse | None = None
+	chunks: list[bytes] = []
 	async for atom in HTTPClient.Request(
 		method,
 		host,
@@ -648,7 +650,20 @@ async def request(
 		streaming=streaming,
 		keepalive=keepalive,
 	):
-		yield atom
+		if streaming:
+			yield atom
+		elif isinstance(atom, HTTPBodyBlob):
+			chunks.append(atom.payload)
+		elif isinstance(atom, HTTPResponse):
+			response = atom
+		else:
+			yield atom
+	if not streaming and response is not None:
+		if chunks:
+			payload = b"".join(chunks)
+			response.body = HTTPBodyBlob(payload, len(payload))
+			response.setHeader("Content-Length", len(payload))
+		yield response
 
 
 if __name__ == "__main__":

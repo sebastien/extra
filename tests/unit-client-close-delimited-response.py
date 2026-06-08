@@ -12,7 +12,7 @@ SRC = ROOT / "src" / "py"
 if str(SRC) not in sys.path:
 	sys.path.insert(0, str(SRC))
 
-from extra.client import HTTPClient
+from extra.client import request
 from extra.http.model import HTTPResponse
 
 
@@ -38,7 +38,7 @@ async def main() -> None:
 		assert server.sockets is not None
 		port = server.sockets[0].getsockname()[1]
 		response: HTTPResponse | None = None
-		async for atom in HTTPClient.Request(
+		async for atom in request(
 			"GET",
 			"127.0.0.1",
 			"/",
@@ -52,7 +52,7 @@ async def main() -> None:
 		assert response is not None, "Expected an HTTP response"
 		assert response.status == 200, f"Unexpected status: {response.status}"
 		payload = await response.body.load() if response.body else b""
-		assert BODY in payload, f"Unexpected body: {payload!r}"
+		assert payload == BODY, f"Unexpected body: {payload!r}"
 		print("OK! close-delimited response was read")
 	finally:
 		server.close()

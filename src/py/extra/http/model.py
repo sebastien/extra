@@ -836,6 +836,11 @@ class HTTPResponse:
 				status = 204
 			elif "Content-Length" not in self.headers.headers:
 				self.setHeader("Content-Length", 0)
+		elif "Content-Length" not in self.headers.headers:
+			if isinstance(self.body, HTTPBodyBlob):
+				self.setHeader("Content-Length", self.body.length)
+			elif isinstance(self.body, HTTPBodyFile):
+				self.setHeader("Content-Length", self.body.length)
 		message: str = self.message or HTTP_STATUS[status]
 		# Build directly as bytes to avoid join + encode overhead
 		parts: list[bytes] = [f"{self.protocol} {status} {message}\r\n".encode("ascii")]

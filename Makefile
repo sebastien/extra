@@ -48,6 +48,7 @@ setup:
 	@$(UV) tool install twine 2>/dev/null || true
 	@$(UV) tool install ruff 2>/dev/null || true
 	@$(UV) tool install build 2>/dev/null || true
+	@$(UV) pip install setuptools 2>/dev/null || true
 	@echo "=== Setup complete ==="
 
 .PHONY: prep

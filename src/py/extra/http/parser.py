@@ -392,9 +392,6 @@ class HTTPParser:
 						headers = self.requestHeaders
 						line = self.requestLine
 						# NOTE: This is an awkward dance around the type checker
-						if self.parser is self.bodyRest:
-							self.parser.feed(chunk[offset:])
-							offset = len(chunk)
 						# All body parsers return HTTPBodyBlob
 						body: HTTPBodyBlob
 						if self.parser is self.bodyEOS:

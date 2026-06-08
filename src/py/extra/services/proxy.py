@@ -221,7 +221,7 @@ def main(args: list[str]) -> None:
 		action="store",
 		dest="host",
 		help="Specifies the host",
-		default="0.0.0.0",
+		default="0.0.0.0",  # nosec B104
 	)
 	parser.add_argument(
 		"-p",

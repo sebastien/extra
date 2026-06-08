@@ -373,13 +373,12 @@ class FileWatchService(Service):
 			headers={"Cache-Control": "no-cache"},
 		)
 
-
-FileWatchService.ignorePattern = FileWatchService.IgnorePattern
-FileWatchService.shouldIgnorePath = FileWatchService.ShouldIgnorePath
-FileWatchService.detectBackend = FileWatchService.DetectBackend
-FileWatchService.makeBackend = FileWatchService.MakeBackend
-FileWatchService.parseEventLine = FileWatchService.ParseEventLine
-FileWatchService.skip = FileWatchService.Skip
+	ignorePattern = IgnorePattern
+	shouldIgnorePath = ShouldIgnorePath
+	detectBackend = DetectBackend
+	makeBackend = MakeBackend
+	parseEventLine = ParseEventLine
+	skip = Skip
 
 
 # EOF
