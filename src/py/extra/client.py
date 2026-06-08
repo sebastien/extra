@@ -20,6 +20,7 @@ from .http.model import (
 	HTTPProcessingStatus,
 	HTTPRequest,
 	HTTPResponse,
+	HTTPResponseLine,
 )
 from .http.parser import HTTPParser
 from .utils.io import asWritable
@@ -426,6 +427,22 @@ class HTTPClient:
 			except TimeoutError:
 				raise ClientException(HTTPProcessingStatus.Timeout)
 			if not chunk:
+				if (
+					isinstance(cxn.parser, HTTPParser)
+					and isinstance(cxn.parser.requestLine, HTTPResponseLine)
+					and cxn.parser.requestHeaders is not None
+					and cxn.parser.parser is cxn.parser.bodyRest
+				):
+					line = cxn.parser.requestLine
+					body = cxn.parser.bodyRest.flush()
+					res = HTTPResponse(
+						protocol=line.protocol,
+						status=line.status,
+						message=line.message,
+						headers=cxn.parser.requestHeaders,
+						body=body,
+					)
+					break
 				raise ClientException(HTTPProcessingStatus.NoData)
 			# NOTE: With HTTP Pipelining, we may receive more than one
 			# request in the same payload, so we need to be prepared
