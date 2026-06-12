@@ -2,6 +2,8 @@ from typing import Any, Coroutine, Callable, cast, Union
 from base64 import b64encode, b64decode
 from urllib.parse import urlparse, parse_qs
 from functools import update_wrapper
+import os
+
 import argparse
 import asyncio
 import importlib.util
@@ -407,7 +409,12 @@ def main(args: list[str] | None = None) -> None:
 	parser.add_argument(
 		"--handler", default="handler", help="Lambda handler symbol name"
 	)
-	parser.add_argument("-h", "--host", default="0.0.0.0", help="Host to bind")  # nosec B104
+	parser.add_argument(
+		"-h",
+		"--host",
+		default=os.environ.get("HOST", "0.0.0.0"),  # nosec B104
+		help="Host to bind",
+	)
 	parser.add_argument("-p", "--port", type=int, default=8000, help="Port to bind")
 	options = parser.parse_args(args=args)
 	handler = _loadhandler(options.module, options.handler)

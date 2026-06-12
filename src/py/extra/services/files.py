@@ -500,7 +500,10 @@ class FileService(Service):
 				response.body = None
 			else:
 				translated = self.renderTranslated(request, path, local_path, raw=raw)
-				response = translated if translated is not None else self.respondFile(request, local_path)
+				if translated is None:
+					response = self.respondFile(request, local_path)
+				else:
+					response = translated
 				response.body = None
 		return (
 			setCORSHeaders(response, origin=request.getHeader("Origin"))

@@ -1,4 +1,5 @@
 import argparse
+import os
 
 from .server import run
 from .services.files import FileService
@@ -32,7 +33,7 @@ def main(args: list[str] | None = None) -> None:
 		"-h",
 		"--host",
 		dest="host",
-		default="0.0.0.0",  # nosec B104
+		default=os.environ.get("HOST", "127.0.0.1"),
 		help="Host to bind",
 	)
 	parser.add_argument(

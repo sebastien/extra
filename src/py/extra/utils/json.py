@@ -1,3 +1,6 @@
+# Module: json
+# High-performance JSON serialization and deserialization helpers, utilizing orjson when available.
+
 from typing import Any, TypeAlias, cast
 import json as basejson
 from .primitives import asPrimitive
@@ -35,7 +38,11 @@ def json(value: Any) -> bytes:
 		try:
 			return cast(bytes, _orjson.dumps(value))
 		except TypeError:
-			return cast(bytes, _orjson.dumps(asPrimitive(value)))
+			primitive = asPrimitive(value)
+			try:
+				return cast(bytes, _orjson.dumps(primitive))
+			except TypeError:
+				return basejson.dumps(primitive).encode("utf8")
 	else:
 		# stdlib json: skip asPrimitive when value is already primitive
 		if isPrimitive(value):

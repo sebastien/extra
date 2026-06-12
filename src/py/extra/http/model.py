@@ -1,3 +1,6 @@
+# Module: model
+# HTTP request, response, and body transfer data models.
+
 import inspect
 import os.path
 from abc import ABC, abstractmethod
@@ -7,6 +10,7 @@ from functools import cached_property
 from http.cookies import Morsel, SimpleCookie
 from pathlib import Path
 from tempfile import SpooledTemporaryFile
+from urllib.parse import parse_qs
 from typing import (
 	Any,
 	AsyncGenerator,
@@ -22,6 +26,7 @@ from typing import (
 
 from ..utils.codec import BytesTransform
 from ..utils.io import DEFAULT_ENCODING, asWritable
+from ..utils.json import unjson
 from ..utils.logging import warning
 from ..utils.primitives import TPrimitive
 from .api import ResponseFactory
@@ -633,6 +638,33 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
 		except Exception:
 			f.close()
 			raise
+
+	async def loadData(self) -> Any:
+		"""Loads and decodes the request body for JSON and form payloads."""
+		payload = await self.body.load()
+		if not payload:
+			return None
+		content_type = (self.contentType or "").split(";", 1)[0].strip().lower()
+		if content_type == "application/json":
+			return unjson(payload)
+		elif content_type == "application/x-www-form-urlencoded":
+			return {
+				k: v[0] if len(v) == 1 else v
+				for k, v in parse_qs(payload.decode("utf8")).items()
+			}
+		else:
+			raise ValueError(f"Unsupported request content type: {content_type}")
+
+	async def loadParams(self) -> dict[str, Any]:
+		"""Loads query params merged with a JSON or form object body."""
+		params = dict(self.query or {})
+		data = await self.loadData()
+		if data is None:
+			return params
+		if isinstance(data, dict):
+			params.update(data)
+			return params
+		raise ValueError(f"Expected object payload, got: {type(data)}")
 
 	def respond(
 		self,

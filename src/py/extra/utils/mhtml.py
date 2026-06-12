@@ -5,7 +5,6 @@ from email.parser import BytesParser
 from email.message import Message
 from pathlib import Path
 from pathlib import PurePosixPath
-from typing import cast
 from urllib.parse import unquote, urlsplit
 
 
@@ -100,17 +99,19 @@ class MHTMLDocument:
 			payload_data = m.get_payload(decode=True)
 			if payload_data is None:
 				content = m.get_payload()
-				payload: bytes = (
+				payload_bytes = (
 					content.encode("utf-8") if isinstance(content, str) else b""
 				)
+			elif isinstance(payload, bytes):
+				payload_bytes = payload
 			else:
-				payload = cast(bytes, payload_data)
+				payload_bytes = bytes(payload)
 			parts.append(
 				MHTMLPart(
 					contentType=ctype,
 					location=location,
 					virtualPath=cls.VirtualPathFromLocation(location),
-					payload=payload,
+					payload=payload_bytes,
 					charset=charset,
 				)
 			)

@@ -219,6 +219,13 @@ class FileWatchService(Service):
 			part.startswith(".") for part in changed_path.parts if part not in ("", ".")
 		)
 
+	ignorePattern = IgnorePattern
+	shouldIgnorePath = ShouldIgnorePath
+	detectBackend = DetectBackend
+	makeBackend = MakeBackend
+	parseEventLine = ParseEventLine
+	skip = Skip
+
 	@on(GET="/watch")
 	@on(GET="/watch/{path:any}")
 	def watch(self, request: HTTPRequest, path: str = ".") -> HTTPResponse:
