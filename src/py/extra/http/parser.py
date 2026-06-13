@@ -471,7 +471,11 @@ def formatCookie(cookies: Iterable[CookieValue]) -> str:
 
 def parseQuery(text: str) -> dict[str, str]:
 	res: dict[str, str] = {}
+	if not text:
+		return res
 	for item in text.split("&"):
+		if not item:
+			continue
 		kv = item.split("=", 1)
 		if len(kv) == 1:
 			res[item] = ""
