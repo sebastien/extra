@@ -102,8 +102,8 @@ class MHTMLDocument:
 				payload_bytes = (
 					content.encode("utf-8") if isinstance(content, str) else b""
 				)
-			elif isinstance(payload, bytes):
-				payload_bytes = payload
+			elif isinstance(payload_data, bytes):
+				payload_bytes = payload_data
 			else:
 				payload_bytes = bytes(payload)
 			parts.append(

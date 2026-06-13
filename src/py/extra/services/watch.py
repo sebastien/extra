@@ -1,5 +1,6 @@
 import asyncio
 import json as basejson
+import os
 import shutil
 import sys
 import time
@@ -104,6 +105,7 @@ class FileWatchService(Service):
 
 	@staticmethod
 	def MakeBackend(name: str, path: Path) -> WatchBackend:
+		target_paths = FileWatchService.CollectWatchPaths(path)
 		exclude_pattern = FileWatchService.IgnorePattern()
 		if name == "inotifywait":
 			return WatchBackend(
@@ -111,14 +113,13 @@ class FileWatchService(Service):
 				command=[
 					"inotifywait",
 					"-m",
-					"-r",
 					"--exclude",
 					exclude_pattern,
 					"--format",
 					"%w%f\t%e",
 					"-e",
 					"modify,create,delete,move,attrib",
-					str(path),
+					*target_paths,
 				],
 			)
 		elif name == "fswatch":
@@ -126,16 +127,36 @@ class FileWatchService(Service):
 				name=name,
 				command=[
 					"fswatch",
-					"-xr",
+					"-x",
 					"--exclude",
 					exclude_pattern,
 					"--format",
 					"%p\t%f",
-					str(path),
+					*target_paths,
 				],
 			)
 		else:
 			raise ValueError(f"Unsupported watch backend: {name}")
+
+	@staticmethod
+	def CollectWatchPaths(path: Path) -> list[str]:
+		if path.is_file():
+			return [str(path)]
+		paths: list[str] = []
+		for dirpath, dirnames, filenames in os.walk(path, topdown=True, followlinks=False):
+			current = Path(dirpath)
+			if FileWatchService.ShouldIgnorePath(current):
+				dirnames[:] = []
+				continue
+			dirnames[:] = [
+				d for d in dirnames if not FileWatchService.ShouldIgnorePath(current / d)
+			]
+			paths.append(str(current))
+			for filename in filenames:
+				child = current / filename
+				if not FileWatchService.ShouldIgnorePath(child):
+					paths.append(str(child))
+		return paths
 
 	@staticmethod
 	def ParseEventLine(line: str, backend: str) -> tuple[str, list[str]] | None:
@@ -215,14 +236,13 @@ class FileWatchService(Service):
 		if changed_path.is_absolute():
 			with suppress(ValueError):
 				changed_path = changed_path.relative_to(watched)
-		return any(
-			part.startswith(".") for part in changed_path.parts if part not in ("", ".")
-		)
+		return FileWatchService.ShouldIgnorePath(changed_path)
 
 	ignorePattern = IgnorePattern
 	shouldIgnorePath = ShouldIgnorePath
 	detectBackend = DetectBackend
 	makeBackend = MakeBackend
+	collectWatchPaths = CollectWatchPaths
 	parseEventLine = ParseEventLine
 	skip = Skip
 

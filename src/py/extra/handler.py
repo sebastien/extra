@@ -106,7 +106,7 @@ class AWSLambdaEvent:
 	) -> TAWSEvent:
 		"""Creates an AWS Lambda API Gateway event from the given parameters."""
 		url = urlparse(uri)
-		params = {k: v[0] for k, v in parse_qs(url.query).items()}
+		params = {k: v[0] for k, v in parse_qs(url.query, keep_blank_values=True).items()}
 		payload: TAWSEvent = {
 			"httpMethod": method,
 			"path": url.path,

@@ -33,7 +33,7 @@ def main(args: list[str] | None = None) -> None:
 		"-h",
 		"--host",
 		dest="host",
-		default=os.environ.get("HOST", "127.0.0.1"),
+		default=os.environ.get("HOST", "0.0.0.0"),
 		help="Host to bind",
 	)
 	parser.add_argument(

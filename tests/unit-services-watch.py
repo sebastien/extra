@@ -1,3 +1,4 @@
+import tempfile
 from pathlib import Path
 from collections import OrderedDict
 
@@ -53,6 +54,41 @@ expect(
 	not FileWatchService.ShouldIgnorePath("src/py/app.py"),
 	"regular paths should be watched",
 )
+
+with tempfile.TemporaryDirectory(prefix="extra-watch-") as tmp:
+	root = Path(tmp)
+	(root / "src").mkdir()
+	(root / "src" / "app.py").write_text("print('ok')", encoding="utf8")
+	(root / ".git").mkdir()
+	(root / ".git" / "config").write_text("x", encoding="utf8")
+	(root / "node_modules").mkdir()
+	(root / "node_modules" / "pkg").mkdir(parents=True)
+	(root / "node_modules" / "pkg" / "index.js").write_text("x", encoding="utf8")
+	(root / "build").mkdir()
+	(root / "build" / "bundle.js").write_text("x", encoding="utf8")
+	(root / "dist").mkdir()
+	(root / "dist" / "bundle.js").write_text("x", encoding="utf8")
+	watch_paths = FileWatchService.CollectWatchPaths(root)
+	expect(str(root / "src") in watch_paths, "source dir should be watched")
+	expect(str(root / "src" / "app.py") in watch_paths, "source file should be watched")
+	expect(not any(".git" in p for p in watch_paths), "git dir should be ignored")
+	expect(
+		not any("node_modules" in p for p in watch_paths),
+		"node_modules should be ignored from watch paths",
+	)
+	expect(
+		not any("/build" in p or p.endswith("build") for p in watch_paths),
+		"build should be ignored",
+	)
+	expect(
+		not any("/dist" in p or p.endswith("dist") for p in watch_paths),
+		"dist should be ignored",
+	)
+	backend = FileWatchService.MakeBackend("inotifywait", root)
+	expect(
+		backend.command[-len(watch_paths) :] == watch_paths,
+		"backend should watch the pruned path list",
+	)
 
 # Parsing
 parsed_inotify = FileWatchService.ParseEventLine(
