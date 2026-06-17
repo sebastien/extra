@@ -56,14 +56,21 @@ class ResponseFactory(ABC, Generic[T]):
 	def error(
 		self,
 		status: int,
-		content: str | None = None,
-		contentType: str = "text/plain",
+		content: Any = None,
+		contentType: str | None = None,
 		headers: dict[str, str] | None = None,
 	) -> T:
 		message = HTTP_STATUS.get(status, "Server Error")
+		if content is not None and not isinstance(content, (str, bytes)):
+			return self.returns(
+				content,
+				headers=headers,
+				status=status,
+				contentType=contentType or "application/json",
+			)
 		return self.respond(
 			content=message if content is None else content,
-			contentType=contentType,
+			contentType=contentType or "text/plain",
 			status=status,
 			message=message,
 			headers=headers,
@@ -71,8 +78,8 @@ class ResponseFactory(ABC, Generic[T]):
 
 	def notAuthorized(
 		self,
-		content: str = "Unauthorized",
-		contentType: str = "text/plain",
+		content: Any = "Unauthorized",
+		contentType: str | None = None,
 		*,
 		status: int = 403,
 	) -> T:
@@ -80,8 +87,8 @@ class ResponseFactory(ABC, Generic[T]):
 
 	def notFound(
 		self,
-		content: str = "Not Found",
-		contentType: str = "text/plain",
+		content: Any = "Not Found",
+		contentType: str | None = None,
 		*,
 		status: int = 404,
 	) -> T:
@@ -92,14 +99,12 @@ class ResponseFactory(ABC, Generic[T]):
 
 	def fail(
 		self,
-		content: str | None = None,
+		content: Any = None,
 		*,
 		status: int = 500,
-		contentType: str = "text/plain",
+		contentType: str | None = None,
 	) -> T:
-		return self.respondError(
-			content=content, status=status, contentType=contentType
-		)
+		return self.error(status=status, content=content, contentType=contentType)
 
 	def redirect(self, url: str, permanent: bool = False) -> T:
 		# SEE: https://developer.mozilla.org/en-US/docs/Web/HTTP/Redirections

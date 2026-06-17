@@ -1,13 +1,23 @@
-from extra.features.auth import bearerTokenAuth
-from extra.features.capabilities import can, CapabilityMatcher, capability, constraint, scope, where
+from extra.features.auth import bearerTokenAuth, passwords
+from extra.features.capabilities import (
+	can,
+	CapabilityMatcher,
+	capability,
+	constraint,
+	scope,
+	where,
+)
 from extra.features.jwt import key, parse, sign
+from extra.features.session import SessionStore
 from extra.features.tokens import decode, encode, token
 from extra.http.model import HTTPHeaders, HTTPRequest
 
 
 failed = 0
 
-matcher = CapabilityMatcher({"MatchesScope": lambda pattern, value: value.startswith(pattern)})
+matcher = CapabilityMatcher(
+	{"MatchesScope": lambda pattern, value: value.startswith(pattern)}
+)
 cap = capability(
 	"/user/{user}",
 	["Read"],
@@ -39,7 +49,9 @@ cap_any_subject = can("Read")("/public/{name}")
 if cap_any_subject is None:
 	print("FAIL: can() should create a capability")
 	failed += 1
-elif matcher.match("/user/anyone", "Read", "/public/alice", cap_any_subject) is not True:
+elif (
+	matcher.match("/user/anyone", "Read", "/public/alice", cap_any_subject) is not True
+):
 	print("FAIL: subjectless capability should match any subject")
 	failed += 1
 
@@ -58,7 +70,10 @@ cap_with_args = capability(
 )
 tok_with_args = token(scope("/user/alice"), [cap_with_args], [])
 roundtrip = decode(encode(tok_with_args))
-if roundtrip.capabilities[0].where is None or roundtrip.capabilities[0].where[0].args != cap_with_args.where[0].args:
+if (
+	roundtrip.capabilities[0].where is None
+	or roundtrip.capabilities[0].where[0].args != cap_with_args.where[0].args
+):
 	print("FAIL: token codec should preserve structured constraint args")
 	failed += 1
 
@@ -91,6 +106,31 @@ bad_request = HTTPRequest(
 )
 if auth.resolve(bad_request) is not None:
 	print("FAIL: bearer token auth should reject invalid tokens")
+	failed += 1
+
+hashed = passwords.hash("correct horse battery staple")
+if hashed == "correct horse battery staple":
+	print("FAIL: passwords.hash should not return the plain password")
+	failed += 1
+
+if not passwords.verify("correct horse battery staple", hashed):
+	print("FAIL: passwords.verify should accept the correct password")
+	failed += 1
+
+if passwords.verify("wrong password", hashed):
+	print("FAIL: passwords.verify should reject an incorrect password")
+	failed += 1
+
+store = SessionStore()
+session_token = store.create({"user": "alice"})
+session_data = store.get(session_token)
+if session_data is None or session_data.get("user") != "alice":
+	print("FAIL: SessionStore should persist data with default memory backend")
+	failed += 1
+
+store.drop(session_token)
+if store.get(session_token) is not None:
+	print("FAIL: SessionStore.drop should delete data from default memory backend")
 	failed += 1
 
 if failed:

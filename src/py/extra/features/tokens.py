@@ -178,8 +178,8 @@ class TokenCodec:
 	def decodeCapability(self, encodedCapability: str) -> Capability:
 		"""Decodes an `encodedCapability` string back into a Capability."""
 		encodedSubjects, encodedActions, encodedObjects, encodedConstraints = (
-			(encodedCapability.split(":", 3) + ["", "", "", ""])[:4]
-		)
+			encodedCapability.split(":", 3) + ["", "", "", ""]
+		)[:4]
 		constraints = [
 			self.decodeConstraint(item)
 			for item in encodedConstraints.split(",")

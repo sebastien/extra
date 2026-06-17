@@ -106,6 +106,9 @@ setup(
 			"flake8",
 			"bandit",
 		],
+		"passkeys": [
+			"webauthn",
+		],
 	},
 	entry_points={
 		"console_scripts": [

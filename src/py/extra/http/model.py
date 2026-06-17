@@ -26,7 +26,7 @@ from typing import (
 
 from ..utils.codec import BytesTransform
 from ..utils.io import DEFAULT_ENCODING, asWritable
-from ..utils.json import unjson
+from ..utils.json import json, unjson
 from ..utils.logging import warning
 from ..utils.primitives import TPrimitive
 from .api import ResponseFactory
@@ -515,6 +515,11 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
 		"method",
 		"path",
 		"query",
+		"origin",
+		"sessionToken",
+		"sessionData",
+		"session",
+		"clearSession",
 		"_headers",
 		"_body",
 		"_reader",
@@ -535,6 +540,11 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
 		self.path: str = path
 		self.query: dict[str, str] | None = query
 		self.protocol: str = protocol
+		self.origin: str | None = None
+		self.sessionToken: str | None = None
+		self.sessionData: dict[str, Any] | None = None
+		self.session: dict[str, Any] | None = None
+		self.clearSession: bool = False
 		self._headers: HTTPHeaders = headers
 		self._body: HTTPBodyIO | HTTPBodyBlob | None = body
 		self._reader: HTTPBodyReader | None
@@ -774,6 +784,9 @@ class HTTPResponse:
 		elif inspect.isasyncgen(content):
 			body = HTTPBodyAsyncStream(content)
 			should_close = True
+		elif isinstance(content, (dict, list, tuple, bool, int, float)):
+			payload_bytes = json(content)
+			contentType = contentType or "application/json"
 		else:
 			raise ValueError(f"Unsupported content {type(content)}:{content}")
 		# If we have a payload then it's a Blob response
@@ -859,6 +872,60 @@ class HTTPResponse:
 		for k, v in headers.items():
 			self.setHeader(k, v)
 		return self
+
+	def setCookie(
+		self,
+		name: str,
+		value: str,
+		*,
+		path: str | None = None,
+		domain: str | None = None,
+		httpOnly: bool | None = None,
+		secure: bool | None = None,
+		sameSite: str | None = None,
+		maxAge: int | None = None,
+		expires: str | None = None,
+	) -> "HTTPResponse":
+		cookie = SimpleCookie()
+		cookie[name] = value
+		morsel = cookie[name]
+		if path is not None:
+			morsel["path"] = path
+		if domain is not None:
+			morsel["domain"] = domain
+		if httpOnly:
+			morsel["httponly"] = True
+		if secure:
+			morsel["secure"] = True
+		if sameSite is not None:
+			morsel["samesite"] = sameSite
+		if maxAge is not None:
+			morsel["max-age"] = str(maxAge)
+		if expires is not None:
+			morsel["expires"] = expires
+		return self.setHeader("Set-Cookie", morsel.OutputString())
+
+	def clearCookie(
+		self,
+		name: str,
+		*,
+		path: str | None = None,
+		domain: str | None = None,
+		httpOnly: bool | None = None,
+		secure: bool | None = None,
+		sameSite: str | None = None,
+	) -> "HTTPResponse":
+		return self.setCookie(
+			name,
+			"",
+			path=path,
+			domain=domain,
+			httpOnly=httpOnly,
+			secure=secure,
+			sameSite=sameSite,
+			maxAge=0,
+			expires="Thu, 01 Jan 1970 00:00:00 GMT",
+		)
 
 	def head(self) -> bytes:
 		"""Serializes the head as a payload."""

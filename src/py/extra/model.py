@@ -4,7 +4,7 @@ import importlib
 
 from .routing import Handler, Dispatcher, Route
 from .http.model import HTTPRequest, HTTPResponse
-from .decorators import Extra
+from .decorators import Extra, Transform
 from .utils.collections import flatiter
 
 # -----------------------------------------------------------------------------
@@ -16,6 +16,9 @@ from .utils.collections import flatiter
 
 class Service:
 	PREFIX: ClassVar[str] = ""
+	PRE: ClassVar[tuple[Any, ...] | list[Any]] = ()
+	POST: ClassVar[tuple[Any, ...] | list[Any]] = ()
+	ERRORS: ClassVar[tuple[Any, ...] | list[Any] | Any] = ()
 	NO_HANDLER: ClassVar[list[str]] = [
 		"name",
 		"app",
@@ -64,9 +67,26 @@ class Service:
 			self._handlers = list(self.iterHandlers())
 		return self._handlers
 
+	def extra(self) -> dict[str, Any]:
+		meta = dict(Extra.Meta(self.__class__))
+		for name, key in (("PRE", Extra.PRE), ("POST", Extra.POST)):
+			values = getattr(self, name, ())
+			if not values:
+				continue
+			items = values if isinstance(values, (list, tuple)) else (values,)
+			normalized = [
+				_ if isinstance(_, Transform) else Transform(_, (), {}) for _ in items
+			]
+			meta[key] = [*normalized, *(meta.get(key) or ())]
+		errors = getattr(self, "ERRORS", ())
+		if errors:
+			items = errors if isinstance(errors, (list, tuple)) else (errors,)
+			meta[Extra.ERRORS] = [*items, *(meta.get(Extra.ERRORS) or ())]
+		return meta
+
 	def iterHandlers(self) -> Iterable[Handler]:
 		for value in (getattr(self, _) for _ in dir(self) if _ not in self.NO_HANDLER):
-			handler = Handler.Get(value, extra=Extra.Meta(self.__class__))
+			handler = Handler.Get(value, extra=self.extra())
 			if handler:
 				yield handler
 

@@ -260,6 +260,7 @@ def capability(
 	*constraints: Constraint,
 ) -> Capability:
 	"""Creates a Capability defined by `subject`, `actions`, `object`, and any additional `constraints`."""
+
 	def asScopes(value: str | list[str] | Scope | list[Scope]) -> list[Scope]:
 		if isinstance(value, str):
 			return [scope(value)]
@@ -289,6 +290,7 @@ def constraint(op: str, *args: ConstraintArg) -> Constraint:
 
 def can(*actions: Action) -> Callable[..., Capability | None]:
 	"""Helper to create a capability factory function targeting specific `actions`."""
+
 	def factory(*scopes: str) -> Capability | None:
 		if not scopes:
 			return None

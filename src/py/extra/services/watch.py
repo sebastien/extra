@@ -143,13 +143,17 @@ class FileWatchService(Service):
 		if path.is_file():
 			return [str(path)]
 		paths: list[str] = []
-		for dirpath, dirnames, filenames in os.walk(path, topdown=True, followlinks=False):
+		for dirpath, dirnames, filenames in os.walk(
+			path, topdown=True, followlinks=False
+		):
 			current = Path(dirpath)
 			if FileWatchService.ShouldIgnorePath(current):
 				dirnames[:] = []
 				continue
 			dirnames[:] = [
-				d for d in dirnames if not FileWatchService.ShouldIgnorePath(current / d)
+				d
+				for d in dirnames
+				if not FileWatchService.ShouldIgnorePath(current / d)
 			]
 			paths.append(str(current))
 			for filename in filenames:

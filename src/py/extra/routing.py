@@ -515,6 +515,7 @@ class Handler:
 				contentType=cls.Attr(value, Extra.EXPOSE_CONTENT_TYPE, extra),
 				pre=cls.Attr(value, Extra.PRE, extra, merge=True),
 				post=cls.Attr(value, Extra.POST, extra, merge=True),
+				errors=cls.Attr(value, Extra.ERRORS, extra, merge=True),
 			)
 			if cls.Has(value)
 			else None
@@ -530,6 +531,7 @@ class Handler:
 		contentType: Union[str, None] = None,
 		pre: Union[list[Transform], None] = None,
 		post: Union[list[Transform], None] = None,
+		errors: Union[list[Callable[..., HTTPResponse]], None] = None,
 	) -> None:
 		self.functor = functor
 		# This extracts and normalizes the methods
@@ -543,7 +545,16 @@ class Handler:
 		self.contentType = contentType
 		self.pre: Union[list[Transform], None] = pre
 		self.post: Union[list[Transform], None] = post
+		self.errors: Union[list[Callable[..., HTTPResponse]], None] = errors
 		self.isAsync: bool = iscoroutinefunction(functor)
+
+	def onError(self, request: HTTPRequest, error: Exception) -> HTTPResponse:
+		if self.errors:
+			for handler in self.errors:
+				response = handler(request, error)
+				if response is not None:
+					return response
+		raise error
 
 	# TODO: This is maybe more than routing, not sure if this really belongs here
 	# NOTE: For now we only do HTTP Requests, we'll see if we can generalise.
@@ -567,7 +578,11 @@ class Handler:
 				except HTTPRequestError as error:
 					return request.respondError(str(error))
 				except Exception as e:
-					raise e from e
+					return self.onError(request, e)
+				if iscoroutine(res):
+					raise RuntimeError(
+						f"Async pre-transform requires async handler: {t.transform}"
+					)
 				if isinstance(res, HTTPResponse):
 					return res
 				elif isinstance(res, HTTPRequestError):
@@ -580,6 +595,12 @@ class Handler:
 					return request.fail(f"Precondition {1} failed")
 		try:
 			if self.expose:
+				if self.expose.origin:
+					params = {"origin": getattr(request, "origin", None), **params}
+				if self.expose.data:
+					raise RuntimeError(
+						"@expose(..., data=True) requires an async handler"
+					)
 				value: Any = self.functor(**params)
 				content_type: str = (
 					self.contentType or self.expose.contentType or "application/json"
@@ -597,6 +618,8 @@ class Handler:
 				status=error.status or 500,
 				contentType=error.contentType or "text/plain",
 			)
+		except Exception as e:
+			response = self.onError(request, e)
 		if self.post:
 			for t in self.post:
 				t.transform(request, response, *t.args, **t.kwargs)
@@ -608,11 +631,11 @@ class Handler:
 		if self.pre:
 			for i, t in enumerate(self.pre):
 				try:
-					res = t.transform(request, params)
+					res = await awaited(t.transform(request, params))
 				except HTTPRequestError as error:
 					return request.respondError(str(error))
 				except Exception as e:
-					raise e from e
+					return self.onError(request, e)
 				if isinstance(res, HTTPResponse):
 					return res
 				elif isinstance(res, HTTPRequestError):
@@ -625,6 +648,12 @@ class Handler:
 					return request.fail(f"Precondition {1} failed")
 		try:
 			if self.expose:
+				if self.expose.origin:
+					params = {"origin": getattr(request, "origin", None), **params}
+				if self.expose.data:
+					bound = await request.loadParams()
+					bound.update(params)
+					params = bound
 				# NOTE: This pattern is hard to optimise, maybe we could do something
 				# better, like code-generated dispatcher.
 				value: Any = await awaited(self.functor(**params))
@@ -649,6 +678,8 @@ class Handler:
 				status=error.status or 500,
 				contentType=error.contentType or "text/plain",
 			)
+		except Exception as e:
+			response = self.onError(request, e)
 		if self.post:
 			if iscoroutine(response):
 

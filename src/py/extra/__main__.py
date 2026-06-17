@@ -33,7 +33,9 @@ def main(args: list[str] | None = None) -> None:
 		"-h",
 		"--host",
 		dest="host",
-		default=os.environ.get("HOST", "0.0.0.0"),
+		# By default we want to bind on all interfaces, as
+		# development is our primary target.
+		default=os.environ.get("HOST", "0.0.0.0"),  # nosec: B104
 		help="Host to bind",
 	)
 	parser.add_argument(

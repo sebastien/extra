@@ -25,6 +25,7 @@ class Extra:
 	EXPOSE_CONTENT_TYPE: ClassVar[str] = "_extra_expose_content_type"
 	POST: ClassVar[str] = "_extra_post"
 	PRE: ClassVar[str] = "_extra_pre"
+	ERRORS: ClassVar[str] = "_extra_errors"
 	WHEN: ClassVar[str] = "_extra_when"
 	# When using MyPy, we can't dynamically patch values, so instead we're
 	# collecting annotations by object id.
@@ -100,6 +101,8 @@ def on(
 
 class Expose(NamedTuple):
 	json: Union[Any, None] = None
+	data: bool = False
+	origin: bool = False
 	raw: bool = False
 	compress: bool = False
 	contentType: Union[str, None] = None
@@ -107,6 +110,8 @@ class Expose(NamedTuple):
 
 def expose(
 	priority: int = 0,
+	data: bool = False,
+	origin: bool = False,
 	compress: bool = False,
 	contentType: Union[str, None] = None,
 	raw: bool = False,
@@ -142,6 +147,8 @@ def expose(
 			Extra.EXPOSE,
 			Expose(
 				json=json_data,
+				data=data,
+				origin=origin,
 				raw=raw,
 				compress=compress,
 				contentType=contentType,
@@ -165,7 +172,7 @@ def when(*predicates: Callable[..., bool]) -> Callable[..., T]:
 	return decorator
 
 
-def pre(transform: Callable[..., bool]) -> Callable[..., T]:
+def pre(transform: Callable[..., Any]) -> Callable[..., T]:
 	"""Registers the given `transform` as a pre-processing step of the
 	decorated function."""
 

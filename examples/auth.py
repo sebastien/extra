@@ -91,7 +91,9 @@ if __name__ == "__main__":
 	info("Starting authentication example")
 	info("Test commands:")
 	info("  curl 'http://localhost:8000/mint?user=alice'")
-	info("  curl -H 'Authorization: Bearer <token>' http://localhost:8000/profile/alice")
+	info(
+		"  curl -H 'Authorization: Bearer <token>' http://localhost:8000/profile/alice"
+	)
 	run(Auth())
 
 # EOF

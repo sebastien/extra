@@ -105,7 +105,7 @@ class MHTMLDocument:
 			elif isinstance(payload_data, bytes):
 				payload_bytes = payload_data
 			else:
-				payload_bytes = bytes(payload)
+				payload_bytes = bytes(payload_data)
 			parts.append(
 				MHTMLPart(
 					contentType=ctype,
