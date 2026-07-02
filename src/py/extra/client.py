@@ -1,4 +1,5 @@
 import asyncio
+import gzip
 import os
 import ssl
 import time
@@ -24,11 +25,19 @@ from .http.model import (
 )
 from .http.parser import HTTPParser
 from .utils.io import asWritable
-from .utils.logging import event
+from .utils.logging import event, info
 
 # For Python 3.8 compatibility
 ConnectionT = TypeVar("ConnectionT", bound="Connection")
 ConnectionPoolT = TypeVar("ConnectionPoolT", bound="ConnectionPool")
+
+
+def _decode_body(response: HTTPResponse, payload: bytes) -> bytes:
+	if response.headers.headers.get("Content-Encoding", "").lower() != "gzip":
+		return payload
+	payload = gzip.decompress(payload)
+	del response.headers.headers["Content-Encoding"]
+	return payload
 
 
 # --
@@ -631,39 +640,75 @@ async def request(
 	connection: Union[Connection, None] = None,
 	streaming: Union[bool, None] = None,
 	keepalive: bool = False,
+	log_long_response: float | None = None,
 ) -> AsyncGenerator[HTTPAtom, None]:
 	response: HTTPResponse | None = None
 	chunks: list[bytes] = []
-	async for atom in HTTPClient.Request(
-		method,
-		host,
-		path,
-		port=port,
-		headers=headers,
-		body=body,
-		params=params,
-		ssl=ssl,
-		verified=verified,
-		follow=follow,
-		proxy=proxy,
-		connection=connection,
-		streaming=streaming,
-		keepalive=keepalive,
-	):
-		if streaming:
-			yield atom
-		elif isinstance(atom, HTTPBodyBlob):
-			chunks.append(atom.payload)
-		elif isinstance(atom, HTTPResponse):
-			response = atom
-		else:
-			yield atom
-	if not streaming and response is not None:
-		if chunks:
-			payload = b"".join(chunks)
-			response.body = HTTPBodyBlob(payload, len(payload))
-			response.setHeader("Content-Length", len(payload))
-		yield response
+	started = time.monotonic()
+	slow_logged = False
+	long_response_task = None
+	if log_long_response is not None and log_long_response > 0:
+		async def log_long_response_pending():
+			nonlocal slow_logged
+			await asyncio.sleep(log_long_response)
+			slow_logged = True
+			info(
+				"HTTP response still pending",
+				Method=method,
+				Host=host,
+				Path=path,
+				ElapsedSeconds=round(time.monotonic() - started, 3),
+			)
+
+		long_response_task = asyncio.create_task(log_long_response_pending())
+	try:
+		async for atom in HTTPClient.Request(
+			method,
+			host,
+			path,
+			port=port,
+			headers=headers,
+			body=body,
+			params=params,
+			ssl=ssl,
+			verified=verified,
+			follow=follow,
+			proxy=proxy,
+			connection=connection,
+			streaming=streaming,
+			timeout=timeout,
+			keepalive=keepalive,
+		):
+			if streaming:
+				yield atom
+			elif isinstance(atom, HTTPBodyBlob):
+				chunks.append(atom.payload)
+			elif isinstance(atom, HTTPResponse):
+				response = atom
+			else:
+				yield atom
+		if not streaming and response is not None:
+			if chunks:
+				payload = _decode_body(response, b"".join(chunks))
+				response.body = HTTPBodyBlob(payload, len(payload))
+				response.setHeader("Content-Length", len(payload))
+			yield response
+	finally:
+		if long_response_task is not None:
+			if not long_response_task.done():
+				long_response_task.cancel()
+				try:
+					await long_response_task
+				except asyncio.CancelledError:
+					pass
+			if slow_logged:
+				info(
+					"HTTP response finished",
+					Method=method,
+					Host=host,
+					Path=path,
+					ElapsedSeconds=round(time.monotonic() - started, 3),
+				)
 
 
 if __name__ == "__main__":

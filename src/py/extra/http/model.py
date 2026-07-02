@@ -187,11 +187,12 @@ class HTTPBodyIO:
 		self,
 	) -> bytes | None:
 		"""Reads the next available bytes"""
-		if self.existing and self.read == 0:
-			self.read += len(self.existing)
-			return self.existing
+		if self.existing:
+			payload = self.existing
+			self.existing = None
+			self.read += len(payload)
+			return payload
 		elif self.remaining:
-			# FIXME: We should probably have a timeout there
 			try:
 				payload = await self.reader.load(size=self.remaining)
 			except TimeoutError:
@@ -204,7 +205,7 @@ class HTTPBodyIO:
 			if payload:
 				n = len(payload)
 				self.read += n
-				self.remaining -= n
+				self.remaining = max(0, (self.remaining or 0) - n)
 			return payload
 		else:
 			return None
@@ -212,8 +213,6 @@ class HTTPBodyIO:
 	async def load(self) -> bytes:
 		"""Fully loads the body."""
 		res = bytearray()
-		# FIXME: This would read other requests as well if there is no
-		# remaining -- there should be at least a delimiter.
 		while True:
 			chunk = await self._read()
 			if chunk:
@@ -359,17 +358,16 @@ class HTTPBodyReader(ABC):
 	) -> bytes:
 		"""Loads the entire body into a bytes array."""
 		data = bytearray()
-		# We may have an expected size to read
+		# Bytes still needed when size is known; must shrink by each chunk length
+		# (using `size - len(chunk)` re-hangs multi-packet bodies forever).
 		left = size
 		while True:
 			chunk = await self.read(timeout=timeout, size=left)
 			if not chunk:
 				break
-			else:
-				data += chunk
-			# If we had a size to read, then we update it
-			if size is not None:
-				left = size - len(chunk)
+			data += chunk
+			if left is not None:
+				left -= len(chunk)
 				if left <= 0:
 					break
 		return bytes(data)

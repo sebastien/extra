@@ -158,7 +158,7 @@ class FileWatchService(Service):
 			paths.append(str(current))
 			for filename in filenames:
 				child = current / filename
-				if not FileWatchService.ShouldIgnorePath(child):
+				if child.exists() and not FileWatchService.ShouldIgnorePath(child):
 					paths.append(str(child))
 		return paths
 

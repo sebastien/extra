@@ -1,3 +1,4 @@
+import os
 import tempfile
 from pathlib import Path
 from collections import OrderedDict
@@ -59,6 +60,7 @@ with tempfile.TemporaryDirectory(prefix="extra-watch-") as tmp:
 	root = Path(tmp)
 	(root / "src").mkdir()
 	(root / "src" / "app.py").write_text("print('ok')", encoding="utf8")
+	broken_link = root / "src" / "broken-link.jsonc"
 	(root / ".git").mkdir()
 	(root / ".git" / "config").write_text("x", encoding="utf8")
 	(root / "node_modules").mkdir()
@@ -68,6 +70,15 @@ with tempfile.TemporaryDirectory(prefix="extra-watch-") as tmp:
 	(root / "build" / "bundle.js").write_text("x", encoding="utf8")
 	(root / "dist").mkdir()
 	(root / "dist" / "bundle.js").write_text("x", encoding="utf8")
+	try:
+		os.symlink(root / "missing.jsonc", broken_link)
+		expect(
+			broken_link.as_posix() not in FileWatchService.CollectWatchPaths(root),
+			"broken symlinks should be ignored",
+		)
+	except OSError:
+		# Symlink may be unavailable in restricted environments.
+		pass
 	watch_paths = FileWatchService.CollectWatchPaths(root)
 	expect(str(root / "src") in watch_paths, "source dir should be watched")
 	expect(str(root / "src" / "app.py") in watch_paths, "source file should be watched")
