@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import argparse
 import asyncio
+import gc
+import os
 import random
+import statistics
 from time import perf_counter_ns
 
 import extra.routing as routing
@@ -12,6 +15,14 @@ from extra.model import Service, mount
 
 def _quiet_info(*args, **kwargs):
 	return None
+
+
+def pin_cpu() -> None:
+	"""Pin to one core when possible to cut scheduler noise."""
+	try:
+		os.sched_setaffinity(0, {0})
+	except (AttributeError, OSError, ValueError):
+		pass
 
 
 routing.info = _quiet_info
@@ -52,13 +63,62 @@ def make_request(path: str) -> HTTPRequest:
 	)
 
 
-def print_result(name: str, iterations: int, elapsed_ns: int) -> None:
-	ns_op = elapsed_ns / iterations
-	ops_s = iterations * 1_000_000_000 / elapsed_ns if elapsed_ns else 0.0
+def print_result(
+	name: str,
+	iterations: int,
+	elapsed_ns: int,
+	samples: list[int],
+) -> None:
+	nsOp = elapsed_ns / iterations
+	opsS = iterations * 1_000_000_000 / elapsed_ns if elapsed_ns else 0.0
+	spread = 0.0
+	if samples and elapsed_ns:
+		core = sorted(samples)[1:-1] if len(samples) >= 5 else samples
+		lo = min(core) / iterations
+		hi = max(core) / iterations
+		spread = (hi - lo) / nsOp * 100.0 if nsOp else 0.0
 	print(
 		f"{name:12} ops={iterations:9d} time={elapsed_ns / 1_000_000:10.3f}ms "
-		f"ns/op={ns_op:10.1f} ops/s={ops_s:12.1f}"
+		f"ns/op={nsOp:10.1f} ops/s={opsS:12.1f} spread={spread:4.1f}%"
 	)
+
+
+async def calibrate_iterations(
+	app,
+	requests: list[HTTPRequest],
+	serialize_head: bool,
+	target_ms: float,
+	floor: int,
+	ceiling: int,
+) -> int:
+	n = len(requests)
+	probe = min(max(floor // 10, 1_000), ceiling)
+	for i in range(probe):
+		res = app.process(requests[i % n])
+		res = res if isinstance(res, HTTPResponse) else await res
+		if serialize_head:
+			res.head()
+	start = perf_counter_ns()
+	for i in range(probe):
+		res = app.process(requests[i % n])
+		res = res if isinstance(res, HTTPResponse) else await res
+		if serialize_head:
+			res.head()
+	elapsed = perf_counter_ns() - start
+	if elapsed <= 0:
+		return floor
+	nsOp = elapsed / probe
+	targetNs = target_ms * 1_000_000.0
+	scaled = int(targetNs / nsOp) if nsOp else floor
+	return max(floor, min(ceiling, scaled))
+
+
+def stable_elapsed(samples: list[int]) -> int:
+	"""Median after dropping min/max when enough rounds (thermal noise is one-sided)."""
+	if len(samples) >= 5:
+		trimmed = sorted(samples)[1:-1]
+		return int(statistics.median(trimmed))
+	return int(statistics.median(samples))
 
 
 async def bench_async(
@@ -67,111 +127,118 @@ async def bench_async(
 	iterations: int,
 	warmup: int,
 	serialize_head: bool,
-) -> int:
+	rounds: int,
+) -> tuple[int, list[int]]:
+	"""Returns (stable elapsed ns, samples)."""
 	n = len(requests)
 	for i in range(warmup):
 		res = app.process(requests[i % n])
 		res = res if isinstance(res, HTTPResponse) else await res
 		if serialize_head:
 			res.head()
-	start = perf_counter_ns()
-	for i in range(iterations):
-		res = app.process(requests[i % n])
-		res = res if isinstance(res, HTTPResponse) else await res
-		if serialize_head:
-			res.head()
-	elapsed = perf_counter_ns() - start
-	return elapsed
+	samples: list[int] = []
+	gc.collect()
+	wasEnabled = gc.isenabled()
+	gc.disable()
+	try:
+		for _ in range(rounds):
+			start = perf_counter_ns()
+			for i in range(iterations):
+				res = app.process(requests[i % n])
+				res = res if isinstance(res, HTTPResponse) else await res
+				if serialize_head:
+					res.head()
+			samples.append(perf_counter_ns() - start)
+	finally:
+		if wasEnabled:
+			gc.enable()
+	return stable_elapsed(samples), samples
 
 
 def main() -> None:
 	parser = argparse.ArgumentParser(description="Core request/response benchmark")
-	parser.add_argument("--iterations", type=int, default=150_000)
+	parser.add_argument(
+		"--iterations",
+		type=int,
+		default=0,
+		help="Fixed iterations per round (0 = auto-calibrate to --target-ms)",
+	)
 	parser.add_argument("--warmup", type=int, default=15_000)
 	parser.add_argument("--sample-size", type=int, default=256)
 	parser.add_argument("--no-head", action="store_true")
+	parser.add_argument(
+		"--rounds",
+		type=int,
+		default=7,
+		help="Timed rounds per scenario; report median (reduces noise)",
+	)
+	parser.add_argument(
+		"--target-ms",
+		type=float,
+		default=400.0,
+		help="Target wall time per round when --iterations=0",
+	)
+	parser.add_argument("--min-iterations", type=int, default=10_000)
+	parser.add_argument("--max-iterations", type=int, default=1_000_000)
 	args = parser.parse_args()
+	pin_cpu()
 
 	app = mount(BenchAPI())
 	app.dispatcher.prepare()
-	serialize_head = not args.no_head
+	serializeHead = not args.no_head
 
-	plain_requests = [make_request("/plain") for _ in range(args.sample_size)]
-	json_requests = [make_request("/json") for _ in range(args.sample_size)]
-	param_requests = [
+	plainRequests = [make_request("/plain") for _ in range(args.sample_size)]
+	jsonRequests = [make_request("/json") for _ in range(args.sample_size)]
+	paramRequests = [
 		make_request(f"/users/{(i * 17) % 10_000}") for i in range(args.sample_size)
 	]
-	async_requests = [
+	asyncRequests = [
 		make_request(f"/async/{(i * 11) % 10_000}") for i in range(args.sample_size)
 	]
-	mixed_requests = (
-		list(plain_requests)
-		+ list(json_requests)
-		+ list(param_requests)
-		+ list(async_requests)
+	mixedRequests = (
+		list(plainRequests)
+		+ list(jsonRequests)
+		+ list(paramRequests)
+		+ list(asyncRequests)
 	)
-	random.Random(7).shuffle(mixed_requests)
+	random.Random(7).shuffle(mixedRequests)
 
 	print(
 		"benchmark-reqres "
-		f"iterations={args.iterations} warmup={args.warmup} "
-		f"serialize_head={serialize_head}"
+		f"warmup={args.warmup} serialize_head={serializeHead} "
+		f"rounds={args.rounds} "
+		f"target_ms={args.target_ms if args.iterations <= 0 else 'fixed'}"
 	)
 
-	elapsed = asyncio.run(
-		bench_async(
-			app,
-			plain_requests,
-			args.iterations,
-			args.warmup,
-			serialize_head,
-		)
-	)
-	print_result("plain-sync", args.iterations, elapsed)
+	async def run() -> None:
+		for name, requests in (
+			("plain-sync", plainRequests),
+			("json-sync", jsonRequests),
+			("param-sync", paramRequests),
+			("async", asyncRequests),
+			("mixed", mixedRequests),
+		):
+			iterations = args.iterations
+			if iterations <= 0:
+				iterations = await calibrate_iterations(
+					app,
+					requests,
+					serializeHead,
+					args.target_ms,
+					args.min_iterations,
+					args.max_iterations,
+				)
+			elapsed, samples = await bench_async(
+				app,
+				requests,
+				iterations,
+				args.warmup,
+				serializeHead,
+				args.rounds,
+			)
+			print_result(name, iterations, elapsed, samples)
 
-	elapsed = asyncio.run(
-		bench_async(
-			app,
-			json_requests,
-			args.iterations,
-			args.warmup,
-			serialize_head,
-		)
-	)
-	print_result("json-sync", args.iterations, elapsed)
-
-	elapsed = asyncio.run(
-		bench_async(
-			app,
-			param_requests,
-			args.iterations,
-			args.warmup,
-			serialize_head,
-		)
-	)
-	print_result("param-sync", args.iterations, elapsed)
-
-	elapsed = asyncio.run(
-		bench_async(
-			app,
-			async_requests,
-			args.iterations,
-			args.warmup,
-			serialize_head,
-		)
-	)
-	print_result("async", args.iterations, elapsed)
-
-	elapsed = asyncio.run(
-		bench_async(
-			app,
-			mixed_requests,
-			args.iterations,
-			args.warmup,
-			serialize_head,
-		)
-	)
-	print_result("mixed", args.iterations, elapsed)
+	asyncio.run(run())
 
 
 if __name__ == "__main__":

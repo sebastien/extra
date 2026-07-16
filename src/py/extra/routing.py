@@ -34,6 +34,10 @@ async def awaited(value: Any) -> Any:
 		return value
 
 
+# Shared empty params for static matches; callers must not mutate.
+EmptyParams: dict[str, Any] = {}
+
+
 # -----------------------------------------------------------------------------
 #
 # ROUTE
@@ -347,21 +351,23 @@ class Routes:
 				return None
 			# Extract only the matched route's params using numeric indices
 			# and regs offsets to avoid repeated match.group(...) calls.
+			paramInfo = self._param_info.get(route, ())
+			if not paramInfo:
+				return (route, EmptyParams)
 			params: dict[str, Any] = {}
-			param_info = self._param_info.get(route, ())
 			pref = self._param_pref.get(route)
-			for i, (p_name, extractor, candidates) in enumerate(param_info):
+			for i, (pName, extractor, candidates) in enumerate(paramInfo):
 				if pref is not None:
 					pg = pref[i]
 					if pg >= 0:
 						start, end = regs[pg]
 						if start >= 0:
-							params[p_name] = extractor(path[start:end])
+							params[pName] = extractor(path[start:end])
 							continue
 				for gidx in candidates:
 					start, end = regs[gidx]
 					if start >= 0:
-						params[p_name] = extractor(path[start:end])
+						params[pName] = extractor(path[start:end])
 						if pref is not None:
 							pref[i] = gidx
 						break
@@ -506,19 +512,34 @@ class Handler:
 	def Get(
 		cls, value: Any, extra: Union[dict[str, Any], None] = None
 	) -> Union[Any, None]:
-		return (
-			Handler(
-				functor=value,
-				methods=cls.Attr(value, Extra.ON),
-				expose=cast(Expose, cls.Attr(value, Extra.EXPOSE)),
-				priority=cls.Attr(value, Extra.ON_PRIORITY, extra),
-				contentType=cls.Attr(value, Extra.EXPOSE_CONTENT_TYPE, extra),
-				pre=cls.Attr(value, Extra.PRE, extra, merge=True),
-				post=cls.Attr(value, Extra.POST, extra, merge=True),
-				errors=cls.Attr(value, Extra.ERRORS, extra, merge=True),
-			)
-			if cls.Has(value)
-			else None
+		if not cls.Has(value):
+			return None
+		# Explicit locals keep mypyc happy with optional Attr() results
+		# (cast(Expose, None) and bare Any→list[tuple] fail under mypyc).
+		methods_raw: Any = cls.Attr(value, Extra.ON)
+		methods: list[tuple[str, str]] = list(methods_raw) if methods_raw else []
+		expose_raw: Any = cls.Attr(value, Extra.EXPOSE)
+		expose: Union[Expose, None] = (
+			expose_raw if isinstance(expose_raw, Expose) else None
+		)
+		priority_raw: Any = cls.Attr(value, Extra.ON_PRIORITY, extra)
+		priority: int = int(priority_raw) if priority_raw is not None else 0
+		content_raw: Any = cls.Attr(value, Extra.EXPOSE_CONTENT_TYPE, extra)
+		contentType: Union[str, None] = (
+			str(content_raw) if content_raw is not None else None
+		)
+		pre_raw: Any = cls.Attr(value, Extra.PRE, extra, merge=True)
+		post_raw: Any = cls.Attr(value, Extra.POST, extra, merge=True)
+		errors_raw: Any = cls.Attr(value, Extra.ERRORS, extra, merge=True)
+		return Handler(
+			functor=value,
+			methods=methods,
+			expose=expose,
+			priority=priority,
+			contentType=contentType,
+			pre=pre_raw if pre_raw else None,
+			post=post_raw if post_raw else None,
+			errors=errors_raw if errors_raw else None,
 		)
 
 	def __init__(
@@ -733,6 +754,8 @@ class Dispatcher:
 		self._compiled: dict[str, Routes] = {}
 		# Ordered route list per method, indices match the compiled regex
 		self._indexed: dict[str, list[Route]] = {}
+		# Highest dynamic route priority per method (for static short-circuit)
+		self._maxDynamicPriority: dict[str, int] = {}
 		self.isPrepared: bool = True
 
 	def register(
@@ -757,29 +780,32 @@ class Dispatcher:
 		static: dict[str, dict[str, Route]] = {}
 		indexed: dict[str, list[Route]] = {}
 		compiled: dict[str, Routes] = {}
+		maxDynamicPriority: dict[str, int] = {}
 		for method, routes in self.routes.items():
 			# Sort by descending priority so the first alternation match
 			# in the compiled regex corresponds to the highest priority.
-			sorted_routes = sorted(routes, key=lambda _: (-_.priority, _.pattern))
-			res[method] = sorted_routes
+			sortedRoutes = sorted(routes, key=lambda _: (-_.priority, _.pattern))
+			res[method] = sortedRoutes
 			# Separate static (no params) from dynamic routes
-			method_static: dict[str, Route] = {}
-			dynamic_routes: list[Route] = []
-			for route in sorted_routes:
+			methodStatic: dict[str, Route] = {}
+			dynamicRoutes: list[Route] = []
+			for route in sortedRoutes:
 				if not route.params:
 					# Only keep the first (highest priority) static route
-					if route.text not in method_static:
-						method_static[route.text] = route
+					if route.text not in methodStatic:
+						methodStatic[route.text] = route
 				else:
-					dynamic_routes.append(route)
-			static[method] = method_static
-			indexed[method] = dynamic_routes
-			if dynamic_routes:
-				compiled[method] = Routes(*(r.text for r in dynamic_routes))
+					dynamicRoutes.append(route)
+			static[method] = methodStatic
+			indexed[method] = dynamicRoutes
+			if dynamicRoutes:
+				maxDynamicPriority[method] = max(_.priority for _ in dynamicRoutes)
+				compiled[method] = Routes(*(r.text for r in dynamicRoutes))
 		self.routes = res
 		self._static = static
 		self._indexed = indexed
 		self._compiled = compiled
+		self._maxDynamicPriority = maxDynamicPriority
 		self.isPrepared = True
 		return self
 
@@ -794,27 +820,38 @@ class Dispatcher:
 			self.prepare()
 		if method not in self.routes:
 			return (None, False)
-		static_route: Union[Route, None] = None
-		# Fast path: O(1) dict lookup for static routes
+		# Fast path: O(1) dict lookup for static routes. Skip the dynamic
+		# regex when no dynamic route can outrank this static one (favour
+		# static on ties — same semantics as the priority comparison below).
 		static = self._static.get(method)
-		if static:
-			static_route = static.get(path)
+		if not static:
+			staticRoute: Union[Route, None] = None
+		else:
+			staticRoute = static.get(path)
+			if staticRoute is not None:
+				maxDyn = self._maxDynamicPriority.get(method)
+				# Inline handler.priority to avoid Route.priority property call.
+				staticPri = (
+					staticRoute.handler.priority if staticRoute.handler else 0
+				)
+				if maxDyn is None or staticPri >= maxDyn:
+					return (staticRoute, EmptyParams)
 		# Compiled regex: single match for all dynamic routes
 		comp = self._compiled.get(method)
 		if comp:
 			result = comp.match(path)
 			if result is not None:
-				route_index, params = result
-				dynamic_route = self._indexed[method][route_index]
-				if static_route is None:
-					return (dynamic_route, params)
+				routeIndex, params = result
+				dynamicRoute = self._indexed[method][routeIndex]
+				if staticRoute is None:
+					return (dynamicRoute, params)
 				# Keep old dispatcher semantics: pick highest priority,
 				# and favour static on ties.
-				if dynamic_route.priority > static_route.priority:
-					return (dynamic_route, params)
-				return (static_route, {})
-		if static_route is not None:
-			return (static_route, {})
+				if dynamicRoute.priority > staticRoute.priority:
+					return (dynamicRoute, params)
+				return (staticRoute, EmptyParams)
+		if staticRoute is not None:
+			return (staticRoute, EmptyParams)
 		return (None, None)
 
 

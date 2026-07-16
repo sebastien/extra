@@ -5,7 +5,7 @@ from email.utils import formatdate
 from hashlib import md5
 from html import escape
 from pathlib import Path
-from typing import Callable, Union
+from typing import Any, Callable, Union, cast
 
 from ..decorators import on
 from ..features.cors import setCORSHeaders
@@ -29,9 +29,9 @@ except ImportError:
 	_pcss = None
 
 try:
-	from toon_format import decode as _toon_decode  # type: ignore[import-not-found]
+	from toon_format import decode as _toon_decode  # type: ignore[import-not-found,unused-ignore]
 except ImportError:
-	_toon_decode = None
+	_toon_decode = cast(Any, None)
 
 FILE_CSS: str = """
 :root {

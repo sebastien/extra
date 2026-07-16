@@ -2,7 +2,7 @@ from typing import Iterable, ClassVar, Any, Coroutine, NamedTuple, Union
 import sys
 import importlib
 
-from .routing import Handler, Dispatcher, Route
+from .routing import EmptyParams, Handler, Dispatcher, Route
 from .http.model import HTTPRequest, HTTPResponse
 from .decorators import Extra, Transform
 from .utils.collections import flatiter
@@ -169,7 +169,8 @@ class Application:
 			handler = route.handler
 			if not handler:
 				raise RuntimeError(f"Route has no handler defined: {route}")
-			return handler(request, {} if params is True else params if params else {})
+			bound = EmptyParams if params is True or not params else params
+			return handler(request, bound)
 		else:
 			return self.onRouteNotFound(request)
 

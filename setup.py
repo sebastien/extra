@@ -33,12 +33,28 @@ def readme():
 		return fh.read()
 
 
+# Files unsupported by mypyc (async generators, __slots__ on subclasses, etc.).
+_MYPYC_UNSUPPORTED = {
+	"client.py",
+	"http/api.py",  # ResponseFactory base must stay pure (HTTPRequest subclasses it)
+	"http/model.py",  # async generators; subclasses ResponseFactory
+	"model.py",  # Service/Application must stay interpretable for user subclasses
+	"server.py",  # AIO body classes; keeps socket loop pure
+	"services/watch.py",
+	"features/auth.py",
+}
+
+
 def list_ext_modules(base_path="src/py/extra"):
 	python_files = []
 	for root, _, files in os.walk(base_path):
 		for file in files:
 			if file.endswith(".py"):
-				python_files.append(os.path.join(root, file))
+				rel = os.path.relpath(
+					os.path.join(root, file), base_path
+				)
+				if rel not in _MYPYC_UNSUPPORTED:
+					python_files.append(os.path.join(root, file))
 	return python_files
 
 
@@ -108,6 +124,11 @@ setup(
 		],
 		"passkeys": [
 			"webauthn",
+		],
+		"bench": [
+			"aiohttp",
+			"fastapi",
+			"uvicorn",
 		],
 	},
 	entry_points={

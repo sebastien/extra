@@ -25,7 +25,7 @@ REQUIRE_PY=flake8 bandit mypy twine
 # Commands - prefer direct tool execution for mypy to avoid dependency resolution issues
 BANDIT=$(UV) run bandit
 FLAKE8=$(UV) run flake8
-MYPY=mypy
+MYPY=$(UV) run mypy
 TWINE=$(UV) run twine
 MYPYC=$(UV) run mypyc
 BUILD=$(UV) run build
@@ -90,28 +90,27 @@ test:
 ci: check test
 	@
 
-BENCH_ROUTING_BASE_ARGS=--iterations 100000 --warmup 10000 --static-routes 500 --param-routes 500 --sample-size 512
-BENCH_REQRES_BASE_ARGS=--iterations 100000 --warmup 10000 --sample-size 256
-BENCH_ROUTING_FAST_ARGS=--iterations 10000 --warmup 1000 --static-routes 200 --param-routes 200 --sample-size 256
-BENCH_REQRES_FAST_ARGS=--iterations 10000 --warmup 1000 --sample-size 128
-
+# Full suite: core microbenches + server throughput (ab/h2load). See tests/benchmark.py
+# Alternatives: make bench-fast (quicker), make bench-core (microbenches only)
+# Uses `uv run` so optional bench deps (aiohttp/fastapi/uvicorn) are available.
+BENCH_UV_RUN=$(UV) run --with aiohttp --with fastapi --with uvicorn
 .PHONY: bench
 bench: setup
-	@echo "=== Running core benchmarks (baseline) ==="
-	@routing_out=$$(mktemp); reqres_out=$$(mktemp); \
-	trap 'rm -f "$$routing_out" "$$reqres_out"' EXIT; \
-	PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-routing.py $(BENCH_ROUTING_BASE_ARGS) > "$$routing_out"; \
-	PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-reqres.py $(BENCH_REQRES_BASE_ARGS) > "$$reqres_out"; \
-	PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-table.py --routing "$$routing_out" --reqres "$$reqres_out" --label baseline
+	@echo "=== Running benchmarks (baseline) ==="
+	@echo "    tip: make bench-fast  (lighter)  |  make bench-core  (no server suite)"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(BENCH_UV_RUN) python tests/benchmark.py
 
 .PHONY: bench-fast
 bench-fast: setup
-	@echo "=== Running core benchmarks (fast) ==="
-	@routing_out=$$(mktemp); reqres_out=$$(mktemp); \
-	trap 'rm -f "$$routing_out" "$$reqres_out"' EXIT; \
-	PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-routing.py $(BENCH_ROUTING_FAST_ARGS) > "$$routing_out"; \
-	PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-reqres.py $(BENCH_REQRES_FAST_ARGS) > "$$reqres_out"; \
-	PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-table.py --routing "$$routing_out" --reqres "$$reqres_out" --label fast
+	@echo "=== Running benchmarks (fast) ==="
+	@echo "    tip: make bench       (full baseline)  |  make bench-core  (no server suite)"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(BENCH_UV_RUN) python tests/benchmark.py --fast
+
+.PHONY: bench-core
+bench-core: setup
+	@echo "=== Running core benchmarks only ==="
+	@echo "    tip: make bench       (full)  |  make bench-fast  (full, lighter)"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(BENCH_UV_RUN) python tests/benchmark.py --core-only
 
 .PHONY: audit
 audit: check-bandit
@@ -123,8 +122,14 @@ compile: setup
 	@echo "=== $@"
 	@echo "Compiling $(MODULES_PY): $(SOURCES_PY)"
 	# NOTE: Output is going to be like 'extra/__init__.cpython-310-x86_64-linux-gnu.so'
-	@mkdir -p ".run/uv-cache"
-	@UV_CACHE_DIR=$(realpath .)/.run/uv-cache uv run python setup.py build_ext --inplace --use-mypyc
+	@mkdir -p ".run/uv-cache" build
+	@UV_CACHE_DIR=$(realpath .)/.run/uv-cache uv run --with mypy python setup.py build_ext --inplace --use-mypyc
+	# Modules excluded from mypyc must not leave stale .so that shadow pure .py
+	@rm -f src/py/extra/server.cpython-*.so \
+		src/py/extra/model.cpython-*.so \
+		src/py/extra/http/api.cpython-*.so \
+		src/py/extra/http/model.cpython-*.so \
+		src/py/extra/client.cpython-*.so
 
 .PHONY: check
 check: check-bandit check-flakes check-strict

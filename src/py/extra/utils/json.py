@@ -6,9 +6,9 @@ import json as basejson
 from .primitives import asPrimitive
 
 try:
-	import orjson as _orjson  # type: ignore[import-not-found]
+	import orjson as _orjson
 except ImportError:
-	_orjson = None
+	_orjson = cast(Any, None)
 
 # TODO: We do want to use ORJSON when available: https://github.com/tktech/json_benchmark
 
@@ -36,11 +36,11 @@ def json(value: Any) -> bytes:
 		# Only fall back to asPrimitive for complex types (dataclasses,
 		# named tuples, etc.) that orjson can't serialise.
 		try:
-			return cast(bytes, _orjson.dumps(value))
+			return _orjson.dumps(value)
 		except TypeError:
 			primitive = asPrimitive(value)
 			try:
-				return cast(bytes, _orjson.dumps(primitive))
+				return _orjson.dumps(primitive)
 			except TypeError:
 				return basejson.dumps(primitive).encode("utf8")
 	else:

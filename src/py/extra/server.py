@@ -6,7 +6,7 @@ from pathlib import Path
 from signal import SIGINT, SIGTERM
 from typing import Any, Callable, Coroutine, Literal, NamedTuple, Union
 
-from .config import HOST, PORT
+from .config import HOST, LOG_REQUESTS, PORT
 from .http.model import (
 	HTTPBodyBlob,
 	HTTPBodyLimitError,
@@ -56,7 +56,7 @@ class ServerOptions(NamedTuple):
 	# the load balancer.»
 	# SEE: https://repost.aws/questions/QU-_rSWDtwSmOD5wBO5tsrwg/load-balancer-502-bad-gateway
 	keepalive: float = 3_600
-	logRequests: bool = True
+	logRequests: bool = LOG_REQUESTS
 	condition: Union[Callable[[], bool], None] = None
 	stopSignals: bool = True
 
@@ -102,7 +102,7 @@ SERVER_PAYLOAD_TOO_LARGE: bytes = (
 class AIOSocketBodyReader(HTTPBodyReader):
 	"""Specialized body reader to work with AIO sockets."""
 
-	__slots__ = ["socket", "loop", "buffer", "size"]
+	# NOTE: no __slots__ — mypyc-compiled parents reject slotted pure subclasses
 
 	def __init__(
 		self,
@@ -252,8 +252,9 @@ class AIOSocketServer:
 				# NOTE: With HTTP Pipelining, we may receive more than one
 				# request in the same payload, so we need to be prepared
 				# to answer more than one request.
-				chunk = buffer[:n] if n != size else buffer
-				stream = parser.feed(chunk)  # type: ignore[arg-type]
+				# Copy to bytes: mypyc parser.feed expects bytes, not bytearray
+				chunk = bytes(buffer[:n] if n != size else buffer)
+				stream = parser.feed(chunk)
 				debug(
 					"Reading Requests(s)",
 					Client=f"{id(client):x}",

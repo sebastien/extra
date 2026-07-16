@@ -4,12 +4,15 @@ import re
 
 
 ROW_RE = re.compile(
-	r"^(?P<name>[\w\-]+)\s+ops=\s*(?P<ops>\d+)\s+time=\s*(?P<time>[\d\.]+)ms\s+ns/op=\s*(?P<nsop>[\d\.]+)\s+ops/s=\s*(?P<opss>[\d\.]+)"
+	r"^(?P<name>[\w\-]+)\s+ops=\s*(?P<ops>\d+)\s+time=\s*(?P<time>[\d\.]+)ms\s+"
+	r"ns/op=\s*(?P<nsop>[\d\.]+)\s+ops/s=\s*(?P<opss>[\d\.]+)"
+	r"(?:\s+hits=\s*(?P<hits>\d+))?"
+	r"(?:\s+spread=\s*(?P<spread>[\d\.]+)%)?"
 )
 
 
-def parse(path: str) -> list[tuple[str, int, float, float]]:
-	rows: list[tuple[str, int, float, float]] = []
+def parse(path: str) -> list[tuple[str, int, float, float, float | None]]:
+	rows: list[tuple[str, int, float, float, float | None]] = []
 	with open(path, "rt", encoding="utf8") as f:
 		for line in f:
 			text = line.strip()
@@ -17,25 +20,32 @@ def parse(path: str) -> list[tuple[str, int, float, float]]:
 				continue
 			match = ROW_RE.search(text)
 			if match:
+				spread = match.group("spread")
 				rows.append(
 					(
 						match.group("name"),
 						int(match.group("ops")),
 						float(match.group("nsop")),
 						float(match.group("opss")),
+						float(spread) if spread is not None else None,
 					)
 				)
 	return rows
 
 
-def print_table(title: str, rows: list[tuple[str, int, float, float]]) -> None:
+def print_table(
+	title: str, rows: list[tuple[str, int, float, float, float | None]]
+) -> None:
 	print(title)
-	print("+------------+-----------+------------+-------------+")
-	print("| scenario   | ops       | ns/op      | ops/s       |")
-	print("+------------+-----------+------------+-------------+")
-	for name, ops, nsop, opss in rows:
-		print(f"| {name:<10} | {ops:>9d} | {nsop:>10.1f} | {opss:>11.1f} |")
-	print("+------------+-----------+------------+-------------+")
+	print("+------------+-----------+------------+-------------+----------+")
+	print("| scenario   | ops       | ns/op      | ops/s       | spread   |")
+	print("+------------+-----------+------------+-------------+----------+")
+	for name, ops, nsop, opss, spread in rows:
+		spreadText = f"{spread:6.1f}%" if spread is not None else "     n/a"
+		print(
+			f"| {name:<10} | {ops:>9d} | {nsop:>10.1f} | {opss:>11.1f} | {spreadText:>8} |"
+		)
+	print("+------------+-----------+------------+-------------+----------+")
 
 
 def main() -> None:

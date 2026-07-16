@@ -10,6 +10,8 @@ from select import select
 from typing import ContextManager, Iterator, Optional, Union
 from typing import Any
 
+from mypy_extensions import mypyc_attr
+
 # --
 # # Shell Utils
 #
@@ -17,6 +19,7 @@ from typing import Any
 # shell.
 
 
+@mypyc_attr(native_class=False)
 class ShellCommandError(RuntimeError):
 	"""Wrapper for a shell command error."""
 

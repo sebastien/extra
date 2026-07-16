@@ -22,6 +22,7 @@ from typing import (
 	TypeAlias,
 	TypeVar,
 	Union,
+	cast,
 )
 
 from ..utils.codec import BytesTransform
@@ -777,10 +778,14 @@ class HTTPResponse:
 			body = HTTPBodyFile(content.absolute())
 			contentLength = os.path.getsize(body.path)
 		elif inspect.isgenerator(content):
-			body = HTTPBodyStream(content)
+			body = HTTPBodyStream(
+				cast(Generator[str | bytes | TPrimitive, Any, Any], content),
+			)
 			should_close = True
 		elif inspect.isasyncgen(content):
-			body = HTTPBodyAsyncStream(content)
+			body = HTTPBodyAsyncStream(
+				cast(AsyncGenerator[str | bytes | TPrimitive, Any], content),
+			)
 			should_close = True
 		elif isinstance(content, (dict, list, tuple, bool, int, float)):
 			payload_bytes = json(content)

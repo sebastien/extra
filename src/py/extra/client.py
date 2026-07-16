@@ -56,7 +56,7 @@ SSL_CLIENT_UNVERIFIED_CONTEXT: ssl.SSLContext = (
 	ssl._create_unverified_context()  # nosec: B323
 )
 try:
-	import certifi  # type: ignore[import-not-found]
+	import certifi
 
 	SSL_CLIENT_CONTEXT.load_verify_locations(certifi.where())
 except FileNotFoundError:
@@ -648,7 +648,7 @@ async def request(
 	slow_logged = False
 	long_response_task = None
 	if log_long_response is not None and log_long_response > 0:
-		async def log_long_response_pending():
+		async def log_long_response_pending() -> None:
 			nonlocal slow_logged
 			await asyncio.sleep(log_long_response)
 			slow_logged = True

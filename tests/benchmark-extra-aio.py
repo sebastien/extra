@@ -8,6 +8,7 @@ class API(Service):
 
 
 if __name__ == "__main__":
-	run(API())
+	# Quiet logs for load tests (request logging + filled stderr pipes stall servers)
+	run(API(), logRequests=False)
 
 # EOF
