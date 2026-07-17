@@ -147,6 +147,21 @@ class AIOSocketBodyWriter(HTTPBodyWriter):
 		super().__init__(transform)
 		self.client: socket.socket = client
 		self.loop: asyncio.AbstractEventLoop = loop
+		# Reused across responses on this connection (avoid per-response alloc).
+		self._wireBuf: bytearray = bytearray()
+
+	async def writeResponse(self, response: HTTPResponse) -> bool:
+		"""Render blob responses into a reused buffer and send once."""
+		body = response.body
+		if isinstance(body, HTTPBodyBlob):
+			buf = self._wireBuf
+			buf.clear()
+			response.renderInto(buf, withBody=True)
+			await self.loop.sock_sendall(self.client, buf)
+			return False
+		await self.write(response.head())
+		await self.write(body)
+		return False
 
 	async def _writeBytes(
 		self, chunk: Union[bytes, None, Literal[False]], more: bool = False
@@ -208,16 +223,41 @@ class AIOSocketServer:
 		read_count: int = 0
 		res_count: int = 0
 		req_count: int = 0
+		idle_handle: Union[asyncio.TimerHandle, None] = None
 		try:
 			# TODO: Should reuse parser, reader, writer as these will be on the
 			# hotpath for requests. These should all be recyclable.
-			parser: HTTPParser = HTTPParser()
+			parser: HTTPParser = HTTPParser(requestsOnly=True)
 			reader: AIOSocketBodyReader = AIOSocketBodyReader(client, loop)
 			writer: AIOSocketBodyWriter = AIOSocketBodyWriter(client, loop)
+			# Cache once per connection — log level rarely changes mid-flight.
+			do_debug: bool = logged(debug)
 
-			# NOTE: Here a load balancer will sustain a single connection and
-			# all the requests will come through this loop, until there's
-			# Connection: Close, or the keepalive timeout has expired.
+			def _cancel_idle() -> None:
+				nonlocal idle_handle
+				if idle_handle is not None:
+					idle_handle.cancel()
+					idle_handle = None
+
+			def _on_idle_timeout() -> None:
+				"""Wake a blocked sock_recv by shutting down the socket."""
+				nonlocal status, idle_handle
+				idle_handle = None
+				status = HTTPProcessingStatus.Timeout
+				try:
+					client.shutdown(socket.SHUT_RDWR)
+				except OSError:
+					pass
+
+			# Keep-alive idle timeout strategy:
+			# - Busy path: bare sock_recv_into (no wait_for, no per-read timer).
+			# - Idle path: after each completed request we arm a single
+			#   call_later; it is cancelled when the next bytes arrive.
+			#   For very long keepalive values the timer almost never fires,
+			#   but create/cancel still costs — so we only arm when the
+			#   configured timeout is in a practical range (< 1 hour default
+			#   still arms; set keepalive<=0 to disable).
+			arm_idle: bool = 0.0 < keep_alive_timeout < 3600.0
 			# --
 			# SEE: https://repost.aws/knowledge-center/apache-backend-elb
 			# TODO: We should manage the Keep-Alive header
@@ -233,43 +273,49 @@ class AIOSocketServer:
 				# We may have more than one request in each payload when
 				# HTTP Pipelining is on.
 				try:
-					# NOTE: The timeout really doesn't do anything here, the
-					# socket will return no data, instead of being blocking
-					n = await asyncio.wait_for(
-						loop.sock_recv_into(client, buffer),
-						timeout=keep_alive_timeout,
-					)
+					if arm_idle and req_count > 0:
+						idle_handle = loop.call_later(
+							keep_alive_timeout, _on_idle_timeout
+						)
+					n = await loop.sock_recv_into(client, buffer)
+					_cancel_idle()
 					read_count += n
-				except TimeoutError:
-					warning("Client timed out", Requests=req_count, Responses=res_count)
-					status = HTTPProcessingStatus.Timeout
-					break
+				except OSError:
+					_cancel_idle()
+					if status is HTTPProcessingStatus.Timeout:
+						warning(
+							"Client timed out",
+							Requests=req_count,
+							Responses=res_count,
+						)
+						break
+					raise
 				if not n:
-					# A no-data means a close
-					status = HTTPProcessingStatus.NoData
+					# A no-data means a close (or idle timeout shutdown)
+					if status is not HTTPProcessingStatus.Timeout:
+						status = HTTPProcessingStatus.NoData
+					else:
+						warning(
+							"Client timed out",
+							Requests=req_count,
+							Responses=res_count,
+						)
 					# We need to break here as otherwise we'll be in a hot loop.
 					break
 				# NOTE: With HTTP Pipelining, we may receive more than one
 				# request in the same payload, so we need to be prepared
 				# to answer more than one request.
-				# Copy to bytes: mypyc parser.feed expects bytes, not bytearray
-				chunk = bytes(buffer[:n] if n != size else buffer)
-				stream = parser.feed(chunk)
-				debug(
-					"Reading Requests(s)",
-					Client=f"{id(client):x}",
-					Read=n,
-					Iteration=iteration,
-					Count=req_count,
-				)
-				while True:
-					try:
-						atom = next(stream)
-						debug("Request Atom", Atom=atom.__class__.__name__)
-					except StopIteration:
-						# TODO: Should be debug
-						debug("Requests End", Iteration=iteration, Count=res_count)
-						break
+				# One copy of the received prefix only (not the full prealloc buffer)
+				data = bytes(memoryview(buffer)[:n])
+				if do_debug:
+					debug(
+						"Reading Requests(s)",
+						Client=f"{id(client):x}",
+						Read=n,
+						Iteration=iteration,
+						Count=req_count,
+					)
+				for atom in parser.feed(data):
 					if atom is HTTPProcessingStatus.Complete:
 						status = atom
 					elif atom is HTTPProcessingStatus.BadFormat:
@@ -285,37 +331,34 @@ class AIOSocketServer:
 						break
 					elif isinstance(atom, HTTPRequest):
 						req = atom
-						if req.contentLength is not None:
-							if req.contentLength > options.maxBodyBytes:
-								await writer.write(SERVER_PAYLOAD_TOO_LARGE)
-								res_count += 1
-								keep_alive = False
-								break
-						# We pass the reader to the request, as for instance
-						# the request may need more than what was available
-						# from the socket.
-						req._reader = reader
-						already_read = (
-							req._body.length
-							if isinstance(req._body, HTTPBodyBlob)
-							else 0
-						)
-						reader.setLimit(options.maxBodyBytes, alreadyRead=already_read)
-						# Logs the request method
+						cl = req.contentLength
+						if cl is not None and cl > options.maxBodyBytes:
+							await writer.write(SERVER_PAYLOAD_TOO_LARGE)
+							res_count += 1
+							keep_alive = False
+							break
+						# Attach reader only when more body may remain
+						body = req._body
+						if isinstance(body, HTTPBodyBlob):
+							if body.remaining:
+								req._reader = reader
+								reader.setLimit(
+									options.maxBodyBytes, alreadyRead=body.length
+								)
+						else:
+							req._reader = reader
+							reader.setLimit(options.maxBodyBytes, alreadyRead=0)
 						if options.logRequests:
 							event(req.method, req.path)
 						req_count += 1
-						if (
-							req.protocol == "HTTP/1.0"
-							or req.headers.get("Connection") == "close"
-						):
+						# headers dict uses Kebab-Case keys from the parser
+						hdrs = req._headers.headers
+						if req.protocol == "HTTP/1.0" or hdrs.get("Connection") == "close":
 							keep_alive = False
 						res = await cls.SendResponse(req, app, writer)
 						if res:
 							res_count += 1
-							debug("Request Sent", Iteration=iteration, Count=res_count)
 							if res.shouldClose:
-								debug("Response wants to close connection")
 								keep_alive = False
 						else:
 							warning(
@@ -372,6 +415,8 @@ class AIOSocketServer:
 		except Exception as e:
 			exception(e)
 		finally:
+			if idle_handle is not None:
+				idle_handle.cancel()
 			# NOTE: The above loop takes care of keep alive, so we always close
 			# the connection on exit.
 			client.close()
@@ -389,6 +434,7 @@ class AIOSocketServer:
 		# --
 		# We process the response from the application
 		r: Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]] = app.process(req)
+		# Sync handlers return HTTPResponse directly (no coroutine overhead)
 		if isinstance(r, HTTPResponse):
 			res = r
 		else:
@@ -403,20 +449,16 @@ class AIOSocketServer:
 			sent = True
 		else:
 			try:
-				body = res.body
-				# Fast path: combine head + blob body into a single write
-				# to halve the number of sock_sendall syscalls.
-				if isinstance(body, HTTPBodyBlob):
-					head = res.head()
-					payload = body.payload
-					if payload:
-						await writer.write(head + payload)
-					else:
-						await writer.write(head)
+				# AIOSocketBodyWriter: render into reused buffer → one sendall
+				if isinstance(writer, AIOSocketBodyWriter):
+					await writer.writeResponse(res)
 				else:
-					# We send the request head
-					await writer.write(res.head())
-					await writer.write(body)
+					body = res.body
+					if isinstance(body, HTTPBodyBlob):
+						await writer.write(res.wire())
+					else:
+						await writer.write(res.head())
+						await writer.write(body)
 				sent = True
 			except BrokenPipeError:
 				# Client did an early close

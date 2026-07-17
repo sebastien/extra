@@ -622,7 +622,7 @@ class Handler:
 					raise RuntimeError(
 						"@expose(..., data=True) requires an async handler"
 					)
-				value: Any = self.functor(**params)
+				value: Any = self.functor(**params) if params else self.functor()
 				content_type: str = (
 					self.contentType or self.expose.contentType or "application/json"
 				)
@@ -632,7 +632,10 @@ class Handler:
 					else request.returns(value, contentType=content_type)
 				)
 			else:
-				response = self.functor(request, **params)
+				# Avoid **{} kwargs overhead on static routes (EmptyParams)
+				response = (
+					self.functor(request, **params) if params else self.functor(request)
+				)
 		except HTTPRequestError as error:
 			response = request.respond(
 				content=error.payload if error.payload else error.message,

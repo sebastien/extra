@@ -162,17 +162,16 @@ class Application:
 	def process(
 		self, request: HTTPRequest
 	) -> Union[HTTPResponse, Coroutine[Any, HTTPResponse, Any]]:
-		route, params = self.dispatcher.match(
-			request.method or "GET", request.path or "/"
-		)
-		if route:
-			handler = route.handler
-			if not handler:
-				raise RuntimeError(f"Route has no handler defined: {route}")
-			bound = EmptyParams if params is True or not params else params
-			return handler(request, bound)
-		else:
+		route, params = self.dispatcher.match(request.method, request.path)
+		if route is None:
 			return self.onRouteNotFound(request)
+		handler = route.handler
+		if not handler:
+			raise RuntimeError(f"Route has no handler defined: {route}")
+		# EmptyParams / {} / True → no kwargs (static routes)
+		if params is True or not params:
+			return handler(request, EmptyParams)
+		return handler(request, params)
 
 	def mount(self, service: Service, prefix: Union[str, None] = None) -> Service:
 		if service.isMounted:

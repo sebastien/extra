@@ -60,7 +60,9 @@ class LineParser:
 	def flush(self) -> bytes | None:
 		return self.line
 
-	def feed(self, chunk: bytes, start: int = 0) -> tuple[bytes | None, int]:
+	def feed(
+		self, chunk: bytes | bytearray | memoryview, start: int = 0
+	) -> tuple[bytes | None, int]:
 		"""Returns the matching line and how many bytes were read in chunk from start. When line is None,
 		then the whole chunk has been processed."""
 		# Fast path: no buffered prefix, parse directly from incoming chunk to
@@ -68,7 +70,8 @@ class LineParser:
 		if not self.buffer:
 			end = chunk.find(self.eol, start)
 			if end != -1:
-				self.line = chunk[start:end]
+				raw = chunk[start:end]
+				self.line = raw if isinstance(raw, bytes) else bytes(raw)
 				self.offset = 0
 				return self.line, (end - start) + self.eolsize
 			self.buffer += chunk[start:]

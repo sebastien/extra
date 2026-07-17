@@ -534,20 +534,20 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
 		body: HTTPBodyIO | HTTPBodyBlob | None = None,
 		protocol: str = "HTTP/1.1",
 	):
-		super().__init__()
-		self.method: str = method
-		self.path: str = path
-		self.query: dict[str, str] | None = query
-		self.protocol: str = protocol
-		self.origin: str | None = None
-		self.sessionToken: str | None = None
-		self.sessionData: dict[str, Any] | None = None
-		self.session: dict[str, Any] | None = None
-		self.clearSession: bool = False
-		self._headers: HTTPHeaders = headers
-		self._body: HTTPBodyIO | HTTPBodyBlob | None = body
-		self._reader: HTTPBodyReader | None
-		self._onClose: Callable[[HTTPRequest], None] | None = None
+		# No super().__init__ — ResponseFactory is a pure ABC mixin
+		self.method = method
+		self.path = path
+		self.query = query
+		self.protocol = protocol
+		self.origin = None
+		self.sessionToken = None
+		self.sessionData = None
+		self.session = None
+		self.clearSession = False
+		self._headers = headers
+		self._body = body
+		self._reader = None
+		self._onClose = None
 
 	@property
 	def headers(self) -> dict[str, str]:
@@ -932,24 +932,52 @@ class HTTPResponse:
 
 	def head(self) -> bytes:
 		"""Serializes the head as a payload."""
+		out = bytearray()
+		self.renderInto(out, withBody=False)
+		return bytes(out)
+
+	def wire(self) -> bytes:
+		"""Serializes head + blob body as one buffer (single write path)."""
+		out = bytearray()
+		self.renderInto(out, withBody=True)
+		return bytes(out)
+
+	def renderInto(self, out: bytearray, *, withBody: bool = True) -> bytearray:
+		"""Append head (and optional blob body) into `out`. Avoids extra copies
+		when the caller can send the bytearray directly."""
 		status: int = self.status
+		payload: bytes = b""
+		hdrs = self.headers.headers
 		if self.body is None:
 			if status == 200:
 				status = 204
-			elif "Content-Length" not in self.headers.headers:
+			elif "Content-Length" not in hdrs:
 				self.setHeader("Content-Length", 0)
-		elif "Content-Length" not in self.headers.headers:
+				hdrs = self.headers.headers
+		elif "Content-Length" not in hdrs:
 			if isinstance(self.body, HTTPBodyBlob):
 				self.setHeader("Content-Length", self.body.length)
+				hdrs = self.headers.headers
 			elif isinstance(self.body, HTTPBodyFile):
 				self.setHeader("Content-Length", self.body.length)
+				hdrs = self.headers.headers
+		if withBody and isinstance(self.body, HTTPBodyBlob):
+			payload = self.body.payload
 		message: str = self.message or HTTP_STATUS[status]
-		# Build directly as bytes to avoid join + encode overhead
-		parts: list[bytes] = [f"{self.protocol} {status} {message}\r\n".encode("ascii")]
-		for k, v in self.headers.headers.items():
-			parts.append(f"{k}: {v}\r\n".encode("ascii"))
-		parts.append(b"\r\n")
-		return b"".join(parts)
+		# Status line
+		if self.protocol == "HTTP/1.1" and status == 200 and message == "OK":
+			out.extend(b"HTTP/1.1 200 OK\r\n")
+		else:
+			out.extend(f"{self.protocol} {status} {message}\r\n".encode("ascii"))
+		for k, v in hdrs.items():
+			out.extend(k.encode("ascii"))
+			out.extend(b": ")
+			out.extend(v.encode("ascii") if isinstance(v, str) else str(v).encode("ascii"))
+			out.extend(b"\r\n")
+		out.extend(b"\r\n")
+		if payload:
+			out.extend(payload)
+		return out
 
 	def onClose(
 		self, callback: Callable[["HTTPResponse"], None] | None

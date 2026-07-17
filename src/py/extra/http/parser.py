@@ -1,4 +1,4 @@
-from typing import Iterator, Iterable, ClassVar, Literal, NamedTuple
+from typing import Iterator, Iterable, ClassVar, Literal, NamedTuple, Union
 from ..utils.io import LineParser, EOL
 from .model import (
 	HTTPRequest,
@@ -12,6 +12,26 @@ from .model import (
 	TLSHandshake,
 	headername,
 )
+
+# Readable buffer types accepted by feed() (server may pass memoryview).
+TChunk = Union[bytes, bytearray, memoryview]
+
+# Shared empty query for requests without '?'; callers must not mutate.
+EmptyQuery: dict[str, str] = {}
+# Shared empty body for no-body requests (GET/HEAD/…); do not mutate.
+_EMPTY_BODY: HTTPBodyBlob = HTTPBodyBlob(b"", 0)
+
+# Common header names — avoid headername() capitalize path on hot requests.
+_COMMON_HEADERS: dict[str, str] = {
+	"host": "Host",
+	"connection": "Connection",
+	"content-length": "Content-Length",
+	"content-type": "Content-Type",
+	"accept": "Accept",
+	"accept-encoding": "Accept-Encoding",
+	"user-agent": "User-Agent",
+	"transfer-encoding": "Transfer-Encoding",
+}
 
 
 class MessageParser:
@@ -35,7 +55,9 @@ class MessageParser:
 		self.skipping = 0
 		return self
 
-	def feed(self, chunk: bytes, start: int = 0) -> tuple[bool | None, int]:
+	def feed(
+		self, chunk: TChunk, start: int = 0
+	) -> tuple[bool | None, int]:
 		n = len(chunk)
 		available = n - start
 		# FIXME: In the future, we may want to do something with the TLS
@@ -56,9 +78,9 @@ class MessageParser:
 		else:
 			line, read = self.line.feed(chunk, start)
 			if line:
-				# NOTE: This is safe
-				ln = line.decode("ascii")
-				if ln.startswith("HTTP/"):
+				# Parse from bytes to avoid an intermediate full-line str when possible
+				if len(line) >= 5 and line.startswith(b"HTTP/"):
+					ln = line.decode("ascii")
 					protocol, status, message = ln.split(" ", 2)
 					self.value = HTTPResponseLine(
 						protocol,
@@ -66,13 +88,33 @@ class MessageParser:
 						message,
 					)
 				else:
-					i = ln.find(" ")
-					j = ln.rfind(" ")
-					p: list[str] = ln[i + 1 : j].split("?", 1)
-					# NOTE: There may be junk before the method name
-					self.value = HTTPRequestLine(
-						ln[0:i], p[0], p[1] if len(p) > 1 else "", ln[j + 1 :]
-					)
+					i = line.find(b" ")
+					j = line.rfind(b" ")
+					if i == -1 or j == -1 or j <= i:
+						ln = line.decode("ascii")
+						i = ln.find(" ")
+						j = ln.rfind(" ")
+						rest = ln[i + 1 : j]
+						q = rest.find("?")
+						self.value = HTTPRequestLine(
+							ln[0:i],
+							rest if q == -1 else rest[:q],
+							"" if q == -1 else rest[q + 1 :],
+							ln[j + 1 :],
+						)
+					else:
+						target = line[i + 1 : j]
+						q = target.find(b"?")
+						if q == -1:
+							path_b, query_b = target, b""
+						else:
+							path_b, query_b = target[:q], target[q + 1 :]
+						self.value = HTTPRequestLine(
+							line[:i].decode("ascii"),
+							path_b.decode("ascii"),
+							query_b.decode("ascii") if query_b else "",
+							line[j + 1 :].decode("ascii"),
+						)
 				return True, read
 			else:
 				return None, read
@@ -106,7 +148,7 @@ class HeadersParser:
 		return self
 
 	def feed(
-		self, chunk: bytes, start: int = 0
+		self, chunk: TChunk, start: int = 0
 	) -> tuple[str | Literal[False] | None, int]:
 		"""Feeds data from chunk, starting at `start` offset. Returns
 		a value and the next start offset. When the value is `None`, no
@@ -133,7 +175,7 @@ class HeadersParser:
 						self.contentLength = None
 				elif h == "content-type":
 					self.contentType = v
-				n: str = headername(h)
+				n: str = _COMMON_HEADERS.get(h) or headername(h)
 				self.headers[n] = v
 				# We have parsed a full header, we return True
 				return n, read
@@ -174,7 +216,7 @@ class BodyEOSParser:
 		self.data = None
 		return self
 
-	def feed(self, chunk: bytes, start: int = 0) -> tuple[bytes | None, int]:
+	def feed(self, chunk: TChunk, start: int = 0) -> tuple[bytes | None, int]:
 		line, read = self.line.feed(chunk, start)
 		if line is None:
 			return None, read
@@ -204,7 +246,7 @@ class BodyRestParser:
 		self.buffer.clear()
 		return self
 
-	def feed(self, chunk: bytes, start: int = 0) -> tuple[bool | None, int]:
+	def feed(self, chunk: TChunk, start: int = 0) -> tuple[bool | None, int]:
 		self.buffer += chunk[start:]
 		# We read everything and put it in the bugger
 		return True, len(chunk) - start
@@ -236,7 +278,7 @@ class BodyLengthParser:
 		self.data.clear()
 		return self
 
-	def feed(self, chunk: bytes, start: int = 0) -> tuple[bool, int]:
+	def feed(self, chunk: TChunk, start: int = 0) -> tuple[bool, int]:
 		size: int = len(chunk)
 		left: int = size - start
 		to_read: int = min(
@@ -258,7 +300,7 @@ class HTTPParser:
 
 	METHOD_HAS_BODY: ClassVar[set[str]] = {"POST", "PUT", "PATCH"}
 
-	def __init__(self) -> None:
+	def __init__(self, *, requestsOnly: bool = False) -> None:
 		self.message: MessageParser = MessageParser()
 		self.headers: HeadersParser = HeadersParser()
 		# FIXME: Not sure we need body EOS parser anymore.
@@ -276,11 +318,107 @@ class HTTPParser:
 			None
 		)
 		self.requestHeaders: HTTPHeaders | None = None
+		# When True, skip yielding HTTPRequestLine/HTTPHeaders (server hot path).
+		self.requestsOnly: bool = requestsOnly
 
-	def feed(self, chunk: bytes) -> Iterator[HTTPAtom]:
+	def _tryFastRequest(
+		self, chunk: bytes, offset: int
+	) -> tuple[HTTPRequest | None, int]:
+		"""Fast path: one complete no-body request starting at offset.
+
+		Returns (request, next_offset) or (None, offset) to fall back.
+		Single ascii decode of the head block — much cheaper than the
+		state-machine parser for keep-alive GETs that arrive in one read.
+		"""
+		if self.parser is not self.message:
+			return None, offset
+		# Reject TLS ClientHello
+		if offset < len(chunk) and chunk[offset] == 0x16:
+			return None, offset
+		end = chunk.find(b"\r\n\r\n", offset)
+		if end == -1:
+			return None, offset
+		# One decode for the entire request head
+		try:
+			text = chunk[offset:end].decode("ascii")
+		except UnicodeDecodeError:
+			return None, offset
+		lines = text.split("\r\n")
+		if not lines:
+			return None, offset
+		line0 = lines[0]
+		sp1 = line0.find(" ")
+		sp2 = line0.rfind(" ")
+		if sp1 == -1 or sp2 <= sp1:
+			return None, offset
+		method = line0[:sp1]
+		# Methods with bodies need Content-Length framing → slow path
+		if method in self.METHOD_HAS_BODY:
+			return None, offset
+		target = line0[sp1 + 1 : sp2]
+		protocol = line0[sp2 + 1 :]
+		q = target.find("?")
+		if q == -1:
+			path = target
+			query: dict[str, str] = EmptyQuery
+		else:
+			path = target[:q]
+			query = parseQuery(target[q + 1 :])
+		headers_map: dict[str, str] = {}
+		content_type: str | None = None
+		content_length: int | None = None
+		for i in range(1, len(lines)):
+			line = lines[i]
+			if not line:
+				continue
+			colon = line.find(":")
+			if colon == -1:
+				continue
+			h = line[:colon].lower().strip()
+			v = line[colon + 1 :].strip()
+			if h == "content-length":
+				try:
+					content_length = int(v)
+				except ValueError:
+					content_length = None
+				if content_length:
+					# Body bytes follow — slow path owns framing
+					return None, offset
+			elif h == "content-type":
+				content_type = v
+			# Prefer the common-header table; fall back to headername()
+			name = _COMMON_HEADERS.get(h)
+			headers_map[name if name is not None else headername(h)] = v
+		req = HTTPRequest(
+			method=method,
+			path=path,
+			query=query,
+			headers=HTTPHeaders(headers_map, content_type, content_length),
+			protocol=protocol,
+			body=_EMPTY_BODY,
+		)
+		self.requestLine = None
+		self.requestHeaders = None
+		self.parser = self.message
+		return req, end + 4
+
+	def feed(self, chunk: TChunk) -> Iterator[HTTPAtom]:
 		# FIXME: Should write to a buffer
+		# Ensure we work with bytes for find/slice hot path
+		if not isinstance(chunk, bytes):
+			chunk = bytes(chunk)
 		size: int = len(chunk)
 		offset: int = 0
+		# Fast path: complete no-body requests (Hello World / static GETs)
+		if self.requestsOnly and self.parser is self.message:
+			while offset < size:
+				req, next_off = self._tryFastRequest(chunk, offset)
+				if req is None:
+					break
+				yield req
+				offset = next_off
+			if offset >= size:
+				return
 		while offset < size:
 			# The expectation here is that when we feed a chunk and it's
 			# partially read, we don't need to re-feed it again. The underlying
@@ -296,14 +434,15 @@ class HTTPParser:
 					self.requestLine = line
 					self.requestHeaders = None
 					if line is not None:
-						yield line
+						if not self.requestsOnly:
+							yield line
 						self.parser = self.headers
 				elif self.parser is self.headers:
 					if ln is False:
 						# We've parsed the headers
 						headers = self.headers.flush()
 						self.requestHeaders = headers
-						if headers is not None:
+						if headers is not None and not self.requestsOnly:
 							yield headers
 						# If it's a method with no expected body, we skip the parsing
 						# of the body.
@@ -325,7 +464,7 @@ class HTTPParser:
 								headers=headers or HTTPHeaders({}),
 								protocol=line.protocol,
 								# FIXME: Is there remaining content?
-								body=HTTPBodyBlob(b"", 0),
+								body=_EMPTY_BODY,
 							)
 							self.parser = self.message.reset()
 						elif (
@@ -356,7 +495,7 @@ class HTTPParser:
 										query=parseQuery(line.query),
 										headers=headers,
 										protocol=line.protocol,
-										body=HTTPBodyBlob(b"", 0),
+										body=_EMPTY_BODY,
 									)
 									self.parser = self.message.reset()
 							else:
@@ -470,9 +609,9 @@ def formatCookie(cookies: Iterable[CookieValue]) -> str:
 
 
 def parseQuery(text: str) -> dict[str, str]:
-	res: dict[str, str] = {}
 	if not text:
-		return res
+		return EmptyQuery
+	res: dict[str, str] = {}
 	for item in text.split("&"):
 		if not item:
 			continue
