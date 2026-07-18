@@ -55,9 +55,7 @@ class MessageParser:
 		self.skipping = 0
 		return self
 
-	def feed(
-		self, chunk: TChunk, start: int = 0
-	) -> tuple[bool | None, int]:
+	def feed(self, chunk: TChunk, start: int = 0) -> tuple[bool | None, int]:
 		n = len(chunk)
 		available = n - start
 		# FIXME: In the future, we may want to do something with the TLS

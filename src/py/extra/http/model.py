@@ -539,15 +539,15 @@ class HTTPRequest(ResponseFactory["HTTPResponse"]):
 		self.path = path
 		self.query = query
 		self.protocol = protocol
-		self.origin = None
-		self.sessionToken = None
-		self.sessionData = None
-		self.session = None
+		self.origin: str | None = None
+		self.sessionToken: str | None = None
+		self.sessionData: dict[str, Any] | None = None
+		self.session: dict[str, Any] | None = None
 		self.clearSession = False
 		self._headers = headers
 		self._body = body
-		self._reader = None
-		self._onClose = None
+		self._reader: HTTPBodyReader | None = None
+		self._onClose: Callable[[HTTPRequest], None] | None = None
 
 	@property
 	def headers(self) -> dict[str, str]:
@@ -972,7 +972,9 @@ class HTTPResponse:
 		for k, v in hdrs.items():
 			out.extend(k.encode("ascii"))
 			out.extend(b": ")
-			out.extend(v.encode("ascii") if isinstance(v, str) else str(v).encode("ascii"))
+			out.extend(
+				v.encode("ascii") if isinstance(v, str) else str(v).encode("ascii")
+			)
 			out.extend(b"\r\n")
 		out.extend(b"\r\n")
 		if payload:

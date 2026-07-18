@@ -20,6 +20,7 @@ from .http.parser import HTTPParser
 from .model import Application, Service, mount
 from .utils.codec import BytesTransform
 from .utils.limits import LimitType, unlimit
+from .utils.logging import configure as configureLogging
 from .utils.logging import debug, event, exception, info, logged, warning, error
 
 
@@ -353,7 +354,10 @@ class AIOSocketServer:
 						req_count += 1
 						# headers dict uses Kebab-Case keys from the parser
 						hdrs = req._headers.headers
-						if req.protocol == "HTTP/1.0" or hdrs.get("Connection") == "close":
+						if (
+							req.protocol == "HTTP/1.0"
+							or hdrs.get("Connection") == "close"
+						):
 							keep_alive = False
 						res = await cls.SendResponse(req, app, writer)
 						if res:
@@ -539,6 +543,9 @@ class AIOSocketServer:
 
 		# Manage server state
 		state = ServerState()
+		if options.logRequests:
+			# Request events must not wait for a potentially slow stderr consumer.
+			configureLogging(asynchronous=True)
 		# Registers handlers for signals and exception (so that we log them). Note
 		# that we'll get a `set_wakeup_fd only works in main thread of the main interpreter`
 		# when this is not run out of the main thread.

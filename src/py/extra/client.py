@@ -648,6 +648,7 @@ async def request(
 	slow_logged = False
 	long_response_task = None
 	if log_long_response is not None and log_long_response > 0:
+
 		async def log_long_response_pending() -> None:
 			nonlocal slow_logged
 			await asyncio.sleep(log_long_response)

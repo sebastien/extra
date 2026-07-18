@@ -834,9 +834,7 @@ class Dispatcher:
 			if staticRoute is not None:
 				maxDyn = self._maxDynamicPriority.get(method)
 				# Inline handler.priority to avoid Route.priority property call.
-				staticPri = (
-					staticRoute.handler.priority if staticRoute.handler else 0
-				)
+				staticPri = staticRoute.handler.priority if staticRoute.handler else 0
 				if maxDyn is None or staticPri >= maxDyn:
 					return (staticRoute, EmptyParams)
 		# Compiled regex: single match for all dynamic routes

@@ -28,7 +28,9 @@ class MemorySessionBackend:
 
 
 class SessionStore:
-	def __init__(self, backend: SessionBackend | None = None, *, ttl: int = 86400 * 30) -> None:
+	def __init__(
+		self, backend: SessionBackend | None = None, *, ttl: int = 86400 * 30
+	) -> None:
 		self.backend = backend or MemorySessionBackend()
 		self.ttl = ttl
 

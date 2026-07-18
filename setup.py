@@ -113,7 +113,6 @@ setup(
 	],
 	python_requires=">=3.8",
 	install_requires=[
-		"mypy-extensions",
 		"toon-python",
 	],
 	extras_require={

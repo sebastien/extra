@@ -67,6 +67,8 @@ class LineParser:
 		then the whole chunk has been processed."""
 		# Fast path: no buffered prefix, parse directly from incoming chunk to
 		# avoid copying whole chunks in the common case.
+		if isinstance(chunk, memoryview):
+			chunk = chunk.tobytes()
 		if not self.buffer:
 			end = chunk.find(self.eol, start)
 			if end != -1:

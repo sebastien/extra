@@ -32,7 +32,12 @@ if "http://localhost" not in strict or "http://localhost:8000" not in strict:
 	print("FAIL: origins aliases should generate concrete origin values")
 	failed += 1
 
-wild = origins(host=["localhost", "little.onl"], port=[ANY], subdomain=[None, ANY], scheme=["http", "https"])
+wild = origins(
+	host=["localhost", "little.onl"],
+	port=[ANY],
+	subdomain=[None, ANY],
+	scheme=["http", "https"],
+)
 if not matches("http://localhost:*", "http://localhost:9999"):
 	print("FAIL: wildcard port pattern should match explicit ports")
 	failed += 1

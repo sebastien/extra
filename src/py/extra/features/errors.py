@@ -10,7 +10,7 @@ def json(
 	status: int = 500,
 	statusByType: dict[type[BaseException], int] | None = None,
 	payload: Callable[[BaseException, int], Any] | None = None,
-	) -> Callable[[HTTPRequest, BaseException], HTTPResponse]:
+) -> Callable[[HTTPRequest, BaseException], HTTPResponse]:
 	def transform(request: HTTPRequest, error: BaseException) -> HTTPResponse:
 		code = status
 		if statusByType:

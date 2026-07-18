@@ -182,7 +182,7 @@ check-strict: setup
 			echo "ERR $$item"; \
 		done; \
 		echo "EOS FAIL $$summary"; \
-		echo "Some mypy strict checks failed, but continuing..."; \
+		exit 1; \
 	else \
 		echo "EOS OK $$summary"; \
 	fi

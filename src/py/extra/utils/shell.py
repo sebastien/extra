@@ -7,10 +7,25 @@ from contextlib import contextmanager
 from fcntl import F_GETFL, F_SETFL, fcntl
 from pathlib import Path
 from select import select
-from typing import ContextManager, Iterator, Optional, Union
-from typing import Any
+from typing import (
+	Any,
+	Callable,
+	ContextManager,
+	Iterator,
+	Optional,
+	TYPE_CHECKING,
+	TypeVar,
+	Union,
+)
 
-from mypy_extensions import mypyc_attr
+if TYPE_CHECKING:
+	from mypy_extensions import mypyc_attr
+else:
+	T = TypeVar("T")
+
+	def mypyc_attr(**_: Any) -> Callable[[T], T]:
+		"""Provide the mypyc decorator without a runtime dependency."""
+		return lambda value: value
 
 # --
 # # Shell Utils

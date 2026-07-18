@@ -47,7 +47,11 @@ def matches(pattern: str, origin: str) -> bool:
 		return False
 	if not _matchPart(parsed_pattern.hostname, parsed_origin.hostname):
 		return False
-	pattern_port = parsed_pattern.netloc.rsplit(":", 1)[1] if ":" in parsed_pattern.netloc else None
+	pattern_port = (
+		parsed_pattern.netloc.rsplit(":", 1)[1]
+		if ":" in parsed_pattern.netloc
+		else None
+	)
 	origin_port = parsed_origin.port
 	if pattern_port == ANY:
 		return True
@@ -79,7 +83,13 @@ def origins(
 	seen: set[str] = set()
 	for host_name in hosts:
 		for subdomain_name in subdomains:
-			name = f"{ANY}.{host_name}" if subdomain_name == ANY else f"{subdomain_name}.{host_name}" if subdomain_name else host_name
+			name = (
+				f"{ANY}.{host_name}"
+				if subdomain_name == ANY
+				else f"{subdomain_name}.{host_name}"
+				if subdomain_name
+				else host_name
+			)
 			for scheme_name in schemes:
 				for port_value in ports:
 					value = f"{scheme_name}://{name}{f':{port_value}' if port_value is not None else ''}"

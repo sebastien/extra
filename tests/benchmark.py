@@ -337,9 +337,13 @@ def print_summary(
 		return
 
 	print("Server (req/s, higher is better):")
-	summaryMode = SUMMARY_MODE if SUMMARY_MODE in modes else (modes[0] if modes else None)
+	summaryMode = (
+		SUMMARY_MODE if SUMMARY_MODE in modes else (modes[0] if modes else None)
+	)
 	if summaryMode:
-		print(f"  mode: {MODE_SHORT.get(summaryMode, summaryMode)} — {MODE_LABELS[summaryMode]}")
+		print(
+			f"  mode: {MODE_SHORT.get(summaryMode, summaryMode)} — {MODE_LABELS[summaryMode]}"
+		)
 	for row in serverRows:
 		if row.status == "SKIP":
 			print(f"  {row.name:<12} SKIP  {row.note}")
@@ -652,9 +656,7 @@ def build_server_list(mypyc_ok: bool, pure_path: Path) -> list[ServerBench]:
 		)
 	servers.extend(
 		[
-			ServerBench(
-				"socket", (sys.executable, str(TESTS / "benchmark-socket.py"))
-			),
+			ServerBench("socket", (sys.executable, str(TESTS / "benchmark-socket.py"))),
 			ServerBench(
 				"aiosocket",
 				(sys.executable, str(TESTS / "benchmark-aiosocket.py")),
