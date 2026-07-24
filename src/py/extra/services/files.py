@@ -13,7 +13,7 @@ from ..http.model import HTTPRequest, HTTPResponse
 from ..model import Service
 from ..utils.files import FileEntry, contentType, resolveSuffix
 from ..utils.htmpl import H, Node, html, raw
-from ..utils.mhtml import parseMHTML
+from ..utils.mhtml import MHTMLDocument, parseMHTML
 from ..utils.json import json as jsonBytes
 from ..utils.shell import shell
 from ..utils.ssi import processSSI
@@ -63,7 +63,6 @@ li {
 """
 
 
-# TODO: Support caching
 class FileTranslator:
 	@abstractmethod
 	def match(self, base: Path, path: str, local: Path) -> Path | None: ...
@@ -231,6 +230,7 @@ class FileService(Service):
 			MarkdownTranslator(),
 			SSITranslator(stripIncludedDoctype=stripSSIDOCTYPE),
 		]
+		self._mhtmlCache: dict[Path, tuple[int, int, MHTMLDocument]] = {}
 		self.canWrite: Callable[[HTTPRequest, Path], bool] = lambda r, p: False
 		self.canRead: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
 		self.canDelete: Callable[[HTTPRequest, Path], bool] = lambda r, p: True
@@ -301,7 +301,7 @@ class FileService(Service):
 	def respondMHTML(
 		self, request: HTTPRequest, routePath: str, path: Path
 	) -> HTTPResponse:
-		doc = parseMHTML(path)
+		doc = self.getMHTML(path)
 		payload = doc.render(routePath)
 		return request.respondText(payload, contentType="text/html")
 
@@ -314,7 +314,7 @@ class FileService(Service):
 			return None
 		if local_path.suffix.lower() not in (".mhtml", ".mht"):
 			return None
-		doc = parseMHTML(local_path)
+		doc = self.getMHTML(local_path)
 		asset = doc.byVirtualPath.get(subpath.strip("/"))
 		if not asset:
 			if fallback := doc.fallbackURL(subpath):
@@ -323,6 +323,17 @@ class FileService(Service):
 		return request.respond(
 			doc.payloadFor(asset, route), contentType=asset.contentType
 		)
+
+	def getMHTML(self, path: Path) -> MHTMLDocument:
+		"""Parse an MHTML file once until its size or mtime changes."""
+		stat = path.stat()
+		stamp = (stat.st_mtime_ns, stat.st_size)
+		cached = self._mhtmlCache.get(path)
+		if cached and cached[:2] == stamp:
+			return cached[2]
+		doc = parseMHTML(path)
+		self._mhtmlCache[path] = (*stamp, doc)
+		return doc
 
 	def splitMHTMLAssetPath(self, path: str) -> tuple[str, str] | None:
 		clean = path.strip("/")
