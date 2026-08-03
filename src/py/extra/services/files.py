@@ -19,9 +19,9 @@ from ..utils.shell import shell
 from ..utils.ssi import processSSI
 
 try:
-	import paml.engine as _paml_engine  # type: ignore[import-untyped]
+	from paml import parse as _parse_paml  # type: ignore[import-untyped]
 except ImportError:
-	_paml_engine = None
+	_parse_paml = None
 
 try:
 	import pcss as _pcss  # type: ignore[import-untyped]
@@ -91,7 +91,7 @@ class PAMLTranslator(FileTranslator):
 	"""Transforms PAML files to HTML, XML or JavaScript."""
 
 	def match(self, base: Path, path: str, local: Path) -> Path | None:
-		if _paml_engine is None:
+		if _parse_paml is None:
 			return None
 		name = local.name
 		return (
@@ -111,7 +111,7 @@ class PAMLTranslator(FileTranslator):
 		else:
 			fmt, ctype = "html", "text/html"
 		source = path.read_text(encoding="utf8")
-		return ctype, _paml_engine.parse(source, path=str(path), format=fmt)
+		return ctype, _parse_paml(source, path=str(path), format=fmt)
 
 
 class PCSSTranslator(FileTranslator):
@@ -361,6 +361,51 @@ class FileService(Service):
 			rangeHeader=request.header("Range"),
 		)
 
+	def respondGzipFallback(
+		self, request: HTTPRequest, requestedPath: Path, gzipPath: Path
+	) -> HTTPResponse:
+		return request.respondFile(
+			gzipPath,
+			headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"},
+			contentType=self.guessContentType(requestedPath),
+			ifNoneMatch=request.header("If-None-Match"),
+			ifModifiedSince=request.header("If-Modified-Since"),
+			ifRange=request.header("If-Range"),
+			rangeHeader=request.header("Range"),
+		)
+
+	def resolveGzipFallback(
+		self, request: HTTPRequest, path: str
+	) -> tuple[Path, Path] | None:
+		accept_encoding = request.header("Accept-Encoding")
+		if not accept_encoding:
+			return None
+		gzip_quality: float | None = None
+		wildcard_quality: float | None = None
+		for value in accept_encoding.split(","):
+			parts = value.strip().lower().split(";")
+			encoding = parts[0].strip()
+			quality = 1.0
+			for parameter in parts[1:]:
+				name, separator, raw_quality = parameter.strip().partition("=")
+				if name == "q" and separator:
+					try:
+						quality = float(raw_quality)
+					except ValueError:
+						quality = 0.0
+			if encoding == "gzip":
+				gzip_quality = quality
+			elif encoding == "*":
+				wildcard_quality = quality
+		if (gzip_quality if gzip_quality is not None else wildcard_quality or 0.0) <= 0:
+			return None
+
+		requested = Path(os.path.abspath(self.root.joinpath(path)))
+		if not requested.is_relative_to(self.root) or requested.exists():
+			return None
+		gzip_path = requested.parent / f"{requested.name}.gz"
+		return (requested, gzip_path) if gzip_path.is_file() else None
+
 	def guessContentType(self, path: Path) -> str | None:
 		if path.name == "importmap.json":
 			return "application/importmap+json"
@@ -496,10 +541,17 @@ class FileService(Service):
 				else response
 			)
 		local_path, redirect_path = self.resolvePath(path)
+		gzip_fallback = (
+			self.resolveGzipFallback(request, path) if local_path is None else None
+		)
 		if redirect_path:
 			response = request.redirect(redirect_path)
 		elif not (local_path and self.canRead(request, local_path)):
-			response = request.notAuthorized(f"Not authorized to access path: {path}")
+			if gzip_fallback and self.canRead(request, gzip_fallback[1]):
+				response = self.respondGzipFallback(request, *gzip_fallback)
+				response.body = None
+			else:
+				response = request.notAuthorized(f"Not authorized to access path: {path}")
 		elif not local_path.exists():
 			response = request.notFound()
 		else:
@@ -537,10 +589,16 @@ class FileService(Service):
 				else response
 			)
 		local_path, redirect_path = self.resolvePath(path)
+		gzip_fallback = (
+			self.resolveGzipFallback(request, path) if local_path is None else None
+		)
 		if redirect_path:
 			response = request.redirect(redirect_path)
 		elif not (local_path and self.canRead(request, local_path)):
-			response = request.notAuthorized(f"Not authorized to access path: {path}")
+			if gzip_fallback and self.canRead(request, gzip_fallback[1]):
+				response = self.respondGzipFallback(request, *gzip_fallback)
+			else:
+				response = request.notAuthorized(f"Not authorized to access path: {path}")
 		elif not local_path.exists():
 			response = request.notFound()
 		else:
@@ -632,7 +690,7 @@ class FileService(Service):
 
 		# Finally return the original path if it exists, or None if it doesn't
 		if (
-			_paml_engine is not None
+			_parse_paml is not None
 			and not local_path.exists()
 			and original_path.suffix.lower() in (".html", ".htm")
 		):
