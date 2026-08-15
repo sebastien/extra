@@ -103,6 +103,34 @@ Lifecycle flow:
 Service(s) -> Application.mount(...) -> app.start() -> request dispatch -> app.stop()
 ```
 
+### WebDAV Filesystems
+
+`extra.features.webdav.WebDAVService` exposes an async backend as a read-only,
+browsable WebDAV tree. Backends implement `stat(path)`, `iterChildren(path)`,
+and `open(path, start?, end?)`; they can represent local files, object stores,
+archives, or generated data. The included `MemoryWebDAVBackend` is useful for
+tests and virtual trees.
+
+```python
+from extra.features.webdav import MemoryWebDAVBackend, WebDAVService
+
+backend = MemoryWebDAVBackend({"/docs/readme.txt": "Hello"})
+service = WebDAVService(backend, prefix="dav")
+```
+
+The service supports `OPTIONS`, `PROPFIND` (`Depth: 0`, `1`, and `infinity`),
+`GET`, and `HEAD`, including live DAV properties, ETags, conditional requests,
+and single byte ranges. Pass `canRead(request, path, resource)` to apply a
+per-resource policy; it composes with Extra session, bearer-token, and
+capability middleware. `maxDepth` and `maxResources` bound infinite discovery.
+
+Backends are unified: a backend can expose reads, mutations, and custom
+properties through one object. `WebDAVCapabilities` controls the advertised
+methods. `MemoryWebDAVBackend(..., writable=True)` enables `PUT`, `MKCOL`,
+`DELETE`, `COPY`, `MOVE`, and `PROPPATCH`; the default remains read-only.
+Custom properties use `WebDAVProperty` and are serialized by the service, so
+backends do not need to construct XML.
+
 ## Request and Response Model
 
 ### `HTTPRequest`

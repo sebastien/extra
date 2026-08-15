@@ -26,6 +26,7 @@ TIMEOUTS: dict[str, float] = {
 }
 DAEMON_EXAMPLES: set[str] = {
 	"api.py",
+	"auth.py",
 	"capture.py",
 	"cors.py",
 	"fileserver.py",
@@ -36,6 +37,7 @@ DAEMON_EXAMPLES: set[str] = {
 	"ssi.py",
 	"sse.py",
 	"upload.py",
+	"webdav.py",
 	"watch.py",
 	"workers.py",
 }

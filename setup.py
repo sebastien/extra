@@ -42,6 +42,8 @@ _MYPYC_UNSUPPORTED = {
 	"server.py",  # AIO body classes; keeps socket loop pure
 	"services/watch.py",
 	"features/auth.py",
+	"features/webdav/memory.py",
+	"features/webdav/service.py",
 }
 
 

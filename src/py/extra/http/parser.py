@@ -442,15 +442,20 @@ class HTTPParser:
 						self.requestHeaders = headers
 						if headers is not None and not self.requestsOnly:
 							yield headers
-						# If it's a method with no expected body, we skip the parsing
-						# of the body.
+						# A Content-Length always frames a body, regardless of the HTTP
+						# method. WebDAV's PROPFIND commonly carries an XML body.
 						if (
 							self.requestLine
 							and isinstance(self.requestLine, HTTPRequestLine)
 							and (
-								self.requestLine.method not in self.METHOD_HAS_BODY
-								or headers
-								and headers.contentLength == 0
+								headers
+								and (
+									headers.contentLength == 0
+									or (
+										headers.contentLength is None
+										and self.requestLine.method not in self.METHOD_HAS_BODY
+									)
+								)
 							)
 						):
 							line = self.requestLine

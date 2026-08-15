@@ -62,7 +62,7 @@ class Auth(Service):
 			"authorization": f"Bearer {signed}",
 		}
 
-	@expose(GET="profile/{user}")
+	@expose(GET="profile/{user:word}")
 	async def profile(self, request: HTTPRequest, user: str) -> HTTPResponse:
 		"""Validates the bearer token and returns the requested profile."""
 		auth = self.auth.resolve(request)

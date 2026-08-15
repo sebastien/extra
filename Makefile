@@ -48,7 +48,7 @@ setup:
 	@$(UV) tool install twine 2>/dev/null || true
 	@$(UV) tool install ruff 2>/dev/null || true
 	@$(UV) tool install build 2>/dev/null || true
-	@$(UV) pip install setuptools 2>/dev/null || true
+	@$(UV) pip install --system setuptools 2>/dev/null || true
 	@echo "=== Setup complete ==="
 
 .PHONY: prep
@@ -63,12 +63,15 @@ run:
 test:
 	@echo "=== Running unit tests ==="
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-io-line.py
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-features-templates.py
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-parser-http.py >/dev/null && echo "✓ unit-parser-http.py"
 	@echo "=== Running routing tests ==="
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-routing-prefix.py >/dev/null && echo "✓ unit-routing-prefix.py"
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-routing-route.py >/dev/null && echo "✓ unit-routing-route.py"
 	@echo "=== Running request parsing tests ==="
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-request-parsing.py >/dev/null && echo "✓ unit-request-parsing.py"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-features-webdav.py >/dev/null && echo "✓ unit-features-webdav.py"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-services-watch.py >/dev/null && echo "✓ unit-services-watch.py"
 	@echo "=== Running server tests (dynamic port fallback) ==="
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-server-dynamic_port_check.py --mode complete --server tests/case-complete-read-extra.py && echo "✓ case-complete-read-extra.py (dynamic port server test)"
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-server-dynamic_port_check.py --mode partial --server tests/case-partial-read-extra.py && echo "✓ case-partial-read-extra.py (dynamic port server test)"
