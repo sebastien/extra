@@ -11,6 +11,7 @@ from xml.etree import ElementTree as ET  # nosec B405: guarded input parsing and
 
 from ...decorators import on
 from ...http.model import HTTPRequest, HTTPResponse
+from ...http.status import HTTP_STATUS
 from ...model import Service
 from ...utils.files import parseRange
 from .model import (
@@ -26,6 +27,7 @@ from .model import (
 DAV = "DAV:"
 ET.register_namespace("D", DAV)
 ReadPolicy = Callable[[HTTPRequest, str, WebDAVResource], bool | Any]
+WritePolicy = Callable[[HTTPRequest, str, WebDAVResource | None], bool | Any]
 
 
 def _path(path: str) -> str | None:
@@ -53,14 +55,14 @@ class WebDAVService(Service):
 		*,
 		prefix: str | None = None,
 		canRead: ReadPolicy | None = None,
-		canWrite: ReadPolicy | None = None,
+		canWrite: WritePolicy | None = None,
 		maxDepth: int = 64,
 		maxResources: int = 10_000,
 	) -> None:
 		super().__init__(prefix=prefix)
 		self.backend = backend
 		self.canRead: ReadPolicy = canRead or (lambda request, path, resource: True)
-		self.canWrite: ReadPolicy = canWrite or (lambda request, path, resource: True)
+		self.canWrite: WritePolicy = canWrite or (lambda request, path, resource: True)
 		self.maxDepth = maxDepth
 		self.maxResources = maxResources
 
@@ -83,18 +85,25 @@ class WebDAVService(Service):
 		if clean is None or clean == "/":
 			return "", None, request.error(409, "Invalid resource path")
 		resource = await self.backend.stat(clean)
-		if resource is not None:
-			allowed = self.canWrite(request, clean, resource)
-			if isawaitable(allowed):
-				allowed = await allowed
-			if not allowed:
-				return clean, resource, request.notAuthorized()
+		allowed = self.canWrite(request, clean, resource)
+		if isawaitable(allowed):
+			allowed = await allowed
+		if not allowed:
+			return clean, resource, request.notAuthorized()
 		if match := request.header("If-Match"):
-			if resource is None or (resource.etag and resource.etag not in match):
+			if resource is None or not self._matchesETag(match, resource.etag):
 				return clean, resource, request.empty(status=412)
 		if request.header("If-None-Match") == "*" and resource is not None:
 			return clean, resource, request.empty(status=412)
 		return clean, resource, None
+
+	@staticmethod
+	def _matchesETag(header: str, etag: str | None) -> bool:
+		if header.strip() == "*":
+			return True
+		return etag is not None and any(
+			item.strip() == etag for item in header.split(",")
+		)
 
 	def _unsupported(self, request: HTTPRequest, capability: bool) -> HTTPResponse | None:
 		return None if capability else request.error(405, headers={"Allow": self.allow})
@@ -105,6 +114,21 @@ class WebDAVService(Service):
 		if not destination:
 			return None
 		parsed = urlparse(destination)
+		if parsed.netloc:
+			try:
+				destinationHost = parsed.hostname
+				destinationPort = parsed.port
+				host = urlparse("//" + (request.header("Host") or ""))
+				requestHost = host.hostname
+				requestPort = host.port
+			except ValueError:
+				return None
+			if destinationHost is None or requestHost is None:
+				return None
+			if destinationHost.casefold() != requestHost.casefold():
+				return None
+			if destinationPort is not None and destinationPort != requestPort:
+				return None
 		return _path(parsed.path)
 
 	async def start(self) -> None:
@@ -139,7 +163,9 @@ class WebDAVService(Service):
 		return bool(allowed)
 
 	def _headers(self, resource: WebDAVResource) -> dict[str, str]:
-		headers = {"Accept-Ranges": "bytes"}
+		headers: dict[str, str] = {}
+		if self.capabilities.ranges:
+			headers["Accept-Ranges"] = "bytes"
 		if resource.etag:
 			headers["Etag"] = resource.etag
 		if modified := _httpdate(resource.modifiedAt):
@@ -153,7 +179,7 @@ class WebDAVService(Service):
 				"Allow": self.allow,
 				"Dav": "1",
 				"Ms-Author-Via": "DAV",
-				"Accept-Ranges": "bytes",
+				**({"Accept-Ranges": "bytes"} if self.capabilities.ranges else {}),
 			}
 		)
 
@@ -181,14 +207,31 @@ class WebDAVService(Service):
 		end: int | None = None
 		status = 200
 		if rangeHeader := request.header("Range"):
+			if not self.capabilities.ranges:
+				return request.error(416, headers=headers)
 			if resource.size is None or (parsed := parseRange(rangeHeader, resource.size)) is None:
 				headers["Content-Range"] = f"bytes */{resource.size or 0}"
 				return request.empty(status=416, headers=headers)
 			start, end = parsed
 			status = 206
 			headers["Content-Range"] = f"bytes {start}-{end}/{resource.size}"
-		content = await self.backend.open(resource.path, start, end)
 		length = (end - start + 1) if start is not None and end is not None else resource.size
+		if request.method == "HEAD":
+			return request.respond(
+				None,
+				status=status,
+				contentType=resource.contentType or "application/octet-stream",
+				contentLength=length,
+				headers=headers,
+			)
+		content = await self.backend.open(resource.path, start, end)
+		if not isinstance(content, bytes):
+			streamSource = content
+
+			async def stream() -> AsyncIterator[bytes]:
+				async for chunk in streamSource:
+					yield chunk
+			content = stream()
 		response = request.respond(
 			content,
 			status=status,
@@ -196,8 +239,6 @@ class WebDAVService(Service):
 			contentLength=length,
 			headers=headers,
 		)
-		if request.method == "HEAD":
-			response.body = None
 		return response
 
 	@on(PUT="/{path:any}")
@@ -240,6 +281,11 @@ class WebDAVService(Service):
 		resource = await self.backend.stat(clean)
 		if resource is not None:
 			return request.error(405, headers={"Allow": self.allow})
+		allowed = self.canWrite(request, clean, None)
+		if isawaitable(allowed):
+			allowed = await allowed
+		if not allowed:
+			return request.notAuthorized()
 		try:
 			created = await self.backend.makeCollection(clean)
 		except WebDAVConflict as error:
@@ -283,6 +329,12 @@ class WebDAVService(Service):
 			return request.error(400, "Missing or invalid Destination")
 		if destination == source or destination.startswith(source.rstrip("/") + "/"):
 			return request.error(403, "Cannot copy a resource into itself")
+		destinationResource = await self.backend.stat(destination)
+		allowed = self.canWrite(request, destination, destinationResource)
+		if isawaitable(allowed):
+			allowed = await allowed
+		if not allowed:
+			return request.notAuthorized()
 		overwrite = (request.header("Overwrite") or "T").upper() == "T"
 		try:
 			method = self.backend.move if move else self.backend.copy
@@ -315,6 +367,11 @@ class WebDAVService(Service):
 		resource = await self.backend.stat(clean)
 		if resource is None:
 			return request.notFound()
+		allowed = self.canWrite(request, clean, resource)
+		if isawaitable(allowed):
+			allowed = await allowed
+		if not allowed:
+			return request.notAuthorized()
 		try:
 			root = self._parseXML(await request.body.load() or b"")
 			if root.tag != f"{{{DAV}}}propertyupdate":
@@ -332,7 +389,7 @@ class WebDAVService(Service):
 						if operation.tag.endswith("remove")
 						else WebDAVProperty(item.tag, item.text or "")
 					)
-			await self.backend.setProperties(clean, changes)
+			statuses = await self.backend.setProperties(clean, changes)
 		except ValueError:
 			return request.error(400, "Invalid PROPPATCH body")
 		except WebDAVUnsupported:
@@ -340,11 +397,18 @@ class WebDAVService(Service):
 		responseRoot = ET.Element(f"{{{DAV}}}multistatus")
 		responseElement = ET.SubElement(responseRoot, f"{{{DAV}}}response")
 		ET.SubElement(responseElement, f"{{{DAV}}}href").text = self._resourceHref(resource)
-		propstat = ET.SubElement(responseElement, f"{{{DAV}}}propstat")
-		prop = ET.SubElement(propstat, f"{{{DAV}}}prop")
+		byStatus: dict[int, list[str]] = {}
 		for name in changes:
-			ET.SubElement(prop, name)
-		ET.SubElement(propstat, f"{{{DAV}}}status").text = "HTTP/1.1 200 OK"
+			status = statuses.get(name, 500)
+			byStatus.setdefault(status, []).append(name)
+		for status, names in byStatus.items():
+			propstat = ET.SubElement(responseElement, f"{{{DAV}}}propstat")
+			prop = ET.SubElement(propstat, f"{{{DAV}}}prop")
+			for name in names:
+				ET.SubElement(prop, name)
+			ET.SubElement(propstat, f"{{{DAV}}}status").text = (
+				f"HTTP/1.1 {status} {HTTP_STATUS.get(status, 'Error')}"
+			)
 		return request.respond(
 			ET.tostring(responseRoot, encoding="utf-8", xml_declaration=True),
 			status=207,

@@ -26,6 +26,9 @@ assert Template("${for:items}${this}${empty}empty${end}").apply(
 assert Template("${for:items}${this}${empty}empty${end}").apply({"items": []}) == "empty"
 assert Template("${with:user}${name}${end}").apply({"user": {"name": "Grace"}}) == "Grace"
 assert Template("${T:en=Hello,fr=Bonjour}").apply({}, locale="fr") == "Bonjour"
+assert Template("${if:value==null}yes${else}no${end}").apply(
+	{"value": None}
+) == "yes"
 
 try:
 	Template("${missing}").apply({}, strict=True)
@@ -38,6 +41,13 @@ try:
 	raise AssertionError("unclosed blocks should be rejected")
 except TemplateSyntaxError:
 	pass
+
+for invalid in ("${for:items|nope}${end}", "${if:yes}${elif}"):
+	try:
+		Template(invalid)
+		raise AssertionError("invalid template should be rejected")
+	except TemplateSyntaxError:
+		pass
 
 context = {"items": [{"name": "a"}]}
 Template("${for:items}${this.name}${end}").apply(context)

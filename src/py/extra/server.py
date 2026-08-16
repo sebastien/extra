@@ -1,4 +1,5 @@
 import asyncio
+import ssl
 import socket
 import threading
 from dataclasses import dataclass
@@ -60,6 +61,7 @@ class ServerOptions(NamedTuple):
 	logRequests: bool = LOG_REQUESTS
 	condition: Union[Callable[[], bool], None] = None
 	stopSignals: bool = True
+	sslContext: ssl.SSLContext | None = None
 
 
 OPTIONS: ServerOptions = ServerOptions()
@@ -191,6 +193,57 @@ class AIOSocketBodyWriter(HTTPBodyWriter):
 		return True
 
 
+class AIOStreamBodyReader(HTTPBodyReader):
+	"""Body reader for asyncio streams, used by the TLS backend."""
+
+	def __init__(self, reader: asyncio.StreamReader, size: int = 64_000) -> None:
+		super().__init__(None)
+		self.reader = reader
+		self.size = size
+
+	async def _read(
+		self, timeout: float | None = 1.0, size: int | None = None
+	) -> bytes | None:
+		read = self.reader.read(size or self.size)
+		chunk = await read if timeout is None else await asyncio.wait_for(read, timeout)
+		return chunk or None
+
+
+class AIOStreamBodyWriter(HTTPBodyWriter):
+	"""Body writer for asyncio streams, used by the TLS backend."""
+
+	def __init__(self, writer: asyncio.StreamWriter) -> None:
+		super().__init__(None)
+		self.writer = writer
+
+	async def writeResponse(self, response: HTTPResponse) -> bool:
+		body = response.body
+		if isinstance(body, HTTPBodyBlob):
+			self.writer.write(response.wire())
+			await self.writer.drain()
+			return False
+		await self.write(response.head())
+		await self.write(body)
+		return False
+
+	async def _writeBytes(
+		self, chunk: Union[bytes, None, Literal[False]], more: bool = False
+	) -> bool:
+		if chunk is not None and chunk is not False:
+			self.writer.write(chunk)
+			await self.writer.drain()
+		return False
+
+	async def _writeFile(
+		self,
+		path: Path,
+		start: int | None = None,
+		end: int | None = None,
+		size: int = 64_000,
+	) -> bool:
+		return await super()._writeFile(path, start, end, size)
+
+
 # NOTE: Based on benchmarks, this gave the best performance.
 # NOTE: The caveat is that getting SSL directly is a pain, so we may
 # need to rewrite this a bit.
@@ -201,10 +254,12 @@ class AIOSocketServer:
 	async def OnRequest(
 		cls,
 		app: Application,
-		client: socket.socket,
+		client: socket.socket | None,
 		*,
 		loop: asyncio.AbstractEventLoop,
 		options: ServerOptions,
+		streamReader: asyncio.StreamReader | None = None,
+		streamWriter: asyncio.StreamWriter | None = None,
 	) -> None:
 		"""Asynchronous worker, processing a socket in the context
 		of an application."""
@@ -229,8 +284,14 @@ class AIOSocketServer:
 			# TODO: Should reuse parser, reader, writer as these will be on the
 			# hotpath for requests. These should all be recyclable.
 			parser: HTTPParser = HTTPParser(requestsOnly=True)
-			reader: AIOSocketBodyReader = AIOSocketBodyReader(client, loop)
-			writer: AIOSocketBodyWriter = AIOSocketBodyWriter(client, loop)
+			if streamReader is not None and streamWriter is not None:
+				readBody: AIOStreamBodyReader | AIOSocketBodyReader = AIOStreamBodyReader(streamReader)
+				writer: HTTPBodyWriter = AIOStreamBodyWriter(streamWriter)
+			else:
+				assert client is not None
+				readBody = AIOSocketBodyReader(client, loop)
+				writer = AIOSocketBodyWriter(client, loop)
+			clientId = f"{id(client if client is not None else streamWriter):x}"
 			# Cache once per connection — log level rarely changes mid-flight.
 			do_debug: bool = logged(debug)
 
@@ -246,7 +307,10 @@ class AIOSocketServer:
 				idle_handle = None
 				status = HTTPProcessingStatus.Timeout
 				try:
-					client.shutdown(socket.SHUT_RDWR)
+					if client is not None:
+						client.shutdown(socket.SHUT_RDWR)
+					elif streamWriter is not None:
+						streamWriter.close()
 				except OSError:
 					pass
 
@@ -278,7 +342,13 @@ class AIOSocketServer:
 						idle_handle = loop.call_later(
 							keep_alive_timeout, _on_idle_timeout
 						)
-					n = await loop.sock_recv_into(client, buffer)
+					if client is not None:
+						n = await loop.sock_recv_into(client, buffer)
+					else:
+						assert streamReader is not None
+						data = await streamReader.read(size)
+						n = len(data)
+						buffer[:n] = data
 					_cancel_idle()
 					read_count += n
 				except OSError:
@@ -311,7 +381,7 @@ class AIOSocketServer:
 				if do_debug:
 					debug(
 						"Reading Requests(s)",
-						Client=f"{id(client):x}",
+						Client=clientId,
 						Read=n,
 						Iteration=iteration,
 						Count=req_count,
@@ -323,7 +393,7 @@ class AIOSocketServer:
 						status = atom
 						warning(
 							"Bad HTTP request format",
-							Client=f"{id(client):x}",
+							Client=clientId,
 							Iteration=iteration,
 						)
 						await writer.write(SERVER_BAD_REQUEST)
@@ -342,13 +412,13 @@ class AIOSocketServer:
 						body = req._body
 						if isinstance(body, HTTPBodyBlob):
 							if body.remaining:
-								req._reader = reader
-								reader.setLimit(
+								req._reader = readBody
+								readBody.setLimit(
 									options.maxBodyBytes, alreadyRead=body.length
 								)
 						else:
-							req._reader = reader
-							reader.setLimit(options.maxBodyBytes, alreadyRead=0)
+							req._reader = readBody
+							readBody.setLimit(options.maxBodyBytes, alreadyRead=0)
 						if options.logRequests:
 							event(req.method, req.path)
 						req_count += 1
@@ -423,7 +493,14 @@ class AIOSocketServer:
 				idle_handle.cancel()
 			# NOTE: The above loop takes care of keep alive, so we always close
 			# the connection on exit.
-			client.close()
+			if client is not None:
+				client.close()
+			elif streamWriter is not None:
+				streamWriter.close()
+				try:
+					await streamWriter.wait_closed()
+				except OSError:
+					pass
 
 	@staticmethod
 	async def SendResponse(
@@ -498,6 +575,26 @@ class AIOSocketServer:
 
 		return res
 
+	@staticmethod
+	def _configureRuntime(
+		options: ServerOptions, loop: asyncio.AbstractEventLoop, state: ServerState
+	) -> None:
+		if options.logRequests:
+			configureLogging(asynchronous=True)
+		if (
+			options.stopSignals
+			and threading.current_thread() is threading.main_thread()
+		):
+			loop.add_signal_handler(SIGINT, lambda: state.stop())
+			loop.add_signal_handler(SIGTERM, lambda: state.stop())
+		loop.set_exception_handler(state.onException)
+
+	@staticmethod
+	async def _cancelTasks(tasks: set[asyncio.Task[None]]) -> None:
+		for task in tasks:
+			task.cancel()
+		await asyncio.gather(*tasks, return_exceptions=True)
+
 	@classmethod
 	async def Serve(
 		cls,
@@ -505,6 +602,9 @@ class AIOSocketServer:
 		options: ServerOptions = ServerOptions(),
 	) -> None:
 		"""Main server coroutine."""
+		if options.sslContext is not None:
+			await cls.ServeTLS(app, options)
+			return
 		server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		server.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
@@ -541,21 +641,8 @@ class AIOSocketServer:
 		except RuntimeError:
 			loop = asyncio.new_event_loop()
 
-		# Manage server state
 		state = ServerState()
-		if options.logRequests:
-			# Request events must not wait for a potentially slow stderr consumer.
-			configureLogging(asynchronous=True)
-		# Registers handlers for signals and exception (so that we log them). Note
-		# that we'll get a `set_wakeup_fd only works in main thread of the main interpreter`
-		# when this is not run out of the main thread.
-		if (
-			options.stopSignals
-			and threading.current_thread() is threading.main_thread()
-		):
-			loop.add_signal_handler(SIGINT, lambda: state.stop())
-			loop.add_signal_handler(SIGTERM, lambda: state.stop())
-		loop.set_exception_handler(state.onException)
+		cls._configureRuntime(options, loop, state)
 
 		info(
 			"Extra AIO Server listening",
@@ -594,9 +681,62 @@ class AIOSocketServer:
 
 		finally:
 			server.close()
-			for task in tasks:
-				task.cancel()
-			await asyncio.gather(*tasks, return_exceptions=True)
+			await cls._cancelTasks(tasks)
+
+	@classmethod
+	async def ServeTLS(cls, app: Application, options: ServerOptions) -> None:
+		"""Serve HTTPS using asyncio's SSL-aware stream transport."""
+		state = ServerState()
+		loop = asyncio.get_running_loop()
+		cls._configureRuntime(options, loop, state)
+		tasks: set[asyncio.Task[None]] = set()
+
+		async def onClient(
+			reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+		) -> None:
+			task = asyncio.create_task(
+				cls.OnRequest(
+					app,
+					None,
+					loop=loop,
+					options=options,
+					streamReader=reader,
+					streamWriter=writer,
+				)
+			)
+			tasks.add(task)
+			task.add_done_callback(tasks.discard)
+
+		port = options.port
+		server: asyncio.AbstractServer | None = None
+		lastError: OSError | None = None
+		for candidate in range(options.port, options.port + 5):
+			try:
+				server = await asyncio.start_server(
+					onClient,
+					host=options.host,
+					port=candidate,
+					backlog=options.backlog,
+					ssl=options.sslContext,
+				)
+				port = candidate
+				if candidate != options.port:
+					info(f"Found alternate available port: {port}")
+				break
+			except OSError as e:
+				lastError = e
+		if server is None:
+			error(f"Unable to bind to {options.host}:{options.port}, aborting.", "HOSTPORTERR")
+			assert lastError is not None
+			raise lastError
+		info("Extra HTTPS Server listening", Host=options.host, Port=port)
+		try:
+			while state.isRunning and (not options.condition or options.condition()):
+				await asyncio.sleep(options.polling or 1.0)
+		finally:
+			server.close()
+			await server.wait_closed()
+			await cls._cancelTasks(tasks)
 
 
 def run(
@@ -610,6 +750,7 @@ def run(
 	logRequests: bool = OPTIONS.logRequests,
 	keepalive: float = OPTIONS.keepalive,
 	maxBodyBytes: int = OPTIONS.maxBodyBytes,
+	sslContext: ssl.SSLContext | None = None,
 ) -> None:
 	"""High level function to run the server."""
 	unlimit(LimitType.Files)
@@ -623,6 +764,7 @@ def run(
 		logRequests=logRequests,
 		keepalive=keepalive,
 		maxBodyBytes=maxBodyBytes,
+		sslContext=sslContext,
 	)
 	app = mount(*components)
 	try:

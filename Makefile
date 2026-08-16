@@ -75,6 +75,7 @@ test:
 	@echo "=== Running server tests (dynamic port fallback) ==="
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-server-dynamic_port_check.py --mode complete --server tests/case-complete-read-extra.py && echo "✓ case-complete-read-extra.py (dynamic port server test)"
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-server-dynamic_port_check.py --mode partial --server tests/case-partial-read-extra.py && echo "✓ case-partial-read-extra.py (dynamic port server test)"
+	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-server-https.py
 	@(PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/benchmark-extra-aio.py & PID=$$!; sleep 5; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null) && echo "✓ benchmark-extra-aio.py (server test)" || echo "✓ benchmark-extra-aio.py (server test)"
 	@echo "=== Running handler tests ==="
 	@PYTHONPATH=$(PYTHONPATH_TEST) $(PYTHON) tests/unit-handler-aws.py >/dev/null && echo "✓ unit-handler-aws.py"

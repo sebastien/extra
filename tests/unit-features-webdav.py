@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace as dataclassReplace
 from xml.etree import ElementTree as ET
 
 from extra.features.webdav import (
@@ -20,6 +21,54 @@ backend = MemoryWebDAVBackend(
 	collections=["/empty"],
 )
 service = WebDAVService(backend, canRead=lambda request, path, resource: path != "/private")
+
+
+class AsyncChunks:
+	def __init__(self, payload: bytes):
+		self.payload = payload
+
+	def __aiter__(self):
+		return self
+
+	async def __anext__(self):
+		if self.payload:
+			chunk, self.payload = self.payload[:2], self.payload[2:]
+			return chunk
+		raise StopAsyncIteration
+
+
+class StreamingBackend(MemoryWebDAVBackend):
+	async def open(self, path, start=None, end=None):
+		return AsyncChunks(await super().open(path, start, end))
+
+
+streaming = WebDAVService(StreamingBackend({"/stream.txt": "stream"}))
+streamed = asyncio.run(streaming.read(request("GET", "/stream.txt"), "stream.txt"))
+
+
+async def loadStream():
+	chunks = []
+	async for chunk in streamed.body.stream:
+		if isinstance(chunk, bytes):
+			chunks.append(chunk)
+	return b"".join(chunks)
+
+
+assert asyncio.run(loadStream()) == b"stream"
+
+
+class HeadBackend(MemoryWebDAVBackend):
+	opened = False
+
+	async def open(self, path, start=None, end=None):
+		self.opened = True
+		return await super().open(path, start, end)
+
+
+headBackend = HeadBackend({"/head.txt": "head"})
+headService = WebDAVService(headBackend)
+asyncio.run(headService.read(request("HEAD", "/head.txt"), "head.txt"))
+assert not headBackend.opened
 
 options = service.options(request("OPTIONS", "/"))
 assert options.status == 200
@@ -102,6 +151,16 @@ put = asyncio.run(writable.put(request("PUT", "/new.txt", body="new content"), "
 assert put.status == 201
 assert asyncio.run(writableBackend.open("/new.txt")) == b"new content"
 
+protected = WebDAVService(
+	writableBackend, canWrite=lambda request, path, resource: path != "/protected"
+)
+assert asyncio.run(
+	protected.put(request("PUT", "/protected", body="nope"), "protected")
+).status == 403
+assert asyncio.run(
+	protected.makeCollection(request("MKCOL", "/protected"), "protected")
+).status == 403
+
 replace = asyncio.run(
 	writable.put(
 		request("PUT", "/new.txt", {"If-Match": put.getHeader("Etag") or ""}, "changed"),
@@ -109,6 +168,12 @@ replace = asyncio.run(
 	)
 )
 assert replace.status == 204
+wildcard = asyncio.run(
+	writable.put(
+		request("PUT", "/new.txt", {"If-Match": "*"}, "changed again"), "new.txt"
+	)
+)
+assert wildcard.status == 204
 
 collection = asyncio.run(writable.makeCollection(request("MKCOL", "/folder"), "folder"))
 assert collection.status == 201
@@ -119,6 +184,28 @@ copy = asyncio.run(
 	)
 )
 assert copy.status == 201
+absoluteCopy = asyncio.run(
+	writable.copy(
+		request(
+			"COPY",
+			"/source.txt",
+			{"Destination": "HTTP://LOCALHOST/folder/absolute.txt", "Host": "localhost"},
+		),
+		"source.txt",
+	)
+)
+assert absoluteCopy.status == 201
+foreignCopy = asyncio.run(
+	writable.copy(
+		request(
+			"COPY",
+			"/source.txt",
+			{"Destination": "http://other.test/folder/foreign.txt", "Host": "localhost"},
+		),
+		"source.txt",
+	)
+)
+assert foreignCopy.status == 400
 move = asyncio.run(
 	writable.move(
 		request("MOVE", "/folder/copy.txt", {"Destination": "/folder/moved.txt"}),
@@ -127,6 +214,26 @@ move = asyncio.run(
 )
 assert move.status == 201
 assert asyncio.run(writableBackend.open("/folder/moved.txt")) == b"source"
+
+destinationProtected = WebDAVService(
+	writableBackend,
+	canWrite=lambda request, path, resource: path != "/protected.txt",
+)
+assert asyncio.run(
+	destinationProtected.copy(
+		request("COPY", "/source.txt", {"Destination": "/protected.txt"}),
+		"source.txt",
+	)
+).status == 403
+
+noRangesBackend = MemoryWebDAVBackend({"/range.txt": "abcdef"})
+noRangesBackend.capabilities = dataclassReplace(noRangesBackend.capabilities, ranges=False)
+noRanges = WebDAVService(noRangesBackend)
+noRangeResponse = asyncio.run(
+	noRanges.read(request("GET", "/range.txt", {"Range": "bytes=1-2"}), "range.txt")
+)
+assert noRangeResponse.status == 416
+assert noRangeResponse.getHeader("Accept-Ranges") is None
 
 proppatchBody = (
 	'<propertyupdate xmlns="DAV:"><set><prop>'
@@ -138,6 +245,25 @@ proppatch = asyncio.run(
 	writable.proppatch(request("PROPPATCH", "/new.txt", body=proppatchBody), "new.txt")
 )
 assert proppatch.status == 207
+copiedProperties = asyncio.run(
+	writable.copy(
+		request("COPY", "/new.txt", {"Destination": "/folder/props.txt"}),
+		"new.txt",
+	)
+)
+assert copiedProperties.status == 201
+copiedListing = asyncio.run(
+	writable.propfind(
+		request(
+			"PROPFIND",
+			"/folder/props.txt",
+			{"Depth": "0"},
+			'<propfind xmlns="DAV:"><prop><x:color xmlns:x="urn:test"/></prop></propfind>',
+		),
+		"folder/props.txt",
+	)
+)
+assert b">blue<" in copiedListing.body.raw
 custom = asyncio.run(
 	writable.propfind(
 		request(

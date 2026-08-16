@@ -158,8 +158,10 @@ class MemoryWebDAVBackend:
 		for child in self._children(path):
 			self.resources.pop(child, None)
 			self.contents.pop(child, None)
+			self.properties.pop(child, None)
 		self.resources.pop(path, None)
 		self.contents.pop(path, None)
+		self.properties.pop(path, None)
 
 	async def copy(
 		self, source: str, destination: str, *, overwrite: bool = True
@@ -191,6 +193,8 @@ class MemoryWebDAVBackend:
 			)
 			if old in self.contents:
 				self.contents[new] = self.contents[old]
+			if old in self.properties:
+				self.properties[new] = dict(self.properties[old])
 		return self.resources[destination]
 
 	async def move(

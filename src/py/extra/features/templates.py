@@ -236,6 +236,8 @@ class Template:
 				body, index, stop = cls._parse_block(tokens, index, {"elif", "else", "end"})
 				branches.append((argument, body))
 				while stop == "elif":
+					if index >= len(tokens) or not isinstance(tokens[index], str):
+						raise TemplateSyntaxError("Invalid elif directive")
 					condition = tokens[index]
 					index += 1
 					condition_name, _, condition_arg = condition.partition(":")
@@ -255,7 +257,10 @@ class Template:
 			if name == "for":
 				parts = argument.split("|", 1)
 				loop_name = parts[0].strip()
-				limit = int(parts[1]) if len(parts) == 2 and parts[1].strip() else None
+				try:
+					limit = int(parts[1]) if len(parts) == 2 and parts[1].strip() else None
+				except ValueError as error:
+					raise TemplateSyntaxError(f"Invalid for limit: {argument}") from error
 				body, index, stop = cls._parse_block(tokens, index, {"empty", "end"})
 				empty: list[Any] = []
 				if stop == "empty":
@@ -388,15 +393,17 @@ class Template:
 		right = self._literal(match.group(3) or "")
 		operator = match.group(2)
 		try:
-			comparisons: dict[str, bool] = {
-				"==": left == right,
-				"!=": left != right,
-				">": left > right,
-				"<": left < right,
-				">=": left >= right,
-				"<=": left <= right,
-			}
-			return comparisons[operator]
+			if operator == "==":
+				return bool(left == right)
+			if operator == "!=":
+				return bool(left != right)
+			if operator == ">":
+				return bool(left > right)
+			if operator == "<":
+				return bool(left < right)
+			if operator == ">=":
+				return bool(left >= right)
+			return bool(left <= right)
 		except TypeError:
 			return False
 

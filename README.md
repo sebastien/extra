@@ -20,6 +20,7 @@ Key Features:
 -   AWS Lambda/Serverless support
 -   Streaming reads and writes, lazy decoding and encoding
 -   Embedded asynchronous HTTP/1 development server
+-   Optional local HTTPS development mode
 -   No dependency, only requires Python stdlib
 -   Good baseline performance, competitive with FastAPI (5-10K RPS on average hardware)
 
@@ -88,3 +89,17 @@ app = run(HelloWorld())
 -   `examples/upload.py`: File upload handling with HTML forms
 -   `examples/watch.py`: Filesystem change streaming via SSE using CLI watchers
 -   `examples/workers.py`: Background task processing with asyncio queues
+
+# Local HTTPS
+
+Install [mkcert](https://github.com/FiloSottile/mkcert), then start the file
+server with:
+
+``` sh
+extra --https
+```
+
+Extra creates a trusted certificate for `localhost`, `127.0.0.1`, and `::1` in
+`.extra/certs/` (or the directory specified by `EXTRA_CERT_DIR`). Certificates can also be supplied explicitly with
+`--certfile` and `--keyfile`. Let's Encrypt is intended for publicly reachable
+domains and is not used for localhost certificates.
