@@ -5,7 +5,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from signal import SIGINT, SIGTERM
-from typing import Any, Callable, Coroutine, Literal, NamedTuple, Union
+from typing import Any, Callable, Coroutine, Literal, NamedTuple, Union, cast
 
 from .config import HOST, LOG_REQUESTS, PORT
 from .http.model import (
@@ -39,6 +39,32 @@ class ServerState:
 		e = context.get("exception")
 		if e:
 			exception(e)
+
+	def onResponseError(
+		self,
+		request: HTTPRequest,
+		status: int,
+		message: str | None,
+		contentType: str | None = None,
+		contentLength: int | None = None,
+	) -> None:
+		"""Logs a client or server error response without reading its body."""
+		context: dict[str, str | int] = {
+			"Method": request.method,
+			"Path": request.path,
+			"Status": status,
+		}
+		if request.query:
+			context["Query"] = str(request.query)
+		if contentType is not None:
+			context["ContentType"] = contentType
+		if contentLength is not None:
+			context["ContentLength"] = contentLength
+		logMessage = f"HTTP {status} {message or 'Unknown status'}"
+		if status < 500:
+			warning(logMessage, **cast(Any, context))
+		else:
+			error(logMessage, status, **cast(Any, context))
 
 
 class ServerOptions(NamedTuple):
@@ -258,6 +284,7 @@ class AIOSocketServer:
 		*,
 		loop: asyncio.AbstractEventLoop,
 		options: ServerOptions,
+		state: ServerState,
 		streamReader: asyncio.StreamReader | None = None,
 		streamWriter: asyncio.StreamWriter | None = None,
 	) -> None:
@@ -392,7 +419,8 @@ class AIOSocketServer:
 					elif atom is HTTPProcessingStatus.BadFormat:
 						status = atom
 						warning(
-							"Bad HTTP request format",
+							"HTTP 400 Bad Request",
+							Status=400,
 							Client=clientId,
 							Iteration=iteration,
 						)
@@ -404,6 +432,12 @@ class AIOSocketServer:
 						req = atom
 						cl = req.contentLength
 						if cl is not None and cl > options.maxBodyBytes:
+							state.onResponseError(
+								req,
+								413,
+								"Payload Too Large",
+								contentLength=cl,
+							)
 							await writer.write(SERVER_PAYLOAD_TOO_LARGE)
 							res_count += 1
 							keep_alive = False
@@ -429,7 +463,7 @@ class AIOSocketServer:
 							or hdrs.get("Connection") == "close"
 						):
 							keep_alive = False
-						res = await cls.SendResponse(req, app, writer)
+						res = await cls.SendResponse(req, app, writer, state)
 						if res:
 							res_count += 1
 							if res.shouldClose:
@@ -507,6 +541,7 @@ class AIOSocketServer:
 		request: HTTPRequest,
 		app: Application,
 		writer: HTTPBodyWriter,
+		state: ServerState,
 	) -> Union[HTTPResponse, None]:
 		"""Processes the request within the application and sends a response using the given writer."""
 		req: HTTPRequest = request
@@ -529,6 +564,14 @@ class AIOSocketServer:
 			await writer.write(SERVER_NOCONTENT)
 			sent = True
 		else:
+			if 400 <= res.status < 600:
+				state.onResponseError(
+					req,
+					res.status,
+					res.message,
+					contentType=res.headers.contentType,
+					contentLength=res.headers.contentLength,
+				)
 			try:
 				# AIOSocketBodyWriter: render into reused buffer → one sendall
 				if isinstance(writer, AIOSocketBodyWriter):
@@ -545,6 +588,7 @@ class AIOSocketServer:
 				# Client did an early close
 				sent = True
 			except HTTPBodyLimitError:
+				state.onResponseError(req, 413, "Payload Too Large")
 				await writer.write(SERVER_PAYLOAD_TOO_LARGE)
 				sent = True
 			except Exception as e:
@@ -563,11 +607,7 @@ class AIOSocketServer:
 				exception(e)
 		if req and not sent:
 			try:
-				warning(
-					"Server did not send a response",
-					Method=req.method,
-					Path=req.path,
-				)
+				state.onResponseError(req, 500, "Internal Server Error")
 				await writer.write(SERVER_ERROR)
 			except Exception as e:
 				exception(e)
@@ -664,9 +704,11 @@ class AIOSocketServer:
 					else:
 						client = res[0]
 					# NOTE: Should do something with the tasks
-					task = loop.create_task(
-						cls.OnRequest(app, client, loop=loop, options=options)
-					)
+						task = loop.create_task(
+							cls.OnRequest(
+								app, client, loop=loop, options=options, state=state
+							)
+						)
 					tasks.add(task)
 					task.add_done_callback(tasks.discard)
 				except asyncio.TimeoutError:
@@ -700,6 +742,7 @@ class AIOSocketServer:
 					None,
 					loop=loop,
 					options=options,
+					state=state,
 					streamReader=reader,
 					streamWriter=writer,
 				)
