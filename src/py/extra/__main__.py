@@ -42,7 +42,7 @@ def _httpsContext(
 		keyfilePath = certdir / "localhost-key.pem"
 		certdir.mkdir(parents=True, exist_ok=True)
 		if not certfilePath.exists() or not keyfilePath.exists():
-				subprocess.run(  # nosec B603: executable is resolved from PATH, arguments are fixed
+			subprocess.run(  # nosec B603: executable is resolved from PATH, arguments are fixed
 				[
 					mkcert,
 					"-cert-file",
@@ -91,7 +91,7 @@ def main(args: list[str] | None = None) -> None:
 		"--port",
 		dest="port",
 		type=int,
-		default=8000,
+		default=os.environ.get("PORT", "8000"),
 		help="Port to bind",
 	)
 	parser.add_argument(

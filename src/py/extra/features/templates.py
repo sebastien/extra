@@ -192,7 +192,9 @@ class Template:
 		self.nodes = self._parse(self.source)
 		self.code = self.nodes
 
-	def addPostProcessor(self, processor: Callable[[str, Template], str] | None) -> Template:
+	def addPostProcessor(
+		self, processor: Callable[[str, Template], str] | None
+	) -> Template:
 		if processor:
 			self.postProcessors.append(processor)
 		return self
@@ -233,7 +235,9 @@ class Template:
 				raise TemplateSyntaxError(f"Unexpected ${{{token}}}")
 			if name in {"if"}:
 				branches: list[tuple[str | None, list[Any]]] = []
-				body, index, stop = cls._parse_block(tokens, index, {"elif", "else", "end"})
+				body, index, stop = cls._parse_block(
+					tokens, index, {"elif", "else", "end"}
+				)
 				branches.append((argument, body))
 				while stop == "elif":
 					if index >= len(tokens) or not isinstance(tokens[index], str):
@@ -243,7 +247,9 @@ class Template:
 					condition_name, _, condition_arg = condition.partition(":")
 					if condition_name.strip() != "elif":
 						raise TemplateSyntaxError("Invalid elif directive")
-					body, index, stop = cls._parse_block(tokens, index, {"elif", "else", "end"})
+					body, index, stop = cls._parse_block(
+						tokens, index, {"elif", "else", "end"}
+					)
 					branches.append((condition_arg.strip(), body))
 				if stop == "else":
 					index += 1
@@ -258,9 +264,13 @@ class Template:
 				parts = argument.split("|", 1)
 				loop_name = parts[0].strip()
 				try:
-					limit = int(parts[1]) if len(parts) == 2 and parts[1].strip() else None
+					limit = (
+						int(parts[1]) if len(parts) == 2 and parts[1].strip() else None
+					)
 				except ValueError as error:
-					raise TemplateSyntaxError(f"Invalid for limit: {argument}") from error
+					raise TemplateSyntaxError(
+						f"Invalid for limit: {argument}"
+					) from error
 				body, index, stop = cls._parse_block(tokens, index, {"empty", "end"})
 				empty: list[Any] = []
 				if stop == "empty":
@@ -292,7 +302,9 @@ class Template:
 		attributes: list[str] = []
 		if ":" in name:
 			name, attributes_text = name.split(":", 1)
-			attributes = [item.strip() for item in attributes_text.split(",") if item.strip()]
+			attributes = [
+				item.strip() for item in attributes_text.split(",") if item.strip()
+			]
 		formats = formats_text.split("+") if separator else []
 		if not name or any(not item for item in formats):
 			raise TemplateSyntaxError(f"Invalid variable directive: ${{{token}}}")
@@ -339,7 +351,9 @@ class Template:
 		for node in nodes:
 			yield node
 			if isinstance(node, (_If, _For, _With)):
-				branches = node.branches if isinstance(node, _If) else [(None, node.body)]
+				branches = (
+					node.branches if isinstance(node, _If) else [(None, node.body)]
+				)
 				for _, body in branches:
 					yield from cls._walk(body)
 				if isinstance(node, _For):
@@ -381,7 +395,9 @@ class Template:
 			return value.strip("\"'")
 
 	def _evaluate(self, expression: str, scopes: Sequence[Any]) -> bool:
-		if expression.endswith("?") and not any(op in expression for op in ("==", "!=", ">=", "<=", ">", "<")):
+		if expression.endswith("?") and not any(
+			op in expression for op in ("==", "!=", ">=", "<=", ">", "<")
+		):
 			value = self._resolve(expression[:-1].strip(), scopes)
 			return bool(value)
 		match = _EXPRESSION.match(expression)
@@ -446,34 +462,60 @@ class Template:
 				for formatter_name in node.formats:
 					formatter = formatters.get(formatter_name)
 					if formatter is None:
-						raise TemplateEvaluationError(f"Unknown formatter {formatter_name}")
+						raise TemplateEvaluationError(
+							f"Unknown formatter {formatter_name}"
+						)
 					value = formatter(value, locale, node)
 				result.append(self.EnsureUnicode(value, self.encoding))
 			elif isinstance(node, _Translation):
 				value = node.values.get(locale) or node.values.get(self.defaultLocale)
 				if value is None:
 					if strict or self.translateMode == TRANSLATE_STRICT:
-						raise TemplateEvaluationError(f"Missing translation for locale {locale}")
+						raise TemplateEvaluationError(
+							f"Missing translation for locale {locale}"
+						)
 					result.append(f"[[ERROR: Missing translation for locale {locale}]]")
 				else:
 					result.append(value)
 			elif isinstance(node, _If):
 				for expression, body in node.branches:
 					if expression is None or self._evaluate(expression, scopes):
-						result.append(self._render(body, scopes, locale, strict, formatters))
+						result.append(
+							self._render(body, scopes, locale, strict, formatters)
+						)
 						break
 			elif isinstance(node, _For):
 				collection = self._resolve(node.name, scopes)
-				values = list(collection.values()) if isinstance(collection, Mapping) else list(collection) if isinstance(collection, (list, tuple)) else []
+				values = (
+					list(collection.values())
+					if isinstance(collection, Mapping)
+					else list(collection)
+					if isinstance(collection, (list, tuple))
+					else []
+				)
 				if not values:
-					result.append(self._render(node.empty, scopes, locale, strict, formatters))
+					result.append(
+						self._render(node.empty, scopes, locale, strict, formatters)
+					)
 				else:
 					for index, value in enumerate(values[: node.limit]):
-						result.append(self._render(node.body, [{"this": value, "i": index}, *scopes], locale, strict, formatters))
+						result.append(
+							self._render(
+								node.body,
+								[{"this": value, "i": index}, *scopes],
+								locale,
+								strict,
+								formatters,
+							)
+						)
 			elif isinstance(node, _With):
 				value = self._resolve(node.name, scopes)
 				if value is not None:
-					result.append(self._render(node.body, [value, *scopes], locale, strict, formatters))
+					result.append(
+						self._render(
+							node.body, [value, *scopes], locale, strict, formatters
+						)
+					)
 		return "".join(result)
 
 

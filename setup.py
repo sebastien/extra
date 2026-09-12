@@ -35,15 +35,19 @@ def readme():
 
 # Files unsupported by mypyc (async generators, __slots__ on subclasses, etc.).
 _MYPYC_UNSUPPORTED = {
+	"__init__.py",  # Package initialization must preserve pure-Python class behavior.
+	"__main__.py",  # Executed by Python with -m; extension modules have no code object.
 	"client.py",
 	"http/api.py",  # ResponseFactory base must stay pure (HTTPRequest subclasses it)
 	"http/model.py",  # async generators; subclasses ResponseFactory
 	"model.py",  # Service/Application must stay interpretable for user subclasses
 	"server.py",  # AIO body classes; keeps socket loop pure
+	"services/files.py",  # Service handler discovery relies on Python weakrefs.
 	"services/watch.py",
 	"features/auth.py",
 	"features/webdav/memory.py",
 	"features/webdav/service.py",
+	"utils/shell.py",  # Runtime TypeVar fallback is not compatible with mypyc.
 }
 
 

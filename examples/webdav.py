@@ -35,9 +35,14 @@ if __name__ == "__main__":
 	connectHost = os.getenv("HOSTNAME", socket.gethostname())
 	endpoint = f"http://{connectHost}:{port}/dav/"
 	info("WebDAV demo available", URL=endpoint)
-	info("List resources with curl", Command=f"curl -X PROPFIND -H 'Depth: 1' {endpoint}")
+	info(
+		"List resources with curl", Command=f"curl -X PROPFIND -H 'Depth: 1' {endpoint}"
+	)
 	info("Download a file with curl", Command=f"curl {endpoint}README.txt")
-	info("Upload a file with curl", Command=f"curl -T local.txt {endpoint}uploads/local.txt")
+	info(
+		"Upload a file with curl",
+		Command=f"curl -T local.txt {endpoint}uploads/local.txt",
+	)
 	info("Mount with gio", Command=f"gio mount dav://{connectHost}:{port}/dav/")
 	info("Open in GNOME Files", URL=f"dav://{connectHost}:{port}/dav/")
 	run(WebDAVService(backend, prefix="dav"), host=host, port=port)

@@ -6,10 +6,11 @@ PROJECT:=extra
 PYPI_PROJECT=extra-http
 VERSION:=$(shell sed -n 's/^__version__ = "\(.*\)"/\1/p' src/py/extra/__version__.py | head -n1)
 
-# Use mise for Python version management and uv for dependencies
+# Use uv for dependency and tool management. mise may still provide uv, but
+# should not be involved in resolving the project's Python environment.
 MISE:=$(shell which mise 2>/dev/null || echo "mise")
-UV:=$(MISE) x -- uv
-PYTHON:=$(shell $(MISE) which python 2>/dev/null || which python3 2>/dev/null || echo "python3")
+UV:=$(shell which uv 2>/dev/null || echo "uv")
+PYTHON:=$(shell $(MISE) exec -- which python3 2>/dev/null || which python3 2>/dev/null || echo "python3")
 PATH_SOURCES_PY=src/py
 PYTHONPATH_TEST:=$(realpath $(PATH_SOURCES_PY))
 PYTHON_MODULES=$(patsubst src/py/%,%,$(wildcard src/py/*))
@@ -127,13 +128,11 @@ compile: setup
 	@echo "Compiling $(MODULES_PY): $(SOURCES_PY)"
 	# NOTE: Output is going to be like 'extra/__init__.cpython-310-x86_64-linux-gnu.so'
 	@mkdir -p ".run/uv-cache" build
-	@UV_CACHE_DIR=$(realpath .)/.run/uv-cache uv run --with mypy python setup.py build_ext --inplace --use-mypyc
-	# Modules excluded from mypyc must not leave stale .so that shadow pure .py
-	@rm -f src/py/extra/server.cpython-*.so \
-		src/py/extra/model.cpython-*.so \
-		src/py/extra/http/api.cpython-*.so \
-		src/py/extra/http/model.cpython-*.so \
-		src/py/extra/client.cpython-*.so
+	# Keep generated extensions out of the source tree and include pure Python files.
+	@find src/py/extra -type f -name '*.so' -delete
+	@rm -rf build/py
+	@uv run --with setuptools python setup.py build_py --build-lib build/py
+	@uv run --with mypy --with setuptools --with orjson python setup.py --use-mypyc build_ext --build-lib build/py --force
 
 .PHONY: check
 check: check-bandit check-flakes check-strict

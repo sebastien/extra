@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-BASE_PY=$(dirname "$(dirname "$(readlink -f "$0")")")/src/py
+PROJECT_ROOT=$(dirname "$(dirname "$(readlink -f "$0")")")
+BASE_PY=$PROJECT_ROOT/src/py
+if [ -d "$PROJECT_ROOT/build/py" ]; then
+	BASE_PY=$PROJECT_ROOT/build/py
+fi
 MODULE=extra
 if [ -z "${PYTHON:-}" ]; then
 	PYTHON=python3
 fi
 if [ -e "$BASE_PY" ]; then
-	UPDATED_PYTHONPATH=$BASE_PY:$PYTHONPATH
+	UPDATED_PYTHONPATH=$BASE_PY:${PYTHONPATH:-}
 else
-	UPDATED_PYTHONPATH=$PYTHONPATH
+	UPDATED_PYTHONPATH=${PYTHONPATH:-}
 fi
-PYTHONPATH=$UPDATED_PYTHONPATH $PYTHON -m "$MODULE" "$@"
+exec env PYTHONPATH="$UPDATED_PYTHONPATH" "$PYTHON" -m "$MODULE" "$@"
 # EOF

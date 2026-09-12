@@ -74,8 +74,27 @@ class WebDAVService(Service):
 	def allow(self) -> str:
 		cap = self.capabilities
 		methods = ["OPTIONS"]
-		methods += [name for name, enabled in (("GET", cap.get), ("HEAD", cap.head), ("PROPFIND", cap.propfind)) if enabled]
-		methods += [name for name, enabled in (("PUT", cap.put), ("MKCOL", cap.mkcol), ("DELETE", cap.delete), ("COPY", cap.copy), ("MOVE", cap.move), ("PROPPATCH", cap.propertyWrite)) if enabled]
+		methods += [
+			name
+			for name, enabled in (
+				("GET", cap.get),
+				("HEAD", cap.head),
+				("PROPFIND", cap.propfind),
+			)
+			if enabled
+		]
+		methods += [
+			name
+			for name, enabled in (
+				("PUT", cap.put),
+				("MKCOL", cap.mkcol),
+				("DELETE", cap.delete),
+				("COPY", cap.copy),
+				("MOVE", cap.move),
+				("PROPPATCH", cap.propertyWrite),
+			)
+			if enabled
+		]
 		return ", ".join(methods)
 
 	async def _writeResource(
@@ -105,7 +124,9 @@ class WebDAVService(Service):
 			item.strip() == etag for item in header.split(",")
 		)
 
-	def _unsupported(self, request: HTTPRequest, capability: bool) -> HTTPResponse | None:
+	def _unsupported(
+		self, request: HTTPRequest, capability: bool
+	) -> HTTPResponse | None:
 		return None if capability else request.error(405, headers={"Allow": self.allow})
 
 	@staticmethod
@@ -145,7 +166,9 @@ class WebDAVService(Service):
 			if isawaitable(value):
 				await value
 
-	async def _resource(self, request: HTTPRequest, rawPath: str) -> WebDAVResource | None:
+	async def _resource(
+		self, request: HTTPRequest, rawPath: str
+	) -> WebDAVResource | None:
 		path = _path(rawPath)
 		if path is None:
 			return None
@@ -209,13 +232,20 @@ class WebDAVService(Service):
 		if rangeHeader := request.header("Range"):
 			if not self.capabilities.ranges:
 				return request.error(416, headers=headers)
-			if resource.size is None or (parsed := parseRange(rangeHeader, resource.size)) is None:
+			if (
+				resource.size is None
+				or (parsed := parseRange(rangeHeader, resource.size)) is None
+			):
 				headers["Content-Range"] = f"bytes */{resource.size or 0}"
 				return request.empty(status=416, headers=headers)
 			start, end = parsed
 			status = 206
 			headers["Content-Range"] = f"bytes {start}-{end}/{resource.size}"
-		length = (end - start + 1) if start is not None and end is not None else resource.size
+		length = (
+			(end - start + 1)
+			if start is not None and end is not None
+			else resource.size
+		)
 		if request.method == "HEAD":
 			return request.respond(
 				None,
@@ -231,6 +261,7 @@ class WebDAVService(Service):
 			async def stream() -> AsyncIterator[bytes]:
 				async for chunk in streamSource:
 					yield chunk
+
 			content = stream()
 		response = request.respond(
 			content,
@@ -270,8 +301,12 @@ class WebDAVService(Service):
 		)
 
 	@on(MKCOL="/{path:any}")
-	async def makeCollection(self, request: HTTPRequest, path: str = "") -> HTTPResponse:
-		if (response := self._unsupported(request, self.capabilities.mkcol)) is not None:
+	async def makeCollection(
+		self, request: HTTPRequest, path: str = ""
+	) -> HTTPResponse:
+		if (
+			response := self._unsupported(request, self.capabilities.mkcol)
+		) is not None:
 			return response
 		clean = _path(path)
 		if clean is None or clean == "/":
@@ -296,7 +331,9 @@ class WebDAVService(Service):
 
 	@on(DELETE="/{path:any}")
 	async def remove(self, request: HTTPRequest, path: str = "") -> HTTPResponse:
-		if (response := self._unsupported(request, self.capabilities.delete)) is not None:
+		if (
+			response := self._unsupported(request, self.capabilities.delete)
+		) is not None:
 			return response
 		clean, resource, response = await self._writeResource(request, path)
 		if response is not None:
@@ -359,7 +396,9 @@ class WebDAVService(Service):
 
 	@on(PROPPATCH="/{path:any}")
 	async def proppatch(self, request: HTTPRequest, path: str = "") -> HTTPResponse:
-		if (response := self._unsupported(request, self.capabilities.propertyWrite)) is not None:
+		if (
+			response := self._unsupported(request, self.capabilities.propertyWrite)
+		) is not None:
 			return response
 		clean = _path(path)
 		if clean is None:
@@ -396,7 +435,9 @@ class WebDAVService(Service):
 			return request.error(501)
 		responseRoot = ET.Element(f"{{{DAV}}}multistatus")
 		responseElement = ET.SubElement(responseRoot, f"{{{DAV}}}response")
-		ET.SubElement(responseElement, f"{{{DAV}}}href").text = self._resourceHref(resource)
+		ET.SubElement(responseElement, f"{{{DAV}}}href").text = self._resourceHref(
+			resource
+		)
 		byStatus: dict[int, list[str]] = {}
 		for name in changes:
 			status = statuses.get(name, 500)
@@ -406,9 +447,9 @@ class WebDAVService(Service):
 			prop = ET.SubElement(propstat, f"{{{DAV}}}prop")
 			for name in names:
 				ET.SubElement(prop, name)
-			ET.SubElement(propstat, f"{{{DAV}}}status").text = (
-				f"HTTP/1.1 {status} {HTTP_STATUS.get(status, 'Error')}"
-			)
+			ET.SubElement(
+				propstat, f"{{{DAV}}}status"
+			).text = f"HTTP/1.1 {status} {HTTP_STATUS.get(status, 'Error')}"
 		return request.respond(
 			ET.tostring(responseRoot, encoding="utf-8", xml_declaration=True),
 			status=207,
@@ -461,7 +502,11 @@ class WebDAVService(Service):
 		elif key == "getlastmodified" and (stamp := _httpdate(resource.modifiedAt)):
 			value.text = stamp
 		elif key == "creationdate" and resource.createdAt is not None:
-			value.text = datetime.fromtimestamp(resource.createdAt, timezone.utc).isoformat().replace("+00:00", "Z")
+			value.text = (
+				datetime.fromtimestamp(resource.createdAt, timezone.utc)
+				.isoformat()
+				.replace("+00:00", "Z")
+			)
 		elif key == "getetag" and resource.etag:
 			value.text = resource.etag
 		elif key == "displayname":
@@ -492,8 +537,14 @@ class WebDAVService(Service):
 		live = {
 			f"{{{DAV}}}{name}"
 			for name in (
-				"resourcetype", "getcontentlength", "getcontenttype", "getlastmodified",
-				"creationdate", "getetag", "displayname", "supportedlock",
+				"resourcetype",
+				"getcontentlength",
+				"getcontenttype",
+				"getlastmodified",
+				"creationdate",
+				"getetag",
+				"displayname",
+				"supportedlock",
 			)
 		}
 		backendProperties: dict[str, Any] = {}
@@ -550,7 +601,9 @@ class WebDAVService(Service):
 		if resource is None:
 			return request.notFound()
 		try:
-			mode, requested = self._requestedProperties(await request.body.load() or b"")
+			mode, requested = self._requestedProperties(
+				await request.body.load() or b""
+			)
 		except ValueError:
 			return request.error(400, "Invalid PROPFIND body")
 		depthHeader = (request.header("Depth") or "infinity").lower()

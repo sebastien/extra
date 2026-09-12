@@ -57,7 +57,9 @@ class WebDAVBackend(Protocol):
 
 	def iterChildren(self, path: str) -> AsyncIterator[WebDAVResource]: ...
 
-	async def open(self, path: str, start: int | None = None, end: int | None = None) -> bytes | AsyncIterator[bytes]: ...
+	async def open(
+		self, path: str, start: int | None = None, end: int | None = None
+	) -> bytes | AsyncIterator[bytes]: ...
 
 	async def write(
 		self,

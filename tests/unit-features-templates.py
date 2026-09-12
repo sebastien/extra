@@ -14,21 +14,32 @@ assert (
 	)
 	== "two"
 )
-assert Template("${if:no}${if:yes}bad${else}bad${end}${else}ok${end}").apply(
-	{"no": False, "yes": True}
-) == "ok"
-assert Template("${for:items}${i}:${this.name};${end}").apply(
-	{"items": [{"name": "a"}, {"name": "b"}]}
-) == "0:a;1:b;"
-assert Template("${for:items}${this}${empty}empty${end}").apply(
-	{"items": {"first": "A", "second": "B"}}
-) == "AB"
-assert Template("${for:items}${this}${empty}empty${end}").apply({"items": []}) == "empty"
-assert Template("${with:user}${name}${end}").apply({"user": {"name": "Grace"}}) == "Grace"
+assert (
+	Template("${if:no}${if:yes}bad${else}bad${end}${else}ok${end}").apply(
+		{"no": False, "yes": True}
+	)
+	== "ok"
+)
+assert (
+	Template("${for:items}${i}:${this.name};${end}").apply(
+		{"items": [{"name": "a"}, {"name": "b"}]}
+	)
+	== "0:a;1:b;"
+)
+assert (
+	Template("${for:items}${this}${empty}empty${end}").apply(
+		{"items": {"first": "A", "second": "B"}}
+	)
+	== "AB"
+)
+assert (
+	Template("${for:items}${this}${empty}empty${end}").apply({"items": []}) == "empty"
+)
+assert (
+	Template("${with:user}${name}${end}").apply({"user": {"name": "Grace"}}) == "Grace"
+)
 assert Template("${T:en=Hello,fr=Bonjour}").apply({}, locale="fr") == "Bonjour"
-assert Template("${if:value==null}yes${else}no${end}").apply(
-	{"value": None}
-) == "yes"
+assert Template("${if:value==null}yes${else}no${end}").apply({"value": None}) == "yes"
 
 try:
 	Template("${missing}").apply({}, strict=True)

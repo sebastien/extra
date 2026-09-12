@@ -98,9 +98,10 @@ class MemoryWebDAVBackend:
 		prefix = "" if path == "/" else path
 		depth = len([part for part in path.split("/") if part]) + 1
 		for child in sorted(self.resources.values(), key=lambda item: item.path):
-			if child.path.startswith(prefix + "/") and len(
-				[part for part in child.path.split("/") if part]
-			) == depth:
+			if (
+				child.path.startswith(prefix + "/")
+				and len([part for part in child.path.split("/") if part]) == depth
+			):
 				yield child
 
 	async def open(
@@ -209,9 +210,11 @@ class MemoryWebDAVBackend:
 	) -> Mapping[str, WebDAVProperty]:
 		resource = self.resources[_path(path)]
 		properties = self.properties.get(resource.path, {})
-		return properties if names is None else {
-			name: value for name, value in properties.items() if name in names
-		}
+		return (
+			properties
+			if names is None
+			else {name: value for name, value in properties.items() if name in names}
+		)
 
 	async def setProperties(
 		self, path: str, changes: Mapping[str, WebDAVProperty | None]

@@ -551,7 +551,9 @@ class FileService(Service):
 				response = self.respondGzipFallback(request, *gzip_fallback)
 				response.body = None
 			else:
-				response = request.notAuthorized(f"Not authorized to access path: {path}")
+				response = request.notAuthorized(
+					f"Not authorized to access path: {path}"
+				)
 		elif not local_path.exists():
 			response = request.notFound()
 		else:
@@ -598,7 +600,9 @@ class FileService(Service):
 			if gzip_fallback and self.canRead(request, gzip_fallback[1]):
 				response = self.respondGzipFallback(request, *gzip_fallback)
 			else:
-				response = request.notAuthorized(f"Not authorized to access path: {path}")
+				response = request.notAuthorized(
+					f"Not authorized to access path: {path}"
+				)
 		elif not local_path.exists():
 			response = request.notFound()
 		else:

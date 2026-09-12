@@ -312,7 +312,9 @@ class AIOSocketServer:
 			# hotpath for requests. These should all be recyclable.
 			parser: HTTPParser = HTTPParser(requestsOnly=True)
 			if streamReader is not None and streamWriter is not None:
-				readBody: AIOStreamBodyReader | AIOSocketBodyReader = AIOStreamBodyReader(streamReader)
+				readBody: AIOStreamBodyReader | AIOSocketBodyReader = (
+					AIOStreamBodyReader(streamReader)
+				)
 				writer: HTTPBodyWriter = AIOStreamBodyWriter(streamWriter)
 			else:
 				assert client is not None
@@ -703,7 +705,7 @@ class AIOSocketServer:
 						continue
 					else:
 						client = res[0]
-					# NOTE: Should do something with the tasks
+						# NOTE: Should do something with the tasks
 						task = loop.create_task(
 							cls.OnRequest(
 								app, client, loop=loop, options=options, state=state
@@ -769,7 +771,10 @@ class AIOSocketServer:
 			except OSError as e:
 				lastError = e
 		if server is None:
-			error(f"Unable to bind to {options.host}:{options.port}, aborting.", "HOSTPORTERR")
+			error(
+				f"Unable to bind to {options.host}:{options.port}, aborting.",
+				"HOSTPORTERR",
+			)
 			assert lastError is not None
 			raise lastError
 		info("Extra HTTPS Server listening", Host=options.host, Port=port)

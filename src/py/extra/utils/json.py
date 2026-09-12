@@ -6,7 +6,7 @@ import json as basejson
 from .primitives import asPrimitive
 
 try:
-	import orjson as _orjson
+	import orjson as _orjson  # type: ignore[import-not-found]
 except ImportError:
 	_orjson = cast(Any, None)
 
@@ -36,11 +36,11 @@ def json(value: Any) -> bytes:
 		# Only fall back to asPrimitive for complex types (dataclasses,
 		# named tuples, etc.) that orjson can't serialise.
 		try:
-			return _orjson.dumps(value)
+			return cast(bytes, _orjson.dumps(value))
 		except TypeError:
 			primitive = asPrimitive(value)
 			try:
-				return _orjson.dumps(primitive)
+				return cast(bytes, _orjson.dumps(primitive))
 			except TypeError:
 				return basejson.dumps(primitive).encode("utf8")
 	else:

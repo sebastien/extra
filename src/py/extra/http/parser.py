@@ -453,7 +453,8 @@ class HTTPParser:
 									headers.contentLength == 0
 									or (
 										headers.contentLength is None
-										and self.requestLine.method not in self.METHOD_HAS_BODY
+										and self.requestLine.method
+										not in self.METHOD_HAS_BODY
 									)
 								)
 							)

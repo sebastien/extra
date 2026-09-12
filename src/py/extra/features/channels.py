@@ -74,9 +74,7 @@ class Channel(Generic[T]):
 				return None
 			return self._buffer[0][0]
 
-	async def pushwait(
-		self, value: T, timeout: Optional[float] = None
-	) -> bool:
+	async def pushwait(self, value: T, timeout: Optional[float] = None) -> bool:
 		"""Push a value and wait until that value is consumed."""
 		with self._condition:
 			if not self._isOpen:
